@@ -262,6 +262,111 @@ All controllers are evaluated on identical scenarios with statistical comparison
 
 ---
 
+## Future Work & Publication Roadmap
+
+Beyond the core thesis (hardware validation of GTrXL-PPO), this project opens several research directions suitable for top ML venues. The analysis below evaluates each potential paper through a first-principles lens: **Does it advance ML theory, algorithms, or empirical understanding?** -- the bar for venues like NeurIPS, as opposed to application venues (ICRA, AIAA) where domain validation is the contribution.
+
+### Venue Strategy
+
+The thesis itself -- hardware validation of an existing algorithm -- is best suited for **robotics and aerospace venues** (ICRA, IROS, AIAA SciTech, IEEE RA-L). NeurIPS/ICML/ICLR require the contribution to be a **generalizable ML advance**, not a domain-specific demo. The papers below are scoped to extract ML contributions from this project that stand on their own.
+
+### Candidate Papers
+
+#### Paper 1: Hardware Validation of GTrXL-PPO for Retro-Propulsive Landings on Scaled Testbeds
+
+**NeurIPS Fit: Low** -- Applied validation paper. NeurIPS 2024/2025 accepts RL work but prioritizes novel methods over hardware demonstrations. No recent acceptances for drone/rocket-specific validation; closest are simulation-based RL papers like *"Efficient RL by Discovering Neural Pathways."*
+
+**First-Principles Critique:**
+- Core contribution is control engineering (force balance), not ML methodology
+- Hardware testing without proving method novelty is putting the cart before the horse
+- Tethered flight tests add engineering value but not ML insight
+
+**Recommendation:** Submit to **ICRA, IROS, or IEEE RA-L** where sim-to-real transfer is a valued contribution. Could be elevated to medium NeurIPS fit if a novel domain adaptation technique (e.g., learned dynamics residuals for sim-to-real transfer) is introduced and shown to generalize beyond aerospace.
+
+---
+
+#### Paper 2: Physics-Informed Custom Attention in RL for Trajectory Control Under Uncertainties
+
+**NeurIPS Fit: High** -- Physics-informed ML is a hot area (2025 orals include adjoint Schrodinger methods, dynamical mean field theory). Custom attention mechanisms that encode physical priors (e.g., Newtonian dynamics as inductive bias in attention weights) could generalize well beyond aerospace.
+
+**Core Idea:** Standard attention treats all history tokens uniformly. Physics-informed attention biases the weighting by known dynamics -- e.g., attention scores modulated by F=ma consistency, energy conservation, or Lyapunov stability criteria. The attention mechanism *knows* which past states are dynamically relevant, not just statistically correlated.
+
+**First-Principles Critique:**
+- Attention as weighted history is wasteful if uniform; biasing by equations of motion is principled
+- Must answer: if disturbances are modelable, why not delete RL entirely and use Kalman filters? (Answer: RL handles the unmodelable residual)
+- Risk: if physics prior is too strong, attention degenerates to a filter -- need to show the learned component adds value
+
+**Requirements for NeurIPS:**
+- Theoretical convergence analysis under physics-informed priors
+- Benchmarks on **non-aerospace** tasks (MuJoCo locomotion, manipulation, multi-body contact) to prove generality
+- Ablation: physics-informed attention vs. vanilla attention vs. no attention (LSTM/MLP)
+- Delete aerospace framing from the title; lead with the ML method
+
+**Target:** NeurIPS, ICML, or ICLR (main conference or workshop)
+
+---
+
+#### Paper 3: Sparse Attention Variants in PPO for Efficient Long-Horizon RL
+
+**NeurIPS Fit: High** -- Sparsity and efficiency are perennial winners (2025 best paper: *"Gated Attention... Sparsity"*). Sparse attention (top-k, local+global, or learned sparsity masks) for RL aligns with *"Low-Switching RL"* oral acceptances. Strong if accompanied by compute-savings proofs and regret bounds.
+
+**Core Idea:** Full self-attention in RL is O(n^2) over the episode history -- wasteful when only a sparse subset of past states matter for current decisions. Propose learned sparsity patterns (e.g., top-k attention, sliding window + landmark states, or disturbance-triggered attention) that reduce compute while preserving or improving policy quality.
+
+**First-Principles Critique:**
+- Fundamental question: do landing trajectories (~100 steps) even need long-horizon attention? If sequences are short, the O(n^2) cost is negligible and the paper's motivation collapses
+- Must benchmark on **genuinely long-horizon tasks** (thousands of steps) -- games, multi-phase robotics, or logistics
+- Delete aerospace-specific framing if it limits the generality of the contribution
+- The win condition is: sparse attention matches dense on quality while being provably cheaper
+
+**Requirements for NeurIPS:**
+- Formal regret bounds or sample complexity analysis for sparse vs. dense attention in PPO
+- Ablation: dense vs. top-k vs. local-window vs. random sparse vs. learned masks
+- Benchmarks across domains: continuous control (MuJoCo), discrete (Atari), and multi-agent
+- Compute scaling plots (wall-clock time, memory, FLOPs vs. episode length)
+
+**Target:** NeurIPS, ICML (main conference)
+
+---
+
+#### Paper 4: Hierarchical Attention in RL for Multi-Scale Disturbance Rejection
+
+**NeurIPS Fit: High** -- Direct match to 2025 poster *"Hierarchical Self-Attention for Multi-Scale Problems."* Multi-head attention where each head specializes in a different temporal scale (fast jerk rejection vs. slow trajectory planning) is architecturally novel if the hierarchy is learned or provably optimal.
+
+**Core Idea:** Disturbances operate at multiple time scales -- high-frequency sensor noise (~ms), medium-frequency wind gusts (~s), slow CoM drift (~10s of seconds). Flat attention blends all scales indiscriminately. Hierarchical attention assigns dedicated heads or layers to different temporal resolutions, with an entropy-based gating mechanism to route information across scales.
+
+**First-Principles Critique:**
+- Decomposing disturbances as multi-scale vectors is physically principled -- flat attention is provably suboptimal when signals have known spectral structure
+- Question: is this overkill for single-phase landing? If flat multi-head attention achieves 95% of the performance, the hierarchy adds complexity without value
+- The strong version: hierarchy enables **emergent specialization** (one head learns wind, another learns noise) without explicit supervision -- show this via attention visualization and ablation
+
+**Requirements for NeurIPS:**
+- Generalize beyond aerospace: test on multi-scale tasks in other domains (e.g., LLM long-context reasoning, video prediction, multi-resolution planning)
+- Prove or empirically show that hierarchy outperforms flat multi-head when temporal scales span >2 orders of magnitude
+- Attention head specialization analysis (what does each level attend to?)
+- Comparison against frequency-domain baselines (wavelet attention, spectral methods)
+
+**Target:** NeurIPS, ICML, ICLR (main conference or spotlight)
+
+---
+
+### Summary: Publication Venue Matrix
+
+| Paper | Core ML Contribution | NeurIPS Fit | Best Venue if Not NeurIPS |
+|-------|---------------------|-------------|---------------------------|
+| **1. Hardware Validation** | Sim-to-real transfer (applied) | Low | ICRA, IEEE RA-L, AIAA SciTech |
+| **2. Physics-Informed Attention** | Inductive bias in attention via physical laws | High | ICML, ICLR |
+| **3. Sparse Attention for RL** | Compute-efficient attention with regret bounds | High | ICML, ICLR |
+| **4. Hierarchical Multi-Scale Attention** | Learned temporal-scale specialization | High | ICML, ICLR |
+
+### Strategic Notes
+
+- **Papers 2-4 share training infrastructure** from this project but must be framed as general ML contributions, not aerospace papers. The aerospace domain provides motivation and one benchmark, but the paper must also demonstrate generality on standard RL benchmarks (MuJoCo, Atari, D4RL, etc.)
+- **Paper 1 is the thesis** and should be submitted to robotics/aerospace venues first; it provides the empirical grounding that motivates Papers 2-4
+- **Combining Papers 2 + 4** (physics-informed hierarchical attention) could produce a particularly strong submission if the physics prior naturally induces the multi-scale hierarchy
+- **Timeline:** Paper 1 can be written from thesis results (mid-2027). Papers 2-4 require additional experiments beyond the thesis scope and could target NeurIPS 2027 or 2028 submission deadlines
+
+---
+
 ## Key References
 
 - Schulman et al. (2017). *Proximal Policy Optimization Algorithms*. arXiv:1707.06347
