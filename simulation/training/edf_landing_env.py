@@ -15,6 +15,7 @@ Notes
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -140,6 +141,33 @@ class EDFLandingEnv(gym.Env):
             obs_section["wind_ema_alpha"] = cfg["wind_ema_alpha"]
         self.obs_pipeline = ObservationPipeline(ObservationConfig.from_config(obs_section))
 
+        # Domain randomization: actuator delay (training.md §6.2.1)
+        ad_cfg = cfg.get("actuator_delay", {})
+        self._actuator_delay_enabled = bool(ad_cfg.get("enabled", False))
+        esc_range = ad_cfg.get("esc_delay_range", [0.010, 0.040])
+        servo_range = ad_cfg.get("servo_delay_range", [0.005, 0.020])
+        self._esc_delay_range = self._range2(esc_range, name="esc_delay_range")
+        self._servo_delay_range = self._range2(servo_range, name="servo_delay_range")
+
+        # Domain randomization: observation latency (training.md §6.2.2)
+        ol_cfg = cfg.get("obs_latency", {})
+        self._obs_latency_enabled = bool(ol_cfg.get("enabled", False))
+        ds_range = ol_cfg.get("delay_steps_range", [0, 3])
+        ds_arr = np.asarray(ds_range, dtype=float).reshape(-1)
+        if ds_arr.size != 2:
+            raise ValueError("delay_steps_range must have 2 elements [lo, hi].")
+        self._obs_delay_steps_lo = int(ds_arr[0])
+        self._obs_delay_steps_hi = int(ds_arr[1])
+        if self._obs_delay_steps_hi < self._obs_delay_steps_lo:
+            raise ValueError("delay_steps_range must satisfy hi >= lo.")
+
+        # Will be set at reset
+        self._delay_policy_steps: int = 0
+        self._action_buffer: deque[np.ndarray] = deque()
+        self._prev_applied_u: np.ndarray = np.zeros(CONTROL_DIM, dtype=float)
+        self._obs_delay_steps: int = 0
+        self._obs_buffer: deque[np.ndarray] = deque()
+
     def _load_root_config(self, config: Mapping[str, Any] | str | Path | None) -> dict[str, Any]:
         """Load env config dict.
 
@@ -153,10 +181,12 @@ class EDFLandingEnv(gym.Env):
             v = load_config(base / "default_vehicle.yaml")
             e = load_config(base / "default_environment.yaml")
             r = load_config(base / "reward.yaml")
+            dr = load_config(base / "domain_randomization.yaml")
             return {
                 "vehicle": v.get("vehicle", v),
                 "environment": e.get("environment", e),
                 "reward": r.get("reward", r),
+                **{k: v for k, v in dr.items() if k not in ("vehicle", "environment", "reward")},
             }
 
         if isinstance(config, (str, Path)):
@@ -239,6 +269,31 @@ class EDFLandingEnv(gym.Env):
         self._impact_vz_down = None
         self.obs_pipeline.reset(self.np_random)
         self.reward_fn.reset()
+
+        # Domain randomization: sample per-episode delays
+        rng = self.np_random
+        if self._actuator_delay_enabled:
+            tau_esc = float(rng.uniform(*self._esc_delay_range))
+            tau_servo = float(rng.uniform(*self._servo_delay_range))
+            tau_act = max(tau_esc, tau_servo)
+            # Delay in policy steps (training.md: "1–2 policy steps at 40 Hz")
+            self._delay_policy_steps = max(1, int(np.ceil(tau_act / self.dt_policy)))
+            self._action_buffer.clear()
+            T_hover = float(self.vehicle.mass * self.vehicle.g)
+            self._prev_applied_u = np.array([T_hover, 0, 0, 0, 0], dtype=float)
+        else:
+            self._delay_policy_steps = 0
+            self._action_buffer.clear()
+            self._prev_applied_u = np.zeros(CONTROL_DIM, dtype=float)
+
+        if self._obs_latency_enabled:
+            self._obs_delay_steps = int(
+                rng.integers(self._obs_delay_steps_lo, self._obs_delay_steps_hi + 1)
+            )
+            self._obs_buffer.clear()
+        else:
+            self._obs_delay_steps = 0
+            self._obs_buffer.clear()
 
         obs = self._get_obs()
         info = self._get_info()
@@ -346,6 +401,18 @@ class EDFLandingEnv(gym.Env):
         a = np.clip(a, -1.0, 1.0)
         u = self._scale_action(a)
 
+        # Actuator delay: buffer action for N policy steps (training.md §6.2.1)
+        if self._actuator_delay_enabled and self._delay_policy_steps > 0:
+            self._action_buffer.append(u.copy())
+            if len(self._action_buffer) > self._delay_policy_steps:
+                u_delayed = self._action_buffer.popleft()
+            else:
+                u_delayed = self._prev_applied_u.copy()
+            self._prev_applied_u = u_delayed.copy()
+            u = u_delayed
+        else:
+            self._prev_applied_u = u.copy()
+
         # Physics stepping
         self._touched_ground = False
         for _ in range(self.substeps):
@@ -358,7 +425,19 @@ class EDFLandingEnv(gym.Env):
                 self.vehicle.step(u)
                 self._apply_ground_contact()
 
-        obs = self._get_obs()
+        obs_fresh = self._get_obs()
+
+        # Observation latency: return stale obs (training.md §6.2.2)
+        if self._obs_latency_enabled and self._obs_delay_steps > 0:
+            self._obs_buffer.append(obs_fresh.copy())
+            if len(self._obs_buffer) > self._obs_delay_steps:
+                obs = self._obs_buffer[-(self._obs_delay_steps + 1)].copy()
+            else:
+                obs = obs_fresh.copy()
+            while len(self._obs_buffer) > self._obs_delay_steps + 1:
+                self._obs_buffer.popleft()
+        else:
+            obs = obs_fresh
         term = self._check_terminated()
         terminated = bool(term.terminated)
         truncated = bool(self.step_count >= self.max_steps)

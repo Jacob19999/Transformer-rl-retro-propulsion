@@ -262,10 +262,10 @@
 
 | #    | Task                                                 | Status  | Files                             | Depends On | Notes                                                                                 |
 | ---- | ---------------------------------------------------- | ------- | --------------------------------- | ---------- | ------------------------------------------------------------------------------------- |
-| 15.1 | Implement actuator delay buffer in `EDFLandingEnv` | `[ ]` | `training/edf_landing_env.py`   | 12.5       | training.md §6.2.1. Buffer action for N physics steps. ESC 10–40 ms, servo 5–20 ms |
-| 15.2 | Implement observation latency augmentation           | `[ ]` | `training/edf_landing_env.py`   | 13.4       | training.md §6.2.2. Stale obs 0–3 policy steps, randomized per episode              |
-| 15.3 | Make DR features toggleable via config flags         | `[ ]` | `training/edf_landing_env.py`   | 15.1–15.2 | `actuator_delay.enabled`, `obs_latency.enabled`                                   |
-| 15.4 | Write tests for DR features                          | `[ ]` | `tests/test_edf_landing_env.py` | 15.1–15.3 | Delay buffer delays action by correct steps; latency returns stale obs                |
+| 15.1 | Implement actuator delay buffer in `EDFLandingEnv` | `[x]` | `training/edf_landing_env.py`   | 12.5       | training.md §6.2.1. Buffer action for N policy steps. ESC 10–40 ms, servo 5–20 ms  |
+| 15.2 | Implement observation latency augmentation           | `[x]` | `training/edf_landing_env.py`   | 13.4       | training.md §6.2.2. Stale obs 0–3 policy steps, randomized per episode              |
+| 15.3 | Make DR features toggleable via config flags         | `[x]` | `training/edf_landing_env.py`   | 15.1–15.2 | `actuator_delay.enabled`, `obs_latency.enabled`                                   |
+| 15.4 | Write tests for DR features                          | `[x]` | `tests/test_edf_landing_env.py` | 15.1–15.3 | Delay buffer delays action by correct steps; latency returns stale obs                |
 
 ---
 

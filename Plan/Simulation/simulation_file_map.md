@@ -22,7 +22,7 @@
 
 - **Training**
   - `simulation/training/__init__.py` — package marker for Gym env + training utilities.
-  - `simulation/training/edf_landing_env.py` — Gymnasium `EDFLandingEnv` wrapper (spaces, reset/step, termination, ground contact, info). **Stage 12**.
+  - `simulation/training/edf_landing_env.py` — Gymnasium `EDFLandingEnv` wrapper (spaces, reset/step, termination, ground contact, info, actuator delay DR, obs latency DR). **Stage 12, 15**.
   - `simulation/training/observation.py` — observation pipeline (20-dim obs, wind EMA, configurable Gaussian noise). **Stage 13**.
   - `simulation/training/reward.py` — reward function (potential-based shaping + terminal rewards/penalties). **Stage 14**.
   - `simulation/training/controllers/__init__.py` — controller package (PID, PPO-MLP, GTrXL-PPO, SCP).
@@ -34,6 +34,7 @@
   - `simulation/configs/default_vehicle.yaml` — **main vehicle config** copied from `vehicle.md §9.1`.
   - `simulation/configs/default_environment.yaml` — **main environment config** copied from `env.md §7.1`.
   - `simulation/configs/reward.yaml` — reward weights config (training.md §15.2). **Stage 14**.
+  - `simulation/configs/domain_randomization.yaml` — actuator delay and observation latency DR (training.md §6.2). **Stage 15**.
   - `simulation/configs/test_vehicle.yaml` — simplified, zero-drag, no-DR vehicle config for unit tests.
   - `simulation/configs/test_environment.yaml` — zero-wind, zero-randomization environment config for deterministic tests.
 
@@ -50,7 +51,7 @@
   - `simulation/tests/test_wind_model.py` — unit tests for Dryden filter, mean wind, gusts, seeded reproducibility, zero config. **Stage 9**.
   - `simulation/tests/test_environment_model.py` — unit tests for environment assembly: keys/shapes, NED altitude conversion, seeded determinism. **Stage 10**.
   - `simulation/tests/test_vehicle_dynamics.py` — integration tests for VehicleDynamics: free fall, hover, gyro, wind, energy. **Stage 11**.
-  - `simulation/tests/test_edf_landing_env.py` — unit tests for Gym wrapper: space shapes, reset/step validity, termination on ground contact. **Stage 12**.
+  - `simulation/tests/test_edf_landing_env.py` — unit tests for Gym wrapper: space shapes, reset/step validity, termination on ground contact, DR (actuator delay, obs latency). **Stage 12, 15**.
   - `simulation/tests/test_observation.py` — unit tests for observation pipeline: shape/layout, wind EMA behavior, noise std sanity. **Stage 13**.
   - `simulation/tests/test_reward.py` — unit tests for reward function: shaping sign, terminal bonuses/penalties. **Stage 14**.
 
@@ -79,10 +80,10 @@
   - `simulation/environment/environment_model.py` — assembly wrapper composing `AtmosphereModel` + `WindModel`; `reset(seed)` ensures reproducibility with independent RNG streams. **Stage 10**.
 
 - **Training / Gym**
-  - `simulation/training/edf_landing_env.py` — Stage 12 Gymnasium wrapper. Note: tests will skip if `gymnasium` isn't installed, but `requirements.txt` pins `gymnasium>=0.29`.
+  - `simulation/training/edf_landing_env.py` — Stage 12 Gymnasium wrapper; Stage 15 adds actuator delay buffer and observation latency augmentation (Hwangbo et al. sim-to-real DR). Note: tests will skip if `gymnasium` isn't installed, but `requirements.txt` pins `gymnasium>=0.29`.
   - `simulation/training/observation.py` — Stage 13 observation pipeline used by `EDFLandingEnv`.
   - `simulation/training/reward.py` — Stage 14 reward function used by `EDFLandingEnv`.
-  - TODO: Add entries as we implement `curriculum.py`, controllers, and training/eval scripts (Stages 15–23).
+  - TODO: Add entries as we implement `curriculum.py`, controllers, and training/eval scripts (Stages 16–23).
 
 - **Configs**
   - Keep `default_*.yaml` and `test_*.yaml` in sync with the plan docs (`vehicle.md`, `env.md`, `training.md`). Any intentional deviations should be documented inline in the YAML and briefly summarized here.

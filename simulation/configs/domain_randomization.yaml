@@ -1,0 +1,12 @@
+# Domain randomization for sim-to-real transfer (training.md §6.2, Hwangbo et al. 2017)
+
+# Actuator delay: ESC and servo response latency (distinct from servo dynamics)
+actuator_delay:
+  enabled: true
+  esc_delay_range: [0.010, 0.040]    # s, ESC response time (BLHeli_32)
+  servo_delay_range: [0.005, 0.020]  # s, Freewing digital servo response time
+
+# Observation latency: sensor→policy pipeline delay
+obs_latency:
+  enabled: true
+  delay_steps_range: [0, 3]          # policy steps of stale observation (0–75 ms at 40 Hz)
