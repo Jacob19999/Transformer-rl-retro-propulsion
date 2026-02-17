@@ -147,7 +147,7 @@ vehicle:
       shape: "box"
       mass: 0.010              # kg (~9–12 g, Freewing 9 g servo)
       dimensions: [0.0235, 0.012, 0.027]  # m (23.5×12×27 mm)
-      position: [0, 0.045, 0.10]   # m, right fin servo
+      position: [0, 0.060, 0.12]   # m, right fin servo
       orientation: [0, 0, 0]
       surface_area: 0.0023     # m²
       Cd_local: 0.0            # inside duct shroud
@@ -156,7 +156,7 @@ vehicle:
       shape: "box"
       mass: 0.010
       dimensions: [0.0235, 0.012, 0.027]
-      position: [0, -0.045, 0.10]  # m, left fin servo
+      position: [0, -0.060, 0.12]  # m, left fin servo
       orientation: [0, 0, 0]
       surface_area: 0.0023
       Cd_local: 0.0
@@ -165,7 +165,7 @@ vehicle:
       shape: "box"
       mass: 0.010
       dimensions: [0.0235, 0.012, 0.027]
-      position: [0.045, 0, 0.10]   # m, forward fin servo
+      position: [0.060, 0, 0.12]   # m, forward fin servo
       orientation: [0, 0, 0]
       surface_area: 0.0023
       Cd_local: 0.0
@@ -174,7 +174,7 @@ vehicle:
       shape: "box"
       mass: 0.010
       dimensions: [0.0235, 0.012, 0.027]
-      position: [-0.045, 0, 0.10]  # m, aft fin servo
+      position: [-0.060, 0, 0.12]  # m, aft fin servo
       orientation: [0, 0, 0]
       surface_area: 0.0023
       Cd_local: 0.0
@@ -207,7 +207,8 @@ vehicle:
     max_omega: 9948.0          # rad/s (= 95000 × 2π / 60)
     k_thrust: 4.55e-7          # N/(rad/s)², from T_max / ω_max² (calibrate from static test)
     k_torque: 1.0e-8           # N·m/(rad/s)², reaction torque coefficient (calibrate from test)
-    I_fan: 0.001               # kg·m², fan rotor MoI about spin axis
+    I_fan: 3.0e-5              # kg·m², fan+motor-rotor MoI about spin axis (90mm EDF)
+                               # Estimated as 0.5*m*r² for ~60 g rotating at r≈35 mm
     tau_motor: 0.10            # s, 1st-order thrust lag time constant
     r_thrust: [0, 0, 0.08]    # m, thrust application point (body frame)
     r_duct: 0.045              # m, duct radius (ground effect reference)
@@ -238,17 +239,17 @@ vehicle:
 
     # ── Fin Airfoil & Planform Geometry ──
     airfoil_profile: "NACA0012"       # symmetric, 12% thickness
-    chord: 0.050                       # m, along exhaust flow direction
-    span: 0.040                        # m, radial extent into exhaust stream
+    chord: 0.065                       # m, along exhaust flow direction
+    span: 0.055                        # m, radial extent into exhaust stream
     thickness_ratio: 0.12              # t/c (NACA 0012)
-    max_thickness: 0.006               # m, = chord × thickness_ratio
-    planform_area: 0.002               # m², = chord × span (per fin)
-    wetted_area: 0.0041                # m², ≈ 2.06 × planform_area (both surfaces)
+    max_thickness: 0.0078              # m, = chord × thickness_ratio
+    planform_area: 0.003575            # m², = chord × span (per fin)
+    wetted_area: 0.00736               # m², ≈ 2.06 × planform_area (both surfaces)
 
     # ── Aerodynamic Coefficients ──
     Cl_alpha: 6.283                    # /rad, thin-airfoil lift slope (2π)
     Cd0: 0.01                          # parasitic drag coefficient
-    AR: 0.80                           # aspect ratio = span² / planform_area
+    AR: 0.846                          # aspect ratio = span² / planform_area
     stall_angle: 0.262                 # rad (15°), onset of C_L plateau
     post_stall_model: "tanh"           # "tanh" soft clamp or "flat" plateau
 
@@ -280,28 +281,28 @@ vehicle:
     # ── Per-Fin Configuration (body frame) ──
     fins_config:
       - name: "fin_1_right"
-        position: [0, 0.04, 0.12]     # m, body frame
+        position: [0, 0.055, 0.14]    # m, body frame (moved outward + aft for more torque)
         hinge_axis: [1, 0, 0]         # deflection rotates about body x-axis
         lift_direction: [1, 0, 0]     # lift acts in body x-direction
         drag_direction: [0, 0, 1]     # drag opposes exhaust (body z)
         angular_offset_deg: 0         # azimuthal position (0° = starboard)
 
       - name: "fin_2_left"
-        position: [0, -0.04, 0.12]
+        position: [0, -0.055, 0.14]
         hinge_axis: [1, 0, 0]
         lift_direction: [1, 0, 0]
         drag_direction: [0, 0, 1]
         angular_offset_deg: 180
 
       - name: "fin_3_forward"
-        position: [0.04, 0, 0.12]
+        position: [0.055, 0, 0.14]
         hinge_axis: [0, 1, 0]
         lift_direction: [0, 1, 0]
         drag_direction: [0, 0, 1]
         angular_offset_deg: 90
 
       - name: "fin_4_aft"
-        position: [-0.04, 0, 0.12]
+        position: [-0.055, 0, 0.14]
         hinge_axis: [0, 1, 0]
         lift_direction: [0, 1, 0]
         drag_direction: [0, 0, 1]

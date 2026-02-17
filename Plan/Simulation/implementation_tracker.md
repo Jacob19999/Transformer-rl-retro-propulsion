@@ -314,12 +314,12 @@
 
 | #    | Task                                                                       | Status  | Files                                 | Depends On | Notes                                                                     |
 | ---- | -------------------------------------------------------------------------- | ------- | ------------------------------------- | ---------- | ------------------------------------------------------------------------- |
-| 19.1 | Implement `PPOMlpController` wrapper for SB3                             | `[ ]` | `training/controllers/ppo_mlp.py`   | 16.1       | Wraps `stable_baselines3.PPO` with `MlpPolicy`                        |
-| 19.2 | Create `configs/ppo_mlp.yaml` — hyperparameters, architecture, schedule | `[ ]` | `configs/ppo_mlp.yaml`              | —         | training.md §15.3. 2x256 MLP, tanh, ortho init                           |
-| 19.3 | Install RL training deps:`stable-baselines3`, `torch`, `tensorboard` | `[ ]` | `requirements.txt`                  | —         | `stable-baselines3>=2.0`, `torch>=2.0`                                |
-| 19.4 | Write training script: vectorized envs + SB3 PPO + logging                 | `[ ]` | `training/scripts/train_ppo_mlp.py` | 19.1, 12.1 | training.md §13.3.1.`SubprocVecEnv`, `VecNormalize`, `TensorBoard` |
-| 19.5 | Add checkpointing: save every 500K steps, save best model                  | `[ ]` | `training/scripts/train_ppo_mlp.py` | 19.4       | training.md §13.3.2                                                      |
-| 19.6 | Add evaluation callback: 50 episodes every 100K steps                      | `[ ]` | `training/scripts/train_ppo_mlp.py` | 19.4       | Log success rate, CEP                                                     |
+| 19.1 | Implement `PPOMlpController` wrapper for SB3                             | `[x]` | `training/controllers/ppo_mlp.py`   | 16.1       | Wraps `stable_baselines3.PPO` with `MlpPolicy`                        |
+| 19.2 | Create `configs/ppo_mlp.yaml` — hyperparameters, architecture, schedule | `[x]` | `configs/ppo_mlp.yaml`              | —         | training.md §15.3. 2x256 MLP, tanh, ortho init                           |
+| 19.3 | Install RL training deps:`stable-baselines3`, `torch`, `tensorboard` | `[x]` | `requirements.txt`                  | —         | `stable-baselines3>=2.0`, `torch>=2.0`                                |
+| 19.4 | Write training script: vectorized envs + SB3 PPO + logging                 | `[x]` | `training/scripts/train_ppo_mlp.py` | 19.1, 12.1 | training.md §13.3.1.`SubprocVecEnv`, `VecNormalize`, `TensorBoard` |
+| 19.5 | Add checkpointing: save every 500K steps, save best model                  | `[x]` | `training/scripts/train_ppo_mlp.py` | 19.4       | training.md §13.3.2                                                      |
+| 19.6 | Add evaluation callback: 50 episodes every 100K steps                      | `[x]` | `training/scripts/train_ppo_mlp.py` | 19.4       | Log success rate, CEP                                                     |
 
 ### 19.M — PPO-MLP Milestones (Training Checkpoints)
 

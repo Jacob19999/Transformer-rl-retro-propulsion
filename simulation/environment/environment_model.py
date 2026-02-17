@@ -82,8 +82,10 @@ class EnvironmentModel:
         """
         p_arr = np.asarray(p, dtype=float).reshape(3)
         h = float(-p_arr[2])
-        # Guard against below-ground queries (can happen during contact/termination).
-        h = max(h, 0.0)
+        # Guard against below-ground queries (can happen during contact/termination)
+        # and against extreme altitudes from divergent dynamics (troposphere model
+        # only valid to ~11 km; clamp to prevent temperature going negative).
+        h = float(np.clip(h, 0.0, 11000.0))
 
         T, P, rho = self.atmosphere.get_conditions(h)
         v_wind = self.wind.sample(float(t), h)

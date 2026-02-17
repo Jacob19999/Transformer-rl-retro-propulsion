@@ -28,8 +28,10 @@
   - `simulation/training/controllers/__init__.py` — controller package (PID, PPO-MLP, GTrXL-PPO, SCP).
   - `simulation/training/controllers/base.py` — `Controller` ABC: `get_action(obs)`, `reset()`, `update_memory()`. **Stage 16**.
   - `simulation/training/controllers/pid_controller.py` — cascaded PID baseline controller (altitude PID + lateral PD + attitude PD). **Stage 17**.
+  - `simulation/training/controllers/ppo_mlp.py` — SB3 PPO (`MlpPolicy`) wrapper implementing `Controller` API. **Stage 19**.
   - `simulation/training/scripts/__init__.py` — importable entry points for training/eval scripts.
   - `simulation/training/scripts/tune_pid.py` — PID gain tuning script (linearization + Ziegler–Nichols + grid search; saves tuned gains to `configs/pid.yaml`). **Stage 18**.
+  - `simulation/training/scripts/train_ppo_mlp.py` — PPO-MLP training entrypoint (SB3 SubprocVecEnv + VecNormalize + TensorBoard + checkpointing + eval callback). **Stage 19**.
   - `simulation/training/configs/__init__.py` — controller-specific config package.
 
 - **Configs**
@@ -39,6 +41,7 @@
   - `simulation/configs/reward.yaml` — reward weights config (training.md §15.2). **Stage 14**.
   - `simulation/configs/domain_randomization.yaml` — actuator delay and observation latency DR (training.md §6.2). **Stage 15**.
   - `simulation/configs/pid.yaml` — PID baseline gains (training.md §15.5). **Stage 17**.
+  - `simulation/configs/ppo_mlp.yaml` — PPO-MLP hyperparameters + architecture + checkpointing cadence (training.md §15.3). **Stage 19**.
   - `simulation/configs/test_vehicle.yaml` — simplified, zero-drag, no-DR vehicle config for unit tests.
   - `simulation/configs/test_environment.yaml` — zero-wind, zero-randomization environment config for deterministic tests.
 
@@ -88,7 +91,9 @@
   - `simulation/training/edf_landing_env.py` — Stage 12 Gymnasium wrapper; Stage 15 adds actuator delay buffer and observation latency augmentation (Hwangbo et al. sim-to-real DR). Note: tests will skip if `gymnasium` isn't installed, but `requirements.txt` pins `gymnasium>=0.29`.
   - `simulation/training/observation.py` — Stage 13 observation pipeline used by `EDFLandingEnv`.
   - `simulation/training/reward.py` — Stage 14 reward function used by `EDFLandingEnv`.
-  - TODO: Add entries as we implement `curriculum.py`, controllers, and training/eval scripts (Stages 16–23).
+  - `simulation/training/controllers/ppo_mlp.py` — Stage 19 PPO-MLP controller wrapper (SB3 PPO MlpPolicy).
+  - `simulation/training/scripts/train_ppo_mlp.py` — Stage 19 PPO-MLP training entrypoint.
+  - TODO: Add entries as we implement `curriculum.py`, additional controllers, and training/eval scripts (Stages 20–23).
 
 - **Configs**
   - Keep `default_*.yaml` and `test_*.yaml` in sync with the plan docs (`vehicle.md`, `env.md`, `training.md`). Any intentional deviations should be documented inline in the YAML and briefly summarized here.

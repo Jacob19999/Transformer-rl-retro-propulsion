@@ -58,6 +58,12 @@ class EvalSummary:
     mean_steps: float
 
 
+@dataclass(frozen=True, slots=True)
+class LogConfig:
+    quiet: bool = False
+    episode_every: int = 1
+
+
 def _configs_dir() -> Path:
     # tune_pid.py -> scripts/ -> training/ -> simulation/
     return Path(__file__).resolve().parents[2] / "configs"
@@ -240,9 +246,24 @@ def evaluate_pid(
     pid_yaml: Mapping[str, Any],
     *,
     seeds: Iterable[int],
+    log: LogConfig | None = None,
+    label: str = "",
 ) -> EvalSummary:
+    log = log or LogConfig()
     env = EDFLandingEnv(_make_deterministic_root_config(env_cfg))
-    stats = [_episode_rollout(env, pid_yaml, seed=int(s)) for s in seeds]
+    seeds_l = [int(s) for s in seeds]
+    stats: list[EpisodeStats] = []
+    for i, s in enumerate(seeds_l, start=1):
+        ep = _episode_rollout(env, pid_yaml, seed=int(s))
+        stats.append(ep)
+        if (not log.quiet) and int(log.episode_every) > 0 and (i % int(log.episode_every) == 0):
+            tag = f"{label} " if label else ""
+            print(
+                f"{tag}episode {i}/{len(seeds_l)} seed={s} "
+                f"landed={ep.landed} crashed={ep.crashed} oob={ep.out_of_bounds} "
+                f"cep={ep.cep:.3f} steps={ep.steps} reason={ep.termination_reason}",
+                flush=True,
+            )
     successes = [s for s in stats if s.landed]
     success_rate = float(len(successes) / max(1, len(stats)))
     mean_cep_success = float(np.mean([s.cep for s in successes])) if successes else float("inf")
@@ -334,10 +355,10 @@ def _find_peaks(y: np.ndarray) -> np.ndarray:
 def _estimate_period_and_amplitude(sig: np.ndarray, dt: float) -> tuple[float | None, float | None]:
     sig = np.asarray(sig, dtype=float).reshape(-1)
     peaks = _find_peaks(sig)
-    if peaks.size < 6:
+    if peaks.size < 3:
         return None, None
     # Use the last few peaks to estimate steady oscillation.
-    sel = peaks[-5:]
+    sel = peaks[-min(5, peaks.size):]
     t = sel.astype(float) * float(dt)
     periods = np.diff(t)
     Tu = float(np.median(periods)) if periods.size > 0 else None
@@ -370,21 +391,20 @@ def _zn_sweep_find_Ku_Tu(
         # Base hover state
         p = np.array([0.0, 0.0, -float(hover_altitude_m)], dtype=float)
         q = np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
-        # Excite only the loop under test.
+        # Excite only the loop under test with *small* perturbations so that
+        # the controller stays in its linear region across the Kp sweep.
         if loop == "roll":
-            # ~10 deg roll
-            ang = float(np.deg2rad(10.0))
+            ang = float(np.deg2rad(3.0))
             q = np.array([math.cos(ang / 2), math.sin(ang / 2), 0.0, 0.0], dtype=float)
         elif loop == "pitch":
-            ang = float(np.deg2rad(10.0))
+            ang = float(np.deg2rad(3.0))
             q = np.array([math.cos(ang / 2), 0.0, math.sin(ang / 2), 0.0], dtype=float)
         elif loop == "lateral_x":
-            p = np.array([1.0, 0.0, -float(hover_altitude_m)], dtype=float)
+            p = np.array([0.3, 0.0, -float(hover_altitude_m)], dtype=float)
         elif loop == "lateral_y":
-            p = np.array([0.0, 1.0, -float(hover_altitude_m)], dtype=float)
+            p = np.array([0.0, 0.3, -float(hover_altitude_m)], dtype=float)
         elif loop == "altitude":
-            # Offset altitude from hover target by +1 m.
-            p = np.array([0.0, 0.0, -(float(hover_altitude_m) + 1.0)], dtype=float)
+            p = np.array([0.0, 0.0, -(float(hover_altitude_m) + 0.3)], dtype=float)
 
         _set_custom_initial_state(env, p_ned=p, q=q, T=T_hover, seed=seed)
 
@@ -409,7 +429,8 @@ def _zn_sweep_find_Ku_Tu(
             return float(0.0 - pitch_est)
         raise ValueError(f"Unknown loop {loop!r}")
 
-    for kp in kp_values:
+    kp_values_l = list(kp_values)
+    for idx, kp in enumerate(kp_values_l, start=1):
         # Build a controller config with only the loop under test having (Kp, Kd=0, Ki=0).
         gains_patch: dict[str, Any] = {"pid": {"outer_loop": {}, "inner_loop": {}}}
         if loop_name == "altitude":
@@ -481,18 +502,34 @@ def _zn_sweep_find_Ku_Tu(
 
         sig_arr = np.asarray(sig, dtype=float)
         if diverged or sig_arr.size < 50:
+            print(
+                f"[ZN] loop={loop_name} kp={float(kp):.6g} ({idx}/{len(kp_values_l)}) -> diverged/too_short",
+                flush=True,
+            )
             continue
 
         # Use the last 70% of the signal to avoid transients.
         start = int(0.3 * sig_arr.size)
         Tu, amp = _estimate_period_and_amplitude(sig_arr[start:], dt_policy)
         if Tu is None or amp is None:
+            print(
+                f"[ZN] loop={loop_name} kp={float(kp):.6g} ({idx}/{len(kp_values_l)}) -> no_oscillation_detected",
+                flush=True,
+            )
             continue
 
         # Heuristic "sustained oscillation": nontrivial amplitude and not terminated by crash.
         if amp > 1e-3 and not bool(info.get("crashed", False)):
+            print(
+                f"[ZN] loop={loop_name} Ku~{float(kp):.6g} Tu~{float(Tu):.3f}s amp~{float(amp):.6g}",
+                flush=True,
+            )
             return float(kp), float(Tu)
 
+        print(
+            f"[ZN] loop={loop_name} kp={float(kp):.6g} ({idx}/{len(kp_values_l)}) -> not_sustained (amp={float(amp):.6g})",
+            flush=True,
+        )
     return None, None
 
 
@@ -516,8 +553,10 @@ def grid_search_refinement(
     span: float = 0.30,
     steps_per_axis: int = 5,
     mode: str = "coordinate",
+    log: LogConfig | None = None,
 ) -> tuple[Mapping[str, Any], EvalSummary]:
     """Refine gains around ZN using either 'coordinate' or 'full' grid search."""
+    log = log or LogConfig()
     multipliers = np.linspace(1.0 - span, 1.0 + span, int(steps_per_axis), dtype=float)
 
     def scaled(pid_yaml: Mapping[str, Any], *, m: dict[str, float]) -> Mapping[str, Any]:
@@ -544,9 +583,16 @@ def grid_search_refinement(
         y["pid"] = pid
         return y
 
+    score_calls = 0
+
     def score(pid_yaml: Mapping[str, Any]) -> EvalSummary:
+        nonlocal score_calls
+        score_calls += 1
         seeds = range(int(seed0), int(seed0) + int(episodes_per_eval))
-        return evaluate_pid(env_cfg, pid_yaml, seeds=seeds)
+        label = f"[grid#{score_calls}]"
+        if not log.quiet:
+            print(f"{label} scoring episodes={int(episodes_per_eval)}", flush=True)
+        return evaluate_pid(env_cfg, pid_yaml, seeds=seeds, log=log, label=label)
 
     axes = ["altitude", "lateral_x", "lateral_y", "roll", "pitch"]
     best_yaml: Mapping[str, Any] = zn_pid_yaml
@@ -609,7 +655,15 @@ def main(argv: list[str] | None = None) -> int:
         help="Where to write tuned PID YAML.",
     )
     p.add_argument("--no_save", action="store_true", help="Do not overwrite pid.yaml.")
+    p.add_argument("--quiet", action="store_true", help="Suppress per-episode logging.")
+    p.add_argument(
+        "--episode_log_every",
+        type=int,
+        default=1,
+        help="Print every N episodes (1 = print all).",
+    )
     args = p.parse_args(argv)
+    log_cfg = LogConfig(quiet=bool(args.quiet), episode_every=int(args.episode_log_every))
 
     base_pid = _load_pid_yaml()
     env_cfg = None  # use repo defaults, overridden to deterministic for tuning
@@ -621,14 +675,21 @@ def main(argv: list[str] | None = None) -> int:
         seed=int(args.seed),
     )
     # ZN sweeps: tune inner loops first; then lateral; then altitude.
-    kp_sweep = np.geomspace(0.1, 100.0, num=25)
+    # Per-loop Kp ranges are sized so the small perturbations (3 deg / 0.3 m)
+    # keep the controller in its linear region across most of the sweep.
+    kp_inner = np.geomspace(0.1, 20.0, num=35)
+    kp_lateral = np.geomspace(0.01, 5.0, num=35)
+    kp_alt = np.geomspace(0.01, 10.0, num=35)
+
+    if not log_cfg.quiet:
+        print("[ZN] starting sweeps", flush=True)
 
     Ku_roll, Tu_roll = _zn_sweep_find_Ku_Tu(
         env_cfg=env_cfg,
         base_pid_yaml=base_pid,
         loop_name="roll",
-        kp_values=kp_sweep,
-        sim_time_s=8.0,
+        kp_values=kp_inner,
+        sim_time_s=15.0,
         seed=int(args.seed),
         hover_altitude_m=float(args.hover_altitude_m),
     )
@@ -636,8 +697,8 @@ def main(argv: list[str] | None = None) -> int:
         env_cfg=env_cfg,
         base_pid_yaml=base_pid,
         loop_name="pitch",
-        kp_values=kp_sweep,
-        sim_time_s=8.0,
+        kp_values=kp_inner,
+        sim_time_s=15.0,
         seed=int(args.seed) + 1,
         hover_altitude_m=float(args.hover_altitude_m),
     )
@@ -655,8 +716,8 @@ def main(argv: list[str] | None = None) -> int:
         env_cfg=env_cfg,
         base_pid_yaml=base_pid,
         loop_name="lateral_x",
-        kp_values=kp_sweep,
-        sim_time_s=10.0,
+        kp_values=kp_lateral,
+        sim_time_s=20.0,
         seed=int(args.seed) + 2,
         hover_altitude_m=float(args.hover_altitude_m),
         inner_hold=inner_hold,
@@ -665,8 +726,8 @@ def main(argv: list[str] | None = None) -> int:
         env_cfg=env_cfg,
         base_pid_yaml=base_pid,
         loop_name="lateral_y",
-        kp_values=kp_sweep,
-        sim_time_s=10.0,
+        kp_values=kp_lateral,
+        sim_time_s=20.0,
         seed=int(args.seed) + 3,
         hover_altitude_m=float(args.hover_altitude_m),
         inner_hold=inner_hold,
@@ -687,8 +748,8 @@ def main(argv: list[str] | None = None) -> int:
         env_cfg=env_cfg,
         base_pid_yaml=base_pid,
         loop_name="altitude",
-        kp_values=kp_sweep,
-        sim_time_s=10.0,
+        kp_values=kp_alt,
+        sim_time_s=20.0,
         seed=int(args.seed) + 4,
         hover_altitude_m=float(args.hover_altitude_m),
         inner_hold=hold_all,
@@ -749,6 +810,7 @@ def main(argv: list[str] | None = None) -> int:
         span=float(args.grid_span),
         steps_per_axis=int(args.grid_steps),
         mode=str(args.grid_mode),
+        log=log_cfg,
     )
 
     if not bool(args.no_save):

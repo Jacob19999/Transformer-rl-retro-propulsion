@@ -1,0 +1,32 @@
+ppo_mlp:
+  algorithm: PPO
+  framework: stable-baselines3
+  total_timesteps: 10_000_000
+  n_envs: 16
+
+  hyperparameters:
+    learning_rate: 3.0e-4
+    n_steps: 2048              # rollout length per env
+    batch_size: 256            # mini-batch size
+    n_epochs: 10
+    gamma: 0.99
+    gae_lambda: 0.95
+    clip_range: 0.2
+    ent_coef: 0.01
+    vf_coef: 0.5
+    max_grad_norm: 0.5
+
+  policy:
+    net_arch: [256, 256]
+    activation_fn: tanh
+    ortho_init: true
+    log_std_init: -0.5
+
+  schedule:
+    lr_schedule: linear        # linear decay to 0
+
+  checkpointing:
+    save_freq: 500_000         # steps
+    eval_freq: 100_000         # steps
+    eval_episodes: 50
+
