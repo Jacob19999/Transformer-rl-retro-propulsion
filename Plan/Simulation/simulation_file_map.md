@@ -33,6 +33,9 @@
   - `simulation/tests/__init__.py` — tests package marker (Stage 1+ will add concrete test modules here).
   - `simulation/tests/test_quaternion_utils.py` — unit tests for quaternion utilities (DCM, products, normalization, Euler conversions). **Stage 1**.
   - `simulation/tests/test_mass_properties.py` — unit tests for primitive inertia + aggregation + CAD override + optional mass randomization. **Stage 2**.
+  - `simulation/tests/test_thrust_model.py` — unit tests for EDF thrust curve, motor lag, ground effect, density correction, force/torque outputs. **Stage 3**.
+  - `simulation/tests/test_aero_model.py` — unit tests for relative velocity, directional drag, drag force, aero torque, wind rotation. **Stage 4**.
+  - `simulation/tests/test_fin_model.py` — unit tests for thin-airfoil lift, induced drag, per-fin force, exhaust velocity scaling, mechanical clamp, symmetric deflection. **Stage 5**.
 
 - **Isaac (Phase 2, optional)**
   - `simulation/isaac/__init__.py` — Isaac Sim integration package marker.
@@ -46,7 +49,10 @@
 - **Dynamics**
   - `simulation/dynamics/quaternion_utils.py` — quaternion math utilities (DCM, Hamilton product, normalization, Euler conversions). **Stage 1**.
   - `simulation/dynamics/mass_properties.py` — primitive-based mass property aggregation (mass, CoM, inertia via parallel axis theorem) + aerodynamic area aggregation + CAD override + optional mass randomization. **Stage 2**.
-  - TODO: Add file entries here as we implement `vehicle.py`, `thrust_model.py`, `aero_model.py`, `fin_model.py`, `servo_model.py`, `integrator.py` (Stages 3–7).
+  - `simulation/dynamics/thrust_model.py` — EDF thrust curve + 1st-order lag + ground effect + density correction + thrust force/torque + motor reaction torque. **Stage 3**.
+  - `simulation/dynamics/aero_model.py` — combined-shape aerodynamic drag (relative velocity, directional drag, drag force, aero torque). **Stage 4**.
+  - `simulation/dynamics/fin_model.py` — 4× NACA 0012 fins in exhaust (thin-airfoil lift, induced drag, per-fin force, exhaust velocity scaling, mechanical clamp, total force/torque). **Stage 5**.
+  - TODO: Add file entries here as we implement `vehicle.py`, `servo_model.py`, `integrator.py` (Stages 6–7).
 
 - **Environment**
   - TODO: Add file entries here as we implement `atmosphere_model.py`, `wind_model.py`, `environment_model.py` (Stages 8–10).
