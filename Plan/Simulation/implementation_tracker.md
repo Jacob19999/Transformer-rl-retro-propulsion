@@ -275,7 +275,7 @@
 
 | #    | Task                                                                                  | Status  | Files                            | Depends On | Notes             |
 | ---- | ------------------------------------------------------------------------------------- | ------- | -------------------------------- | ---------- | ----------------- |
-| 16.1 | Implement `Controller` ABC — `get_action(obs)`, `reset()`, `update_memory()` | `[ ]` | `training/controllers/base.py` | —         | training.md §2.3 |
+| 16.1 | Implement `Controller` ABC — `get_action(obs)`, `reset()`, `update_memory()` | `[x]` | `training/controllers/base.py` | —         | training.md §2.3 |
 
 ---
 
