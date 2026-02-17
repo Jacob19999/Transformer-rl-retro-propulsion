@@ -119,11 +119,11 @@
 
 | #   | Task                                                                                           | Status  | Files                         | Depends On | Notes                                                                                     |
 | --- | ---------------------------------------------------------------------------------------------- | ------- | ----------------------------- | ---------- | ----------------------------------------------------------------------------------------- |
-| 6.1 | Implement `ServoModel.__init__` — load tau, rate_max, derating from config                  | `[ ]` | `dynamics/servo_model.py`   | —         | vehicle.md §6.3.6.4. Freewing 9 g servo params                                           |
-| 6.2 | Implement `compute_rate(delta_cmd, delta_actual)` — returns `delta_dot` (4,) array        | `[ ]` | `dynamics/servo_model.py`   | 6.1        | Rate-limited first-order lag:`clip((cmd - actual) / tau, -rate_max_eff, +rate_max_eff)` |
-| 6.3 | Implement `ServoModel.step(delta_cmd, dt)` — Euler step for standalone testing              | `[ ]` | `dynamics/servo_model.py`   | 6.2        | `delta_actual += delta_dot * dt`                                                        |
-| 6.4 | Implement `ServoModel.reset(seed)` — zero positions, randomize tau for domain randomization | `[ ]` | `dynamics/servo_model.py`   | 6.1        | tau_range from config, derating uniform [0.2, 0.5]                                        |
-| 6.5 | Write unit tests for servo model                                                               | `[ ]` | `tests/test_servo_model.py` | 6.1–6.4   | Small step → first-order response; large step → rate-limited; reset zeros positions     |
+| 6.1 | Implement `ServoModel.__init__` — load tau, rate_max, derating from config                  | `[x]` | `dynamics/servo_model.py`   | —         | vehicle.md §6.3.6.4. Freewing 9 g servo params                                           |
+| 6.2 | Implement `compute_rate(delta_cmd, delta_actual)` — returns `delta_dot` (4,) array        | `[x]` | `dynamics/servo_model.py`   | 6.1        | Rate-limited first-order lag:`clip((cmd - actual) / tau, -rate_max_eff, +rate_max_eff)` |
+| 6.3 | Implement `ServoModel.step(delta_cmd, dt)` — Euler step for standalone testing              | `[x]` | `dynamics/servo_model.py`   | 6.2        | `delta_actual += delta_dot * dt`                                                        |
+| 6.4 | Implement `ServoModel.reset(seed)` — zero positions, randomize tau for domain randomization | `[x]` | `dynamics/servo_model.py`   | 6.1        | tau_range from config, derating uniform [0.2, 0.5]                                        |
+| 6.5 | Write unit tests for servo model                                                               | `[x]` | `tests/test_servo_model.py` | 6.1–6.4   | Small step → first-order response; large step → rate-limited; reset zeros positions     |
 
 ---
 
@@ -133,9 +133,9 @@
 
 | #   | Task                                                                                            | Status  | Files                        | Depends On | Notes                                                                                       |
 | --- | ----------------------------------------------------------------------------------------------- | ------- | ---------------------------- | ---------- | ------------------------------------------------------------------------------------------- |
-| 7.1 | Implement generic `rk4_step(f, y, u, t, dt)` — takes derivative function, returns `y_next` | `[ ]` | `dynamics/integrator.py`   | —         | vehicle.md §7.1. Standard k1,k2,k3,k4 stages                                               |
-| 7.2 | Add quaternion normalization every N steps (default 10)                                         | `[ ]` | `dynamics/integrator.py`   | —         | vehicle.md §7.3. Step counter modulo check                                                 |
-| 7.3 | Write unit tests for integrator                                                                 | `[ ]` | `tests/test_integrator.py` | 7.1–7.2   | Simple ODE `dy/dt = -y` → exponential decay; error < O(dt^5); quaternion norm stays ~1.0 |
+| 7.1 | Implement generic `rk4_step(f, y, u, t, dt)` — takes derivative function, returns `y_next` | `[x]` | `dynamics/integrator.py`   | —         | vehicle.md §7.1. Standard k1,k2,k3,k4 stages                                               |
+| 7.2 | Add quaternion normalization every N steps (default 10)                                         | `[x]` | `dynamics/integrator.py`   | —         | vehicle.md §7.3. Step counter modulo check                                                 |
+| 7.3 | Write unit tests for integrator                                                                 | `[x]` | `tests/test_integrator.py` | 7.1–7.2   | Simple ODE `dy/dt = -y` → exponential decay; error < O(dt^5); quaternion norm stays ~1.0 |
 
 ---
 
@@ -145,10 +145,10 @@
 
 | #   | Task                                                                                  | Status  | Files                               | Depends On | Notes                                                                                    |
 | --- | ------------------------------------------------------------------------------------- | ------- | ----------------------------------- | ---------- | ---------------------------------------------------------------------------------------- |
-| 8.1 | Implement `AtmosphereModel.__init__` — load ISA constants and randomization params | `[ ]` | `environment/atmosphere_model.py` | —         | env.md §4.6. Precompute exponent `-g / (R * lapse)`                                   |
-| 8.2 | Implement `get_conditions(h)` → `(T, P, rho)` with altitude lapse                | `[ ]` | `environment/atmosphere_model.py` | 8.1        | env.md §4.3 equations                                                                   |
-| 8.3 | Implement `reset()` — randomize T_base, P_base per episode                         | `[ ]` | `environment/atmosphere_model.py` | 8.1        | Uniform ±10 K, ±2000 Pa                                                                |
-| 8.4 | Write unit tests for atmosphere model                                                 | `[ ]` | `tests/test_atmosphere_model.py`  | 8.1–8.3   | ISA sea-level → ρ=1.225; randomization bounds; ideal gas consistency `P/(R*T) = rho` |
+| 8.1 | Implement `AtmosphereModel.__init__` — load ISA constants and randomization params | `[x]` | `environment/atmosphere_model.py` | —         | env.md §4.6. Precompute exponent `-g / (R * lapse)`                                   |
+| 8.2 | Implement `get_conditions(h)` → `(T, P, rho)` with altitude lapse                | `[x]` | `environment/atmosphere_model.py` | 8.1        | env.md §4.3 equations                                                                   |
+| 8.3 | Implement `reset()` — randomize T_base, P_base per episode                         | `[x]` | `environment/atmosphere_model.py` | 8.1        | Uniform ±10 K, ±2000 Pa                                                                |
+| 8.4 | Write unit tests for atmosphere model                                                 | `[x]` | `tests/test_atmosphere_model.py`  | 8.1–8.3   | ISA sea-level → ρ=1.225; randomization bounds; ideal gas consistency `P/(R*T) = rho` |
 
 ---
 

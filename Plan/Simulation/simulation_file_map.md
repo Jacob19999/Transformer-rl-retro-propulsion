@@ -15,6 +15,7 @@
 
 - **Environment**
   - `simulation/environment/__init__.py` — package marker for environment modules (atmosphere, wind, environment assembly).
+  - `simulation/environment/atmosphere_model.py` — ISA baseline + per-episode randomization; provides `(T, P, rho)` for force models. **Stage 8**.
 
 - **Training**
   - `simulation/training/__init__.py` — package marker for Gym env + training utilities.
@@ -36,6 +37,9 @@
   - `simulation/tests/test_thrust_model.py` — unit tests for EDF thrust curve, motor lag, ground effect, density correction, force/torque outputs. **Stage 3**.
   - `simulation/tests/test_aero_model.py` — unit tests for relative velocity, directional drag, drag force, aero torque, wind rotation. **Stage 4**.
   - `simulation/tests/test_fin_model.py` — unit tests for thin-airfoil lift, induced drag, per-fin force, exhaust velocity scaling, mechanical clamp, symmetric deflection. **Stage 5**.
+  - `simulation/tests/test_servo_model.py` — unit tests for servo rate-limited first-order lag, rate limiting, reset randomization. **Stage 6**.
+  - `simulation/tests/test_integrator.py` — unit tests for RK4 integrator accuracy and quaternion re-normalization behavior. **Stage 7**.
+  - `simulation/tests/test_atmosphere_model.py` — unit tests for ISA sea-level density, randomization bounds, and ideal gas consistency. **Stage 8**.
 
 - **Isaac (Phase 2, optional)**
   - `simulation/isaac/__init__.py` — Isaac Sim integration package marker.
@@ -52,10 +56,13 @@
   - `simulation/dynamics/thrust_model.py` — EDF thrust curve + 1st-order lag + ground effect + density correction + thrust force/torque + motor reaction torque. **Stage 3**.
   - `simulation/dynamics/aero_model.py` — combined-shape aerodynamic drag (relative velocity, directional drag, drag force, aero torque). **Stage 4**.
   - `simulation/dynamics/fin_model.py` — 4× NACA 0012 fins in exhaust (thin-airfoil lift, induced drag, per-fin force, exhaust velocity scaling, mechanical clamp, total force/torque). **Stage 5**.
-  - TODO: Add file entries here as we implement `vehicle.py`, `servo_model.py`, `integrator.py` (Stages 6–7).
+  - `simulation/dynamics/servo_model.py` — rate-limited first-order lag actuator model for fin servos, with per-episode tau + derating randomization. **Stage 6**.
+  - `simulation/dynamics/integrator.py` — generic fixed-step RK4 integrator (`rk4_step`) plus optional periodic quaternion re-normalization (`RK4Integrator`). **Stage 7**.
+  - TODO: Add file entries here as we implement `vehicle.py` (Stage 11).
 
 - **Environment**
-  - TODO: Add file entries here as we implement `atmosphere_model.py`, `wind_model.py`, `environment_model.py` (Stages 8–10).
+  - `simulation/environment/atmosphere_model.py` — ISA lapse + barometric pressure + ideal gas density; `reset()` randomizes base \(T_{base}, P_{base}\). **Stage 8**.
+  - TODO: Add file entries here as we implement `wind_model.py`, `environment_model.py` (Stages 9–10).
 
 - **Training / Gym**
   - TODO: Add file entries here as we implement `edf_landing_env.py`, `observation.py`, `reward.py`, `curriculum.py`, controllers, and training/eval scripts (Stages 12–23).
