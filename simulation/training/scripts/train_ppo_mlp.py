@@ -492,7 +492,9 @@ def main(argv: list[str] | None = None) -> int:
     model.learn(
         total_timesteps=int(ppo_cfg.total_timesteps),
         callback=callbacks,
-        progress_bar=True,
+        # Disable SB3's tqdm/rich progress bar to avoid extra dependencies.
+        # Re-enable by setting progress_bar=True once tqdm and rich are installed.
+        progress_bar=False,
         log_interval=1,  # print every PPO iteration via SB3 logger + our callback
     )
 

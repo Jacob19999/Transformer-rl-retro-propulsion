@@ -1,0 +1,35 @@
+ppo_mlp:
+  algorithm: PPO
+  framework: stable-baselines3
+  # Reduced total timesteps for a quick Stage 19 smoke test.
+  total_timesteps: 200_000
+  # Fewer environments to keep resource usage reasonable during testing.
+  n_envs: 4
+
+  hyperparameters:
+    learning_rate: 3.0e-4
+    n_steps: 1024             # rollout length per env (shorter for faster iterations)
+    batch_size: 256           # mini-batch size
+    n_epochs: 10
+    gamma: 0.99
+    gae_lambda: 0.95
+    clip_range: 0.2
+    ent_coef: 0.01
+    vf_coef: 0.5
+    max_grad_norm: 0.5
+
+  policy:
+    net_arch: [256, 256]
+    activation_fn: tanh
+    ortho_init: true
+    log_std_init: -0.5
+
+  schedule:
+    lr_schedule: linear        # linear decay to 0
+
+  checkpointing:
+    # Much more frequent for the smoke test so we can quickly confirm saving works.
+    save_freq: 50_000          # steps
+    eval_freq: 50_000          # steps
+    eval_episodes: 10
+
