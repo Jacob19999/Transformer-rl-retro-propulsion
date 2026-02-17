@@ -23,13 +23,13 @@ pid:
 
   # Maximum change in normalised thrust action per step.  Keeps motor
   # reaction torque within the yaw control authority of the fins.
-  thrust_rate_limit: 0.05
+  thrust_rate_limit: 0.10
 
   outer_loop:
     altitude:
       Kp: 0.50
-      Ki: 0.05
-      Kd: 0.55
+      Ki: 0.175
+      Kd: 0.40
       max_error: 2.0            # clamp alt error to prevent thrust saturation
       integral_limit: 1.0       # anti-windup clamp (integral state limit)
       target_h_agl: 0.0         # default: land at ground level
@@ -51,8 +51,7 @@ pid:
     gyro_ff: 0.020             # feedforward gain for gyroscopic cross-coupling
                                # Theoretical value: I_fan*omega_hover/K_tau ≈ 0.019
     yaw_Kd: 0.50               # yaw rate damping
-    motor_yaw_ff: 0.06         # feedforward: yaw deflection per unit thrust change
-                               # compensates motor reaction torque during thrust transients
+    yaw_lp_hz: 0.0             # 0 = no filter on omega_z
     max_yaw_frac: 0.40         # fraction of delta_max reserved for yaw damping
 
   gain_schedule:

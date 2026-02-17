@@ -71,6 +71,19 @@ class PIDController(Controller):
         self.prev_thrust_action: float = 0.0
         self._thrust_delta: float = 0.0
 
+        # Low-pass filter on yaw rate to prevent servo-lag instability.
+        # The yaw oscillation (~7 Hz) is above the servo bandwidth (~4 Hz);
+        # filtering omega_z reduces the effective gain at the oscillation
+        # frequency so the delayed servo response doesn't amplify it.
+        yaw_lp_hz = float(self.inner.get("yaw_lp_hz", 2.0))
+        dt_ctrl = float(cfg.get("dt", 0.025))
+        if yaw_lp_hz > 0:
+            tau_lp = 1.0 / (2.0 * np.pi * yaw_lp_hz)
+            self._yaw_lp_alpha = dt_ctrl / (dt_ctrl + tau_lp)
+        else:
+            self._yaw_lp_alpha = 1.0  # no filter
+        self._omega_z_filt: float = 0.0
+
         # Gain scheduling (optional, Stage 18 may enable this).
         sched = dict(cfg.get("gain_schedule", {}) or {})
         self._schedule_enabled: bool = bool(sched.get("enabled", False))
@@ -101,6 +114,7 @@ class PIDController(Controller):
         self.prev_alt_error = 0.0
         self.prev_thrust_action = 0.0
         self._thrust_delta = 0.0
+        self._omega_z_filt = 0.0
 
     def _gain_scale(self, h_agl: float) -> float:
         if not self._schedule_enabled or not self._phases:
@@ -228,20 +242,21 @@ class PIDController(Controller):
         # The yaw deflection is clamped to a fraction of delta_max so that
         # yaw damping never consumes more than ~40 % of the available fin
         # authority, leaving the rest for pitch/roll attitude control.
+        #
+        # A low-pass filter on omega_z prevents servo-lag-driven limit cycles:
+        # the yaw oscillation (~7 Hz) is above the servo bandwidth (~4 Hz),
+        # so unfiltered damping would arrive late and amplify the oscillation.
+        omega_z_raw = float(omega[2])
+        self._omega_z_filt = (
+            self._yaw_lp_alpha * omega_z_raw
+            + (1.0 - self._yaw_lp_alpha) * self._omega_z_filt
+        )
+
         Kyaw = float(self.inner.get("yaw_Kd", 0.0))
         max_yaw_frac = float(self.inner.get("max_yaw_frac", 0.30))
         yaw_limit = max_yaw_frac * self.delta_max
-        yaw_damp = -Kyaw * float(omega[2])
-
-        # Motor-torque feedforward: when thrust changes, the fan accelerates
-        # and the reaction torque spins the vehicle in yaw.  Pre-compensate
-        # by commanding yaw fins proportional to the thrust change.
-        #   tau_motor_z = -I_fan * d(omega_fan)/dt   (negative when speeding up)
-        # A positive thrust_delta → negative yaw torque → we need positive yaw_ff
-        K_motor_ff = float(self.inner.get("motor_yaw_ff", 0.0))
-        yaw_ff = K_motor_ff * self._thrust_delta
-
-        yaw_total = float(np.clip(yaw_damp + yaw_ff, -yaw_limit, yaw_limit))
+        yaw_total = float(np.clip(-Kyaw * self._omega_z_filt,
+                                  -yaw_limit, yaw_limit))
 
         # Map to fin actions: common-mode deflection for pitch/roll torque,
         # differential deflection for yaw torque.

@@ -114,6 +114,7 @@ class EDFLandingEnv(gym.Env):
         self.tilt_abort = float(term_cfg.get("tilt_abort", np.deg2rad(60.0)))
         self.oob_radius = float(term_cfg.get("oob_radius", 20.0))
         self.oob_alt_margin = float(term_cfg.get("oob_alt_margin", 5.0))
+        self.landing_grace_steps = int(term_cfg.get("landing_grace_steps", 40))
 
         # Initial-condition sampling configuration (training.md §6.1)
         ic_cfg = cfg.get("initial_conditions", {})
@@ -132,6 +133,7 @@ class EDFLandingEnv(gym.Env):
         self.h0 = 0.0
         self._touched_ground = False
         self._hard_impact = False
+        self._landing_grace_count = 0
         self._impact_vz_down: float | None = None
 
         # Observation pipeline (Stage 13)
@@ -267,6 +269,7 @@ class EDFLandingEnv(gym.Env):
         self._touched_ground = False
         self._hard_impact = False
         self._impact_vz_down = None
+        self._landing_grace_count = 0
         self.obs_pipeline.reset(self.np_random)
         self.reward_fn.reset()
 
@@ -339,21 +342,32 @@ class EDFLandingEnv(gym.Env):
         if self._hard_impact:
             return TerminationResult(True, False, True, False, "hard_ground_contact")
 
-        # Ground contact / touchdown checks
-        landed = (
-            h_agl < self.h_land
+        # Ground contact / touchdown checks with settling grace period.
+        # Real vehicles settle over a brief period after first ground contact.
+        # The grace window lets the vehicle stabilise for a configurable number
+        # of steps before declaring a crash.
+        in_landing_zone = h_agl < self.h_land
+        conditions_met = (
+            in_landing_zone
             and float(np.linalg.norm(v_inertial)) < self.v_land
             and tilt < self.tilt_land
             and float(np.linalg.norm(omega)) < self.omega_land
         )
-        crashed = (h_agl < self.h_land and not landed)
+
+        if in_landing_zone:
+            self._landing_grace_count += 1
+        else:
+            self._landing_grace_count = 0
+
+        grace_expired = self._landing_grace_count > self.landing_grace_steps
+        crashed = in_landing_zone and not conditions_met and grace_expired
         extreme_tilt = tilt > self.tilt_abort
 
         # Out of bounds (relative to target)
         e_xy = p[:2] - self.p_target[:2]
         oob = float(np.linalg.norm(e_xy)) > self.oob_radius or h_agl > (self.h0 + self.oob_alt_margin)
 
-        if landed:
+        if conditions_met:
             return TerminationResult(True, True, False, False, "landed")
         if crashed:
             return TerminationResult(True, False, True, False, "crashed")
