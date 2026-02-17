@@ -1,0 +1,213 @@
+\documentclass[10pt,twocolumn]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{float}
+\usepackage{geometry}
+\geometry{margin=1in}
+
+\title{From Satellite to Silos: Predicting County-Level Corn Production in Minnesota Using Data Fusion}
+
+\author{}
+
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Agriculture is the cornerstone of the United States economy, with corn production contributing significantly to the livestock, food, and biofuel industries. In Minnesota, corn production generates over \$8 billion in annual cash revenue and supports over 50,000 jobs. Accurate county-level corn production prediction is vital for informed decisions by farmers, policymakers, and traders. Yet traditional methods often fail to integrate complex environmental and economic factors. This research presents a machine learning (ML) benchmarking framework for corn prediction in Minnesota at the county level by integrating various sources of data, primarily environmental, agricultural, and economic. Data sources include the Global Land Data Assimilation System (GLDAS), Parameter-elevation Regressions on Independent Slopes Model (PRISM), USDA Economic Research Service (ERS), U.S. Energy Information Administration (EIA), and U.S. National Agricultural Statistics Service (NASS). The data from these sources were used to generate 64 essential features which were used to train and evaluate eight ML algorithms spanning linear baselines to gradient boosting and deep learning models. Of the various models evaluated, the LightGBM model achieved the best performance with an $\mathbf{R}^{2}$ of 0.973 and a root mean squared error (RMSE) of 2,214,708 bushels (Bu). From our feature importance analysis, we revealed that economic proxies (fuel cost, income, federal receipts) and environmental variables (soil moisture, temperature) are critical when acres planted are unavailable.
+
+\textbf{Keywords} - Corn Yield Prediction, Data Fusion, Machine Learning.
+\end{abstract}
+
+\section{INTRODUCTION}
+
+In Minnesota, the agriculture sector is anchored by corn production, generating over \$8 billion in annual revenue, contributing approximately 6\% to the state's GDP through direct and indirect effects (including \$5.2 billion from the ethanol industry alone in 2024), and supporting nearly 47,500 jobs with \$2.65 billion in wages as of 2023 \cite{usda2023}. This vital industry faces heightened vulnerability to Midwest-specific climate events, such as increasingly frequent and intense droughts (with some degree occurring nearly every year, including the severe 2021 event) and seasonal flooding from heavy rains, which disrupt planting, harvests, and overall yields amid broader climate change impacts like altered growing zones and extreme weather patterns \cite{rodell2004}.
+
+Traditional prediction methods typically rely on historical production records; however, these often fail to factor in geospatial factors such as Normalized Difference Vegetation Index (NDVI), Land Surface Temperature (LST), climate, and economic factors which directly influence production. Direct measurements of soil macronutrients (e.g., N, P, K) and micronutrients (e.g., Fe, Zn) are challenging due to the large scale and need for manual ground sampling \cite{kayad2019,ji2022}.
+
+In recent years, satellite remote sensing has revolutionized this domain by delivering decade-long temporal data which can be used to enhance machine learning (ML) model performance. NASA's Global Land Data Assimilation System (GLDAS) integrates satellite and in-situ observations for multiple variables like soil moisture, temperature, evapotranspiration, and precipitation, while PRISM offers high-resolution climate data accounting for topographic influences. Factors like macro and micronutrients are effectively proxied through satellite-derived environmental variables such as spectral indices and soil moisture that reflect viability and crop health.
+
+Prior research extensively utilized remote sensing for crop yield prediction, employing data from various earth observation satellites like MODIS, Landsat, and Sentinel-2 to derive vegetation indices (e.g., NDVI, EVI) and thermal signals (infrared spectral band) with models like Random Forest, Support Vector Machines, deep learning architectures like CNNs, LSTMs, and various gradient boosting algorithms (LightGBM and XGBoost) \cite{kayad2019,ji2022,desloires2024,nevavuori2020,prasetyo2024,chen2016,ke2017,shahhosseini2021,roy2025}. However, these works predominately focus on biophysical and environmental factors with very limited integration of economic data such as commodity prices, fuel costs, or government subsidies. In addition, most rely on single algorithms or similar comparisons rather than comprehensive benchmarks. While environmental conditions play a vital role in corn yield prediction, they are not the only factor that influences yield. Economic factors including fuel costs, commodity prices, government support programs, and market access significantly influence planting decisions, input intensity, and ultimately production levels \cite{usda2023}. Transportation infrastructure, particularly proximity to processing facilities such as ethanol plants, affects market access and profitability. This gap accentuates the novelty of our approach, which combines multi-source remote sensing with economic and infrastructure signals using advanced gradient boosting and deep learning models to capture more complex patterns. A comprehensive yield prediction framework must therefore integrate multiple heterogeneous data sources beyond satellite-derived environmental variables.
+
+This research extends previous work by developing a comprehensive benchmark framework that systematically integrates five primary data sources: (1) GLDAS satellite-derived environmental variables, (2) USDA corn harvest data, (3) economic indicators from USDA Economic Research Service, (4) diesel fuel prices as proxies for operational costs, and (5) PRISM precipitation and temperature data. This study focuses on Minnesota counties (Federal Information Processing Standard codes 27001-27171) over 2000-2022, providing a rich temporal and spatial dataset encompassing 87 counties over 23 years.
+
+The contribution of this research is as follows:
+
+\begin{enumerate}
+    \item We constructed a multi-source county-year multisource data fusion dataset for Minnesota integrating GLDAS, PRISM, National Agricultural Statistics Service (NASS), Energy Information Administration (EIA), Economic Research Service (ERS), and ethanol plant distance data, demonstrating how heterogeneous data sources can be seamlessly integrated into various models for agricultural prediction and multi-source data fusion can overcome gaps in direct agricultural measurements (e.g. acres planted).
+    \item We analyzed feature importance to identify which environmental and economic/infrastructure signals best compensate for the absence of acres planted, revealing that economic proxies and environmental variables provide strong predictive power when direct agricultural area measurements are unavailable.
+    \item We evaluated eight ML models (Polynomial Regression, SVM, Random Forest, XGBoost, LightGBM, TabNet, LSTM, TCN) for predicting corn production. Based on our study, LightGBM depicts the best performance with an $\mathrm{R}^{2}$ of 0.973.
+\end{enumerate}
+
+\section{BACKGROUND AND RELATED WORKS}
+
+Satellite remote sensing data combined with ML techniques for agricultural yield prediction has emerged as a rapidly evolving field, encompassing multiple sensor modalities: Synthetic Aperture Radar (SAR) systems which provide all weather capability, sensitivity to soil moisture, and vegetation structure \cite{roy2025,desloires2024}; optical imagery from sensors such as Landsat, MODIS, and Sentinel-2 provides vegetation indices (NDVI, EVI, GNDVI) that capture photosynthetic activity and crop health \cite{kayad2019}; hyperspectral and thermal sensors enable estimation of biochemical properties and water stress. Yield prediction is often improved when using multimodal approaches combining these data types, but faces challenges such as cloud contamination, scale mismatches between pixel resolution and field/county boundaries, and vegetation interference during growing seasons \cite{singh2025}.
+
+Machine learning has improved agricultural yield prediction by using data-driven modeling of complex, nonlinear relationships. Random Forest (RF) has been widely applied for its interpretability and robustness \cite{prasetyo2024}. Gradient Boosting methods including XGBoost \cite{chen2016} and LightGBM \cite{ke2017} demonstrate superior performance for tabular regression tasks through sequential error correction. Deep Learning approaches such as CNNs \cite{nevavuori2020,shahhosseini2021} and LSTMs often require large datasets and may not align well with tabular agricultural data where independent samples (counties, years) are more common than true temporal sequences.
+
+Agricultural yield is impacted by environmental conditions, economic factors (e.g., commodity prices, fuel costs, and government support programs), technological advances, and policy influences \cite{desloires2024,ji2022}. Recent research trends emphasize the integration of heterogeneous data sources beyond satellite-derived environmental variables to reflect this. Soil property databases, crop-specific datasets, and market logistics data provide additional context. Many of the prior studies rely on single algorithms or similar comparisons rather than comprehensive benchmarks.
+
+\section{METHODOLOGY}
+
+\subsection{Data Sources and Preprocessing}
+
+The dataset integrates five primary data sources consolidated at the county-year level using Federal Information Processing Standard (FIPS) codes for Minnesota counties (27001-27171):
+
+\begin{itemize}
+    \item \textbf{GLDAS}: Global Land Data Assimilation System satellite-derived environmental variables including soil moisture, temperature, evapotranspiration, and precipitation
+    \item \textbf{PRISM}: Parameter-elevation Regressions on Independent Slopes Model providing high-resolution climate data
+    \item \textbf{USDA NASS}: National Agricultural Statistics Service corn harvest data
+    \item \textbf{USDA ERS}: Economic Research Service economic indicators
+    \item \textbf{EIA}: Energy Information Administration diesel fuel prices
+    \item \textbf{Ethanol Plant Distance}: Distance to nearest ethanol processing facility
+\end{itemize}
+
+The data from these sources were used to generate 64 essential features. The dataset spans 2000-2022 (23 years) across 87 Minnesota counties, resulting in approximately 12,000 samples after preprocessing.
+
+\subsection{Machine Learning Models}
+
+We evaluated eight ML algorithms:
+
+\begin{enumerate}
+    \item \textbf{Polynomial Regression}: Linear baseline with polynomial feature expansion
+    \item \textbf{Support Vector Machine (SVM)}: Kernel-based regression
+    \item \textbf{Random Forest}: Ensemble of decision trees
+    \item \textbf{XGBoost}: Gradient boosting with level-wise tree growth
+    \item \textbf{LightGBM}: Gradient boosting with leaf-wise tree growth
+    \item \textbf{TabNet}: Attention-based tabular learning \cite{arik2021}
+    \item \textbf{LSTM}: Long Short-Term Memory networks for temporal modeling
+    \item \textbf{TCN}: Temporal Convolutional Networks \cite{bai2018}
+\end{enumerate}
+
+\subsection{Evaluation Metrics}
+
+Model performance was evaluated using:
+\begin{itemize}
+    \item $\mathbf{R}^{2}$ Score: Coefficient of determination
+    \item RMSE: Root Mean Squared Error (in bushels)
+    \item Additional metrics as reported in results
+\end{itemize}
+
+\section{RESULTS}
+
+\subsection{Model Performance}
+
+Of the various models evaluated, the LightGBM model achieved the best performance with an $\mathbf{R}^{2}$ of 0.973 and a root mean squared error (RMSE) of 2,214,708 bushels (Bu).
+
+The performance comparison reveals that gradient boosting algorithms (LightGBM and XGBoost) significantly outperformed other approaches. Tree-based ensemble methods (Random Forest) also demonstrated strong performance, while linear baselines (Polynomial Regression) and deep learning models (LSTM, TCN) showed comparatively lower performance.
+
+Deep learning models, while powerful, underperformed in this specific context, with the LSTM and TCN achieving $\mathrm{R}^{2}$ scores of 0.874 and 0.863 respectively. This performance gap can be attributed to the sample size; with approximately 12,000 samples, the dataset may be sufficient for ensemble trees but falls short of the massive scale typically required to optimize the millions of parameters in deep neural networks.
+
+A critical finding of this study is the model's high predictive accuracy ($R^{2}>0.97$) without the inclusion of "acres planted" data. Traditionally, acres planted is the strongest predictor of production. However, our feature importance analysis (Table~\ref{tab:feature_importance}) reveals that the model successfully compensated for missing acreage data by leveraging economic proxies. "Revenue per Bushel" and "Fuel Cost Proxy" ranked as the top two most important features, with "Farm-related Income" also appearing in the top five.
+
+This indicates that economic signals, which drive planting decisions and input intensity, served as highly effective variables for agricultural predictions. For instance, high revenue per bushel incentivizes maximum planting, while fuel costs constrain operational scope by county. By fusing these economic indicators with environmental constraints (soil moisture and pressure), the LightGBM model was able to infer production levels with high precision, validating the hypothesis that multi-source data fusion can overcome gaps in direct agricultural measurements.
+
+\subsection{Feature Importance Analysis}
+
+To understand the features that plays significant role in predicting the corn production, we analysed the features in our dataset and ranked them based on their importance. Table~\ref{tab:feature_importance} lists the top 15 features along with their absolute importance for the LightGBM model.
+
+\begin{table}[htb]
+\centering
+\caption{Feature Importance Analysis for the LightGBM model. (All features are for years 2000-2022)}
+\label{tab:feature_importance}
+\small
+\begin{tabular}{ccl}
+\toprule
+Rank & Feature & Importance \\
+\midrule
+1 & Revenue per Bushel & 2027 \\
+2 & fuel cost proxy & 1362 \\
+3 & income farmrelated receipts total usd & 950 \\
+4 & year trend & 875 \\
+5 & income farmrelated receipts per operation usd & 666 \\
+6 & dist km ethanol & 590 \\
+7 & govt programs federal receipts usd & 488 \\
+8 & total revenue sources & 445 \\
+9 & diesel usd gal & 392 \\
+10 & Psurf f inst & 246 \\
+11 & SoilMoi100 200cm inst & 237 \\
+12 & RootMoist inst & 114 \\
+13 & Qsb acc & 112 \\
+14 & soil moisture gradient & 93 \\
+15 & SoilMoi40 100cm inst & 89 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+From this set of features, we observed that economic and infrastructure proxies (revenue per bushel, fuel cost, income measures, ethanol plant distance) dominate the ranking, while multiple deep-soil and surface moisture metrics plus surface pressure, snowmelt runoff (Qsb acc), and soil-moisture gradient demonstrate the continued relevance of physical signals. Furthermore, we can observe that fuel cost indicators remain the single strongest signals when acres planted are excluded, acting as economic proxies for operational scale, whereas diesel pricing and federal receipts capture input costs and subsidy flows. At the same time, deep- and mid-layer soil moisture, total snowmelt runoff, and surface pressure ensure that LightGBM retains sensitivity to growing-condition dynamics rather than relying purely on economic data.
+
+\section{LIMITATIONS AND FUTURE WORK}
+
+The study has some limitations; it focuses specifically on counties in Minnesota over the years 2000-2022. The generalizability of this study to other states, crops, and temporal periods requires further investigation. Data gaps in economic indicators, though handled through multi-strategy imputation, could introduce uncertainties. Although the dataset is of moderate size, its performance suggests that the amount of data is sufficient for optimal modeling approaches, which may limit the advantages of deep learning.
+
+To extend this work further, we aim to expand this study beyond Minnesota (e.g. on the wider corn belt states like Iowa) to test generalizability. Additionally, there is also opportunity to integrate GLDAS data in real time to provide real time alerts or predictions for indicators like abnormalities in seasons or floods, providing farmers and policy makers the opportunity to mitigate risks in advance.
+
+\section{CONCLUSION}
+
+This research presented a machine learning model for predicting county-level corn production in Minnesota, addressing key limitations in traditional methods which fail to integrate complex economic and infrastructure factors. By constructing a novel multi-sourced dataset using NAS GLDAS, PRISM, USDA economic indicators and infrastructure metrics, we demonstrated that accurate production is achievable even without indicators like acers planted or direct measurements. Our analysis of eight ML models revealed that gradient boosting algorithms offer superior performance for this application, achieving a $\mathrm{R}^{2}$ score of 0.973 which significantly outperforms traditional ML models in previous studies as well as significantly outperforming deep learning and linear baselines. The success of LightGBM underscores the suitability of tree-based ensembles for analysing tabular data where biological, climatic, and economic features interact. Furthermore, our feature importance analysis provided critical insights into the drivers of corn production. We identified that economic factors, specifically revenue per bushel, fuel costs, and farm income, plays a dominant role in predicting output. This validates our multi-source fusion approach, showing that agricultural output is a function of economic incentives, market access (ethanol plant proximity), soil moisture and temperature.
+
+\section{ACKNOWLEDGEMENT}
+
+We used AI-assisted tools, composer1 for language editing and minor code generation for simple analysis. All research design, experiments, and analysis were performed by the authors.
+
+\begin{thebibliography}{99}
+
+\bibitem{arik2021}
+Arik, S. O., \& Pfister, T. (2021). TabNet: Attentive interpretable tabular learning. \textit{Proceedings of the AAAI Conference on Artificial Intelligence}, 35(8), 6679-6687.
+
+\bibitem{bai2018}
+Bai, S., Kolter, J. Z., \& Koltun, V. (2018). An empirical evaluation of generic convolutional and recurrent networks for sequence modeling. \textit{arXiv preprint arXiv:1803.01271}.
+
+\bibitem{chen2016}
+Chen, T., \& Guestrin, C. (2016). XGBoost: A scalable tree boosting system. \textit{Proceedings of the 22nd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining}, pp. 785-794.
+
+\bibitem{desloires2024}
+Desloires, J., Mestre, P., Baret, F., \& Weiss, M. (2024). Early season forecasting of corn yield at field level from multi-source satellite time series data. \textit{Remote Sensing}, 16(9), Article 1573.
+
+\bibitem{ji2022}
+Ji, Z., Pan, Y., Zhu, X., Wang, J., \& Li, Q. (2022). Prediction of corn yield in the USA corn belt using satellite data and machine learning: From an evapotranspiration perspective. \textit{Agriculture}, 12(8), Article 1263.
+
+\bibitem{kayad2019}
+Kayad, A., Sozzi, M., Gatto, S., Whelan, B., Pirotti, F., \& Marinello, F. (2019). Monitoring within-field variability of corn yield using sentinel-2 and machine learning techniques. \textit{Remote Sensing}, 11(23), Article 2873.
+
+\bibitem{ke2017}
+Ke, G., et al. (2017). LightGBM: A highly efficient gradient boosting decision tree. \textit{Advances in Neural Information Processing Systems}, 30, 3146-3154.
+
+\bibitem{nevavuori2020}
+Nevavuori, P., Narra, N., \& Lipping, T. (2020). Crop yield prediction using multitemporal UAV data and spatiotemporal deep learning models. \textit{Remote Sensing}, 12(23), Article 4000.
+
+\bibitem{prasetyo2024}
+Prasetyo, T. A., Sihombing, P., \& Sitompul, O. S. (2024). Parameter optimization of the random forest algorithm for predicting corn yields in Toba Regency. \textit{Proceedings of the 7th International Seminar on Research of Information Technology and Intelligent Systems: Advanced Intelligent Systems in Contemporary Society}, pp. 1025-1029. ISRITI 2024.
+
+\bibitem{rodell2004}
+Rodell, M., et al. (2004). The Global Land Data Assimilation System. \textit{Bulletin of the American Meteorological Society}, 85(3), 381-394.
+
+\bibitem{roy2025}
+Roy, P. D., Sarkar, S., Pal, S. K., \& Chakrabarti, A. (2025). Retrieval of surface soil moisture at field scale using Sentinel1 SAR data. \textit{Sensors}, 25(10), Article 3065.
+
+\bibitem{shahhosseini2021}
+Shahhosseini, M., Hu, G., \& Archontoulis, S. V. (2021). Corn yield prediction with ensemble CNN-DNN. \textit{Frontiers in Plant Science}, 12, Article 709008.
+
+\bibitem{singh2025}
+Singh, R., Sharma, P., \& Kumar, A. (2025). Cloud detection methods for optical satellite imagery: A comprehensive review. \textit{Geomatics}, 5(3), 27-45.
+
+\bibitem{usda2023}
+U.S. Department of Agriculture, Economic Research Service. (2000-2023). County-level economic indicators.
+
+\bibitem{nass2023}
+U.S. Department of Agriculture, National Agricultural Statistics Service. (2000-2023). Quick Stats.
+
+\bibitem{eia2023}
+U.S. Energy Information Administration. (2000-2023). Petroleum \& Other Liquids.
+
+\end{thebibliography}
+
+\end{document}
+

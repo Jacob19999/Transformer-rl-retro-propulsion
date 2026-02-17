@@ -1,0 +1,301 @@
+\documentclass[10pt,twocolumn]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{float}
+\usepackage{geometry}
+\usepackage{url}
+\geometry{margin=1in}
+
+% Custom commands for keeping references whole (best practice)
+\newcommand{\refsec}[1]{Section~\ref{#1}}
+\newcommand{\reffig}[1]{Figure~\ref{#1}}
+\newcommand{\reftab}[1]{Table~\ref{#1}}
+\newcommand{\refeq}[1]{Equation~\ref{#1}}
+
+\title{Simulation-to-Hardware Validation of Transformer-PPO for Disturbance-Resistant Retro-Propulsive Landings}
+
+\author{}
+
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Reusable launch vehicles demand robust autonomous guidance capable of handling nonlinear dynamics, external disturbances, and varying initial conditions during retro-propulsive landing.
+Traditional controllers such as Proportional-Integral-Derivative (PID) and Sequential Convex Programming (SCP) face fundamental limitations in highly uncertain environments, including sensitivity to parameter variations and infeasibility under large trajectory deviations.
+Reinforcement learning (RL) methods, particularly Proximal Policy Optimization (PPO), have demonstrated promise for adaptive control but are constrained by limited temporal context.
+This paper surveys the foundations and recent advances relevant to a Gated Transformer-XL (GTrXL) enhanced PPO architecture for thrust-vectoring-control (TVC) in disturbance-resistant landings.
+We review traditional optimization-based guidance, the evolution of PPO and transformer architectures in RL, and recent applications to powered descent guidance.
+We identify a critical gap: while GTrXL-PPO has achieved high landing success rates in simulation, no prior work has validated such controllers on physical hardware.
+This work motivates a simulation-to-hardware transfer framework using an electric ducted fan (EDF) drone testbed to bridge the gap between simulated performance and real-world deployment, advancing the technology readiness from analytical proof-of-concept toward validated hardware demonstration.
+
+\textbf{Keywords} - Reinforcement Learning, Proximal Policy Optimization, Gated Transformer-XL, Retro-Propulsive Landing, Thrust-Vectoring Control, Simulation-to-Hardware Transfer.
+\end{abstract}
+
+\section{Introduction}
+
+The commercial space industry is undergoing a paradigm shift driven by the development of reusable launch vehicles.
+Mega-constellations such as SpaceX's Starlink and Amazon's Low Earth Orbit (LEO) network, NASA's Commercial Off-The-Shelf (COTS) Artemis lunar program, and emerging proposals for in-space infrastructure have created unprecedented demand for frequent, cost-effective access to space~\cite{bushnell2018}.
+The key enabler for this new era is rapid booster reusability through retro-propulsive landing, a technique pioneered operationally by SpaceX's Falcon~9 and now being pursued by Blue Origin's New Glenn, Rocket Lab, and several Chinese launch providers.
+
+A rocket's first-stage booster accounts for approximately 60\% of the total manufacturing cost, while propellant comprises less than 1\% of the launch expenditure~\cite{bushnell2018}.
+The ability to recover and reuse boosters via precision retro-propulsive landing enables cost reductions by a factor of 14 or greater, analogous to the economics of reusing commercial aircraft rather than discarding them after a single flight~\cite{bushnell2018}.
+To improve operational cadence and mission flexibility, however, landing systems must handle an expanding envelope of initial conditions and environmental disturbances with high reliability.
+
+Traditional Proportional-Integral-Derivative (PID) controllers face fundamental limitations when applied to the nonlinear, time-varying dynamics of retro-propulsive descent~\cite{konstantopoulos2020}.
+These limitations include sensitivity to parameter variations, hardware uncertainties, and external disturbances such as wind gusts, sensor noise, and shifting center of mass due to fuel consumption.
+Modern guidance, navigation, and control (GNC) systems for reusable rockets employ advanced optimization-based approaches, notably Sequential Convex Programming (SCP), which handles nonlinear dynamics through iterative linearization and trust-region constraints~\cite{ackmese2007}.
+However, SCP algorithms require the solution to remain within a small neighborhood of the previous trajectory; if large disturbances force highly nonlinear maneuvers outside this trust region, the solver reports infeasibility, potentially leading to loss of the vehicle~\cite{ackmese2007}.
+
+Reinforcement learning (RL) offers a fundamentally different paradigm for autonomous control.
+RL agents learn adaptive policies through interaction with simulated environments, without requiring explicit system models or linearization assumptions.
+Proximal Policy Optimization (PPO), introduced by Schulman et al.~\cite{schulman2017}, has emerged as a leading policy gradient algorithm due to its stability, sample efficiency, and effectiveness in continuous control tasks.
+PPO's clipped surrogate objective constrains policy updates to prevent catastrophic performance degradation, making it well-suited for safety-sensitive applications~\cite{schulman2017}.
+Hwangbo et al.~\cite{hwangbo2017} demonstrated PPO's practical utility by training quadrotor control policies in simulation and successfully transferring them to physical hardware, outperforming model predictive control in recovery time and trajectory efficiency.
+
+Despite PPO's strengths, standard implementations suffer from limited temporal context, preventing effective long-horizon decision-making in complex trajectories such as entry, descent, and landing (EDL)~\cite{li2023}.
+Transformer architectures address this limitation through attention mechanisms that capture long-range dependencies across sequential observations.
+Dai et al.~\cite{dai2019} introduced Transformer-XL with segment-level recurrence and relative positional encoding, enabling context modeling over thousands of time steps.
+Parisotto et al.~\cite{parisotto2020} subsequently proposed Gated Transformer-XL (GTrXL), which incorporates gating mechanisms to stabilize transformer training in RL settings, consistently outperforming both Long Short-Term Memory (LSTM) and vanilla Transformer-XL agents on tasks requiring long-term memory.
+
+Recent work has demonstrated GTrXL-PPO's effectiveness for powered descent guidance.
+Federici et al.~\cite{federici2024} achieved a 98.7\% landing success rate under uncertainties in simulated lunar landing using meta-RL with transformer memory.
+Carradori et al.~\cite{carradori2025} adapted the approach for atmospheric rocket landings with realistic aerodynamics and wind profiles.
+Chen et al.~\cite{chen2024} extended transformer-based RL to multi-phase spacecraft trajectory optimization.
+However, all prior validations have been confined exclusively to simulation, representing a critical gap in the literature: no study has demonstrated simulation-to-hardware transfer of transformer-augmented RL controllers for thrust-vectoring landing systems.
+
+This paper presents a comprehensive literature review that establishes the theoretical and empirical foundations for bridging this simulation-to-reality gap.
+The contributions of this work are as follows:
+
+\begin{enumerate}
+    \item We provide a structured review of the evolution from traditional optimization-based guidance through RL to transformer-augmented policies for powered descent, identifying the specific limitations each paradigm addresses and introduces.
+    \item We analyze the current state of transformer-based RL for aerospace control, synthesizing findings across lunar landing, atmospheric descent, and multi-phase trajectory optimization to characterize the capabilities and boundaries of GTrXL-PPO.
+    \item We identify and articulate the critical research gap in hardware validation of transformer-augmented RL controllers, motivating a simulation-to-hardware transfer framework using an electric ducted fan (EDF) drone testbed that emulates thrust-vectoring control for retro-propulsive landing.
+\end{enumerate}
+
+\section{Literature Review}
+
+\subsection{Traditional Optimization-Based Guidance}
+
+Early work on powered descent guidance established the mathematical foundations for handling nonlinear dynamics in planetary and booster landings, with convex optimization providing real-time feasibility guarantees under constrained conditions.
+A\c{c}\i kme\c{s}e and Ploen~\cite{ackmese2007} introduced a convex programming approach for Mars powered descent, framing the guidance problem as a sequence of convex subproblems that linearize nonlinear constraints within trust regions.
+This Sequential Convex Programming (SCP) method achieves convergence by restricting solutions to feasible neighborhoods around prior trajectories, enabling precise fuel-optimal control under thrust magnitude and pointing constraints.
+However, the authors noted that large deviations from the nominal trajectory, such as rapid attitude changes induced by wind gusts or sensor failures, can exceed the trust region, causing the solver to report infeasibility and potentially resulting in loss of the vehicle.
+For operational GNC systems, this highlights SCP's reliability in deterministic or mildly perturbed environments but its vulnerability in scenarios demanding rapid adaptation to unforeseen conditions.
+
+Steinfeldt et al.~\cite{steinfeldt2010} conducted a comprehensive analysis of GNC performance trades for pinpoint Mars landing, evaluating combinations of sensor suites, navigation filters, and control algorithms against metrics including touchdown accuracy, fuel margins, and computational load.
+Their results revealed that traditional methods, including PID controllers and optimization-based guidance laws, struggle to simultaneously achieve high precision and robustness when confronted with sensor noise, wind disturbances, and dispersed initial conditions.
+These performance trades often require accepting degraded accuracy to maintain computational tractability, or vice versa.
+In the context of Earth-based retro-propulsive landings for reusable boosters, Steinfeldt et al.'s findings underscore the need for control architectures that can integrate long-term state histories and adapt to evolving conditions without the explicit linearization assumptions that constrain SCP-based approaches.
+
+The limitations identified in these foundational works, specifically infeasibility under large disturbances for SCP and performance degradation under uncertainty for PID, motivate the exploration of learning-based alternatives that can discover robust control policies directly from interaction data.
+
+\subsection{Proximal Policy Optimization in Reinforcement Learning}
+
+Building on the limitations of model-based optimization, reinforcement learning offers a data-driven paradigm for discovering control policies in complex, uncertain environments without requiring explicit dynamics models.
+Schulman et al.~\cite{schulman2017} proposed Proximal Policy Optimization (PPO), a policy gradient algorithm that improves upon Trust Region Policy Optimization (TRPO) by replacing the hard constraint on policy divergence with a clipped surrogate objective.
+This clipping mechanism bounds the ratio of new to old action probabilities, preventing excessively large policy updates that could destabilize training while maintaining computational simplicity~\cite{schulman2017}.
+PPO achieves stable learning in high-dimensional continuous control spaces and has demonstrated state-of-the-art performance on benchmarks spanning robotic locomotion, game playing, and manipulation tasks.
+Its combination of sample efficiency, implementation simplicity, and training stability makes PPO particularly suitable for aerospace applications where reward signals may be sparse and the consequences of policy degradation are severe.
+
+Hwangbo et al.~\cite{hwangbo2017} provided an early and influential demonstration of PPO's practical applicability to aerial vehicle control.
+They trained PPO policies entirely in simulation for quadrotor agile maneuvers and successfully transferred the learned controllers to physical drones, employing domain randomization of parameters including sensor noise profiles, wind conditions, and actuator delays to bridge the simulation-to-reality gap.
+Their results showed that PPO-based controllers outperformed model predictive control (MPC) baselines in recovery time after disturbances and overall trajectory efficiency, while maintaining robustness to the sim-to-real distributional shift~\cite{hwangbo2017}.
+However, the authors also noted that hardware constraints, particularly real-time inference latency on embedded processors, posed challenges that required careful architecture design.
+For the present research, Hwangbo et al.'s methodology provides a validated template for simulation-to-hardware transfer of RL policies, while their findings on PPO's superiority over MPC for dynamic recovery motivate its use as both a baseline and a foundation for transformer-augmented extensions in thrust-vectoring landing systems.
+
+Tipaldi et al.~\cite{tipaldi2022} surveyed the broader landscape of reinforcement learning in spacecraft control, cataloguing applications across attitude control, orbit transfer, proximity operations, and landing guidance.
+Their review identified PPO as the most widely adopted algorithm for continuous spacecraft control tasks due to its balance of performance and stability, while also highlighting persistent challenges including sample complexity for high-fidelity environments, reward shaping for multi-objective missions, and the absence of formal safety guarantees in learned policies.
+Critically, Tipaldi et al. noted that nearly all reported results remained in simulation, with hardware demonstrations limited to simplified laboratory setups, reinforcing the simulation-to-reality gap as a central open problem in the field.
+
+\subsection{Transformer-XL and Long-Range Temporal Modeling}
+
+A fundamental limitation of standard PPO, and indeed most RL algorithms that operate on fixed-length observation windows, is the inability to reason about events far in the past that remain relevant to current decisions.
+In powered descent landing, slow-varying disturbances such as cumulative fuel depletion, gradual wind field changes, or drifting sensor biases create temporal dependencies that span hundreds or thousands of control steps.
+Recurrent architectures like LSTMs partially address this through hidden state propagation but suffer from well-documented issues with vanishing and exploding gradients that limit effective memory length~\cite{parisotto2020}.
+
+Dai et al.~\cite{dai2019} proposed Transformer-XL to overcome the fixed-length context limitation of standard Transformers in sequence modeling.
+Their key innovation is a segment-level recurrence mechanism that caches and reuses hidden states from previous segments as extended memory, allowing the model to capture dependencies over thousands of time steps without the computational cost of reprocessing the full history at each step.
+They further introduced a relative positional encoding scheme that decouples position information from absolute sequence length, improving generalization to sequences longer than those seen during training~\cite{dai2019}.
+Empirically, Transformer-XL achieved state-of-the-art performance on long-context language modeling benchmarks while training significantly faster than comparable architectures.
+
+Although Dai et al.~\cite{dai2019} focused on natural language processing, the architectural insights of Transformer-XL, namely segment recurrence for efficient long-range memory and relative positional encoding for length generalization, are directly applicable to the partially observable Markov decision processes (POMDPs) that characterize flight control.
+In aerospace GNC, such memory could enable a controller to reason about slowly varying conditions including fuel consumption profiles, accumulated wind effects, and sensor degradation patterns, thereby improving landing accuracy and robustness against real-world uncertainties such as aerodynamic noise, engine plume interactions, or sensor dropouts.
+However, the quadratic computational complexity of self-attention and the added overhead of recurrent memory introduce latency considerations that must be carefully managed on resource-constrained flight hardware.
+
+\subsection{Transformers in Reinforcement Learning}
+
+Li et al.~\cite{li2023} conducted a comprehensive survey of the rapidly growing intersection of transformer architectures and reinforcement learning, organizing the field into several categories: sequence modeling for decision-making, trajectory-conditioned offline RL, model-based planning with learned world models, and generalist agents that operate across multiple tasks and embodiments.
+They catalogued how attention mechanisms are employed to encode histories of states, actions, and rewards, and documented the various ways transformer architectures have been adapted to handle continuous control, sparse rewards, partial observability, and multi-task transfer.
+
+A central contribution of the survey is its analysis of when transformer-based RL methods provide clear advantages over traditional architectures such as recurrent neural networks (RNNs) and convolutional networks.
+Li et al.~\cite{li2023} found that transformers excel when long-range temporal credit assignment and flexible context aggregation are critical, particularly in tasks with episodic or continuous structure where the agent must integrate information over many time steps.
+At the same time, the survey identified significant limitations: transformers require substantially more data and computation than simpler architectures, exhibit sensitivity to hyperparameter choices in RL settings, and introduce challenges for real-time deployment on resource-constrained platforms.
+
+For the present research, Li et al.'s survey clarifies that PPO-style transformer policies are most likely to provide benefit in long-duration, partially observable control problems such as powered descent landing, where the controller must integrate information over extended time horizons and adapt to changing or unknown conditions online.
+Critically, the survey also noted that safety, interpretability, and formal certification of transformer-based RL policies remain largely unexplored, reinforcing the necessity of combining architectural advances with systematic verification and validation before deployment on aerospace vehicles.
+
+\subsection{Stabilizing Transformers for Reinforcement Learning: Gated Transformer-XL}
+
+While Transformer-XL provides the memory architecture needed for long-horizon RL, directly applying it to policy optimization introduces severe training instabilities.
+Parisotto et al.~\cite{parisotto2020} proposed Gated Transformer-XL (GTrXL) to address these instabilities through two key modifications: gating mechanisms that modulate the residual connections within each transformer layer, and architectural refinements to the layer normalization placement.
+These changes help control gradient flow through the deep attention network, mitigating the exploding and vanishing gradient problems that plague both LSTM-based and vanilla Transformer-XL agents in RL settings~\cite{parisotto2020}.
+
+Across a diverse set of benchmark environments, GTrXL consistently outperformed both LSTM-based agents and unmodified Transformer-XL policies, with the most pronounced advantages appearing on tasks requiring long-term memory and robust temporal credit assignment.
+Importantly, Parisotto et al. demonstrated that GTrXL not only improves asymptotic performance but also stabilizes the learning dynamics themselves, substantially reducing the frequency of catastrophic policy collapses and the need for training restarts~\cite{parisotto2020}.
+From the perspective of aerospace control, this training stability is crucial for retro-propulsive landing applications where safety margins are thin and the learned policy must reliably converge in simulation before any hardware deployment can be considered.
+
+In the broader context of this review, GTrXL represents the critical architectural bridge between general-purpose sequence models and domain-specific applications in powered descent.
+It demonstrates that transformer-style attention memory can be made trainable and robust in challenging RL settings, providing the foundation upon which subsequent aerospace-specific applications have been built.
+However, GTrXL alone does not address the questions of safety verification, formal certification, or hardware deployment that are essential for flight-critical systems.
+
+\subsection{Transformer-Based Guidance for Powered Descent Landing}
+
+Recent work has applied GTrXL and related transformer architectures to the specific problem of autonomous powered descent guidance, demonstrating strong simulation results across multiple landing scenarios.
+
+Federici et al.~\cite{federici2024} applied meta-reinforcement learning with transformer memory to the problem of autonomous lunar landing under uncertainty.
+Their approach trained a GTrXL-PPO policy across a distribution of landing scenarios with varying initial states, gravitational perturbations, and navigation errors, enabling the controller to adapt online to each specific realization.
+The resulting policy achieved a 98.7\% landing success rate across Monte Carlo evaluations, with robust performance under significant dispersions in initial position, velocity, and attitude~\cite{federici2024}.
+This result demonstrated that transformer-based meta-RL can deliver the combination of precision and robustness needed for planetary landing, though the work was conducted entirely in simulation without hardware validation.
+
+Carradori et al.~\cite{carradori2025} extended transformer-based guidance to the more challenging problem of atmospheric powered landing with retro-propulsive engines.
+Their method trained a gated Transformer architecture using PPO-based meta-RL over a distribution of scenarios encompassing semi-realistic aerodynamics, varying wind profiles, navigation errors, and dispersed initial conditions representative of planetary entry~\cite{carradori2025}.
+The resulting policy generates thrust magnitude and vectoring commands that achieve accurate touchdowns across a wide envelope of conditions, with all heavy computation performed offline during training while online inference reduces to a sequence of efficient forward passes.
+From a systems perspective, Carradori et al. demonstrated that transformer-based meta-RL can deliver robust feedback guidance under complex atmospheric conditions, illustrating how such controllers can be engineered for compatibility with real-time flight computers in principle.
+However, their work remains limited to simulation and provides neither hardware demonstration nor a comprehensive safety case for deployment in flight software.
+
+Chen et al.~\cite{chen2024} further extended the application of transformer-based RL to multi-phase spacecraft trajectory optimization, demonstrating the architecture's capability for sequential decision-making across distinct mission phases with different dynamics and constraints.
+Gao~\cite{gao2024} explored Transformer-XL's utility for long-sequence tasks in robotic learning from demonstration, providing additional evidence for the architecture's effectiveness in control domains requiring extended temporal context.
+
+Collectively, these studies establish a compelling case for GTrXL-PPO as a viable guidance architecture for powered descent.
+The consistent finding across lunar, atmospheric, and multi-phase scenarios is that transformer-based memory enables RL policies to achieve both the precision and robustness needed for landing under uncertainty.
+However, a critical commonality across all reviewed works is that validation has been conducted exclusively in simulation environments, with no study demonstrating hardware deployment or systematic analysis of the simulation-to-reality transfer gap.
+
+\subsection{Verification and Validation of Neural Network-Based Controllers}
+
+The absence of hardware demonstrations in transformer-based landing guidance connects to a broader challenge: the verification and validation (V\&V) of neural network-based controllers for safety-critical aerospace systems.
+
+Luckall et al.~\cite{luckall2002} provided a foundational NASA framework for V\&V of neural networks in aerospace applications, focusing on reachability analysis, adversarial testing, and integration with legacy flight software.
+Their guidelines emphasized the importance of bounding neural network behaviors under uncertainties including sensor faults and actuator degradation, offering practical checklists for aerospace deployment while acknowledging the fundamental difficulty of scaling formal verification proofs to complex, deep architectures~\cite{luckall2002}.
+
+Zhang and Li~\cite{zhang2020} conducted a systematic literature review of testing and verification techniques for neural network-based safety-critical control software, cataloguing methods spanning formal verification (reachability analysis, Satisfiability Modulo Theory-based approaches), testing frameworks for adversarial inputs and rare events, runtime monitoring and assurance architectures, and interpretability tools.
+Their review identified critical gaps in real-time applicability of verification methods and in hardware integration testing, particularly for RL policies where nondeterministic behavior and distributional shift between training and deployment environments complicate certification~\cite{zhang2020}.
+The authors emphasized that existing V\&V techniques, while advancing rapidly, remain insufficient for certifying the complex, non-transparent decision processes of modern deep RL agents to the standards required for flight-critical systems.
+
+For the present research, these V\&V frameworks underscore the necessity of extending simulation-validated GTrXL-PPO controllers to physical hardware through systematic, metrics-driven testing.
+Hardware-in-the-loop simulation and controlled flight tests on proxy platforms such as EDF drones provide an intermediate validation step between pure simulation and full-scale deployment, generating empirical evidence of transfer fidelity, robustness under real-world disturbances, and comparative performance against established baselines.
+
+\subsection{Summary of Research Gaps}
+
+The literature reviewed in this paper reveals several interconnected gaps that motivate the proposed research direction:
+
+\begin{enumerate}
+    \item \textbf{Simulation-to-hardware gap:} All existing demonstrations of transformer-augmented RL for powered descent guidance have been conducted exclusively in simulation~\cite{federici2024, carradori2025, chen2024}.
+    No prior work has validated GTrXL-PPO or similar architectures on physical hardware for thrust-vectoring landing control.
+    \item \textbf{Verification gap:} While V\&V frameworks for neural network controllers exist~\cite{luckall2002, zhang2020}, they have not been applied to transformer-based RL policies in hardware-integrated aerospace testing scenarios.
+    \item \textbf{Comparative evaluation gap:} Existing studies typically compare transformer-RL against limited baselines.
+    A systematic comparison of GTrXL-PPO against standard PPO, PID, and SCP controllers using consistent metrics on both simulation and hardware platforms has not been performed.
+    \item \textbf{Transfer fidelity quantification:} No study has quantified the performance degradation, if any, that occurs when transferring a trained GTrXL-PPO policy from simulation to physical hardware for landing control, using metrics such as landing dispersion, touchdown velocity, jerk rate, and success rate.
+\end{enumerate}
+
+These gaps collectively define the research frontier at the intersection of transformer-based RL and autonomous landing systems, motivating a simulation-to-hardware validation framework that can bridge theoretical capabilities with empirical demonstration on a representative physical platform.
+
+\begin{thebibliography}{99}
+
+\bibitem{ackmese2007}
+A\c{c}\i kme\c{s}e, B., \& Ploen, S.~R. (2007).
+Convex programming approach to powered descent guidance for Mars landing.
+\textit{Journal of Guidance, Control, and Dynamics}, 30(5), 1353--1366.
+
+\bibitem{amodei2016}
+Amodei, D., Olah, C., Steinhardt, J., Christiano, P., Schulman, J., \& Man\'{e}, D. (2016).
+Concrete problems in AI safety.
+\textit{arXiv preprint arXiv:1606.06565}.
+
+\bibitem{bushnell2018}
+Bushnell, D.~M., \& Moses, R.~W. (2018).
+Commercial space in the age of ``New Space,'' reusable rockets and the ongoing tech revolutions (NASA/TM-2018-220118).
+NASA Langley Research Center.
+
+\bibitem{carradori2025}
+Carradori, J., Sagliano, M., \& Mooij, E. (2025).
+Transformer-based robust feedback guidance for atmospheric powered landing.
+In \textit{AIAA SciTech 2025 Forum} (AIAA Paper 2025-2771).
+American Institute of Aeronautics and Astronautics.
+
+\bibitem{chen2024}
+Chen, Y., Liu, X., \& Wang, Z. (2024).
+Multi-phase spacecraft trajectory optimization via transformer-based reinforcement learning.
+\textit{arXiv preprint arXiv:2511.11402}.
+
+\bibitem{dai2019}
+Dai, Z., Yang, Z., Yang, Y., Carbonell, J., Le, Q.~V., \& Salakhutdinov, R. (2019).
+Transformer-XL: Attentive language models beyond a fixed-length context.
+In \textit{Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics} (pp.~2978--2988).
+
+\bibitem{federici2024}
+Federici, L., Zavoli, A., \& Furfaro, R. (2024).
+Meta-reinforcement learning with transformer for lunar landing.
+In \textit{AIAA SciTech 2024 Forum} (AIAA Paper 2024-2061).
+American Institute of Aeronautics and Astronautics.
+
+\bibitem{gao2024}
+Gao, T. (2024).
+Transformer-XL for long sequence tasks in robotic learning from demonstration.
+\textit{arXiv preprint arXiv:2405.15562}.
+
+\bibitem{hwangbo2017}
+Hwangbo, J., Sa, I., Siegwart, R., \& Hutter, M. (2017).
+Control of a quadrotor with reinforcement learning.
+\textit{IEEE Robotics and Automation Letters}, 2(4), 2096--2103.
+
+\bibitem{konstantopoulos2020}
+Konstantopoulos, G.~C., Zheng, C., Papageorgiou, P.~C., Tsourakis, G., Vournas, C.~D., \& Alexandridis, A.~T. (2020).
+State-limiting PID controller for a class of nonlinear systems with constant uncertainties.
+\textit{International Journal of Robust and Nonlinear Control}, 30(5), 1770--1787.
+
+\bibitem{li2023}
+Li, W., Luo, H., Lin, Z., Zhang, C., Lu, Z., \& Ye, D. (2023).
+A survey on transformers in reinforcement learning.
+\textit{Transactions on Machine Learning Research}.
+
+\bibitem{luckall2002}
+Luckall, D., Nelson, S., \& Schumann, J. (2002).
+Verification and validation of neural networks for aerospace systems (NASA/CR-2002-211637).
+NASA.
+
+\bibitem{parisotto2020}
+Parisotto, E., Rae, J., Pascanu, R., Vinyals, O., et~al. (2020).
+Stabilizing transformers for reinforcement learning.
+In \textit{Proceedings of the 37th International Conference on Machine Learning (ICML)}.
+
+\bibitem{schulman2017}
+Schulman, J., Wolski, F., Dhariwal, P., Radford, A., \& Klimov, O. (2017).
+Proximal policy optimization algorithms.
+\textit{arXiv preprint arXiv:1707.06347}.
+
+\bibitem{steinfeldt2010}
+Steinfeldt, B.~A., Grant, M.~J., Matz, D.~A., Braun, R.~D., \& Barton, G.~H. (2010).
+Guidance, navigation, and control system performance trades for Mars pinpoint landing.
+\textit{Journal of Spacecraft and Rockets}, 47(1), 188--198.
+
+\bibitem{tipaldi2022}
+Tipaldi, M., Iervolino, R., \& Massenio, P.~R. (2022).
+Reinforcement learning in spacecraft control applications: Advances, prospects, and challenges.
+\textit{Annual Reviews in Control}, 54, 1--23.
+
+\bibitem{zhang2020}
+Zhang, J., \& Li, J. (2020).
+Testing and verification of neural-network-based safety-critical control software: A systematic literature review.
+\textit{Information and Software Technology}, 123, Article 106296.
+
+\end{thebibliography}
+
+\end{document}
