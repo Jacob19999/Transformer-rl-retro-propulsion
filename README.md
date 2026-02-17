@@ -5,7 +5,7 @@
 > Bridging the sim-to-real gap for attention-enhanced reinforcement learning in thrust-vectoring control systems.
 
 ---
-
+Work in progress PID controller - You can see angular rates overshooting and vehicle get into a oscillation : 
 ![pid_viz_seed42](https://github.com/user-attachments/assets/d4f46d5a-93cf-4b06-a0e1-5433ce99c1a3)
 
 ## Overview
