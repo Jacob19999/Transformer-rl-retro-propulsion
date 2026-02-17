@@ -1,0 +1,3 @@
+# pytest cache
+simulation/test_cache/
+.pytest_cache/

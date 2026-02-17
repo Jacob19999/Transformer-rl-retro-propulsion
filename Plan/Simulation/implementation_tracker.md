@@ -24,14 +24,14 @@
 
 | # | Task | Status | Files | Depends On | Notes |
 |---|------|--------|-------|------------|-------|
-| 0.1 | Create `simulation/` directory tree matching [vehicle.md §12.1](Vehicle%20Dynamics/vehicle.md) file map | `[ ]` | dirs only | — | `dynamics/`, `environment/`, `training/`, `configs/`, `tests/` |
-| 0.2 | Create `requirements.txt` with pinned core deps | `[ ]` | `requirements.txt` | — | `numpy>=1.24`, `scipy>=1.10`, `pyyaml>=6.0`, `pytest>=7.0`, `gymnasium>=0.29` |
-| 0.3 | Create `configs/default_vehicle.yaml` — copy full YAML from [vehicle.md §9.1](Vehicle%20Dynamics/vehicle.md) | `[ ]` | `configs/default_vehicle.yaml` | 0.1 | All primitives, EDF, aero, fins, servo sections |
-| 0.4 | Create `configs/default_environment.yaml` — copy full YAML from [env.md §7.1](Enviornment/env.md) | `[ ]` | `configs/default_environment.yaml` | 0.1 | Wind, atmosphere, curriculum sections |
-| 0.5 | Create `configs/test_vehicle.yaml` — simplified zero-drag, no-DR config for unit tests | `[ ]` | `configs/test_vehicle.yaml` | 0.3 | Single primitive, zero randomization |
-| 0.6 | Create `configs/test_environment.yaml` — zero wind, zero randomization | `[ ]` | `configs/test_environment.yaml` | 0.4 | Deterministic ISA, no gusts, no turbulence |
-| 0.7 | Write shared YAML config loader utility | `[ ]` | `simulation/config_loader.py` | 0.1 | `load_config(path) -> dict` |
-| 0.8 | Add `__init__.py` files to all packages | `[ ]` | `simulation/**/__init__.py` | 0.1 | Empty or minimal exports |
+| 0.1 | Create `simulation/` directory tree matching [vehicle.md §12.1](Vehicle%20Dynamics/vehicle.md) file map | `[x]` | dirs only | — | `dynamics/`, `environment/`, `training/`, `configs/`, `tests/` |
+| 0.2 | Create `requirements.txt` with pinned core deps | `[x]` | `requirements.txt` | — | `numpy>=1.24`, `scipy>=1.10`, `pyyaml>=6.0`, `pytest>=7.0`, `gymnasium>=0.29` |
+| 0.3 | Create `configs/default_vehicle.yaml` — copy full YAML from [vehicle.md §9.1](Vehicle%20Dynamics/vehicle.md) | `[x]` | `configs/default_vehicle.yaml` | 0.1 | All primitives, EDF, aero, fins, servo sections |
+| 0.4 | Create `configs/default_environment.yaml` — copy full YAML from [env.md §7.1](Enviornment/env.md) | `[x]` | `configs/default_environment.yaml` | 0.1 | Wind, atmosphere, curriculum sections |
+| 0.5 | Create `configs/test_vehicle.yaml` — simplified zero-drag, no-DR config for unit tests | `[x]` | `configs/test_vehicle.yaml` | 0.3 | Single primitive, zero randomization |
+| 0.6 | Create `configs/test_environment.yaml` — zero wind, zero randomization | `[x]` | `configs/test_environment.yaml` | 0.4 | Deterministic ISA, no gusts, no turbulence |
+| 0.7 | Write shared YAML config loader utility | `[x]` | `simulation/config_loader.py` | 0.1 | `load_config(path) -> dict` |
+| 0.8 | Add `__init__.py` files to all packages | `[x]` | `simulation/**/__init__.py` | 0.1 | Empty or minimal exports |
 
 ---
 
@@ -41,12 +41,12 @@
 
 | # | Task | Status | Files | Depends On | Notes |
 |---|------|--------|-------|------------|-------|
-| 1.1 | Implement `quat_to_dcm(q)` — quaternion to 3x3 rotation matrix (body→inertial) | `[ ]` | `dynamics/quaternion_utils.py` | — | Eq from vehicle.md §2.3. Scalar-first convention `[q0,q1,q2,q3]` |
-| 1.2 | Implement `quat_mult(q1, q2)` — Hamilton product | `[ ]` | `dynamics/quaternion_utils.py` | — | Used in quaternion kinematics `q_dot = 0.5 * q ⊗ [0, ω]` |
-| 1.3 | Implement `quat_normalize(q)` — unit norm re-normalization | `[ ]` | `dynamics/quaternion_utils.py` | — | `q / np.linalg.norm(q)` |
-| 1.4 | Implement `euler_to_quat(roll, pitch, yaw)` — Euler angles to quaternion | `[ ]` | `dynamics/quaternion_utils.py` | — | Needed for initial condition sampling |
-| 1.5 | Implement `quat_to_euler(q)` — quaternion to Euler (for logging/debug only) | `[ ]` | `dynamics/quaternion_utils.py` | — | Optional but useful for human-readable output |
-| 1.6 | Write unit tests for all quaternion functions | `[ ]` | `tests/test_quaternion_utils.py` | 1.1–1.5 | Compare `quat_to_dcm` against `scipy.spatial.transform.Rotation`; test quaternion identity, 90° rotations, double-cover |
+| 1.1 | Implement `quat_to_dcm(q)` — quaternion to 3x3 rotation matrix (body→inertial) | `[x]` | `dynamics/quaternion_utils.py` | — | Eq from vehicle.md §2.3. Scalar-first convention `[q0,q1,q2,q3]` |
+| 1.2 | Implement `quat_mult(q1, q2)` — Hamilton product | `[x]` | `dynamics/quaternion_utils.py` | — | Used in quaternion kinematics `q_dot = 0.5 * q ⊗ [0, ω]` |
+| 1.3 | Implement `quat_normalize(q)` — unit norm re-normalization | `[x]` | `dynamics/quaternion_utils.py` | — | `q / np.linalg.norm(q)` |
+| 1.4 | Implement `euler_to_quat(roll, pitch, yaw)` — Euler angles to quaternion | `[x]` | `dynamics/quaternion_utils.py` | — | Needed for initial condition sampling |
+| 1.5 | Implement `quat_to_euler(q)` — quaternion to Euler (for logging/debug only) | `[x]` | `dynamics/quaternion_utils.py` | — | Optional but useful for human-readable output |
+| 1.6 | Write unit tests for all quaternion functions | `[x]` | `tests/test_quaternion_utils.py` | 1.1–1.5 | Compare `quat_to_dcm` against `scipy.spatial.transform.Rotation`; test quaternion identity, 90° rotations, double-cover |
 
 ---
 
@@ -56,12 +56,12 @@
 
 | # | Task | Status | Files | Depends On | Notes |
 |---|------|--------|-------|------------|-------|
-| 2.1 | Implement `_primitive_inertia(prim)` — per-shape inertia formulas (cylinder, box, sphere) | `[ ]` | `dynamics/mass_properties.py` | — | Formulas from vehicle.md §5.3 |
-| 2.2 | Implement `compute_mass_properties(primitives)` — aggregate total mass, CoM, composite inertia via parallel axis theorem | `[ ]` | `dynamics/mass_properties.py` | 2.1 | vehicle.md §5.4. Include orientation rotation `R_i @ I_local @ R_i.T` |
-| 2.3 | Implement aerodynamic area aggregation — total surface area, per-axis projected areas `(A_x, A_y, A_z)` | `[ ]` | `dynamics/mass_properties.py` | 2.2 | Sum `surface_area`, `drag_facing.{x,y,z}` from primitives |
-| 2.4 | Implement `MassProperties.from_cad(cad_config)` — CAD override class method | `[ ]` | `dynamics/mass_properties.py` | 2.2 | Bypass aggregation, use CAD-exported values directly |
-| 2.5 | Implement optional per-episode mass randomization (`randomize_mass` field) | `[ ]` | `dynamics/mass_properties.py` | 2.2 | ±10% on `payload_variable` primitive mass; recomputes CoM/I |
-| 2.6 | Write unit tests for mass properties | `[ ]` | `tests/test_mass_properties.py` | 2.1–2.5 | Single primitive vs. analytical; 2-box hand-calc; diagonal dominance check |
+| 2.1 | Implement `_primitive_inertia(prim)` — per-shape inertia formulas (cylinder, box, sphere) | `[x]` | `dynamics/mass_properties.py` | — | Formulas from vehicle.md §5.3 |
+| 2.2 | Implement `compute_mass_properties(primitives)` — aggregate total mass, CoM, composite inertia via parallel axis theorem | `[x]` | `dynamics/mass_properties.py` | 2.1 | vehicle.md §5.4. Include orientation rotation `R_i @ I_local @ R_i.T` |
+| 2.3 | Implement aerodynamic area aggregation — total surface area, per-axis projected areas `(A_x, A_y, A_z)` | `[x]` | `dynamics/mass_properties.py` | 2.2 | Sum `surface_area`, `drag_facing.{x,y,z}` from primitives |
+| 2.4 | Implement `MassProperties.from_cad(cad_config)` — CAD override class method | `[x]` | `dynamics/mass_properties.py` | 2.2 | Bypass aggregation, use CAD-exported values directly |
+| 2.5 | Implement optional per-episode mass randomization (`randomize_mass` field) | `[x]` | `dynamics/mass_properties.py` | 2.2 | ±10% on `payload_variable` primitive mass; recomputes CoM/I |
+| 2.6 | Write unit tests for mass properties | `[x]` | `tests/test_mass_properties.py` | 2.1–2.5 | Single primitive vs. analytical; 2-box hand-calc; diagonal dominance check |
 
 ---
 

@@ -1,0 +1,331 @@
+vehicle:
+  # ─── Global Simulation Parameters ─────────────────────────────────
+  gravity: 9.81               # m/s²
+  dt: 0.005                   # s, RK4 integration time step
+  quat_normalize_interval: 10 # re-normalize quaternion every N steps
+
+  # ─── Geometric Primitives ─────────────────────────────────────────
+  # Each primitive defines a sub-component for:
+  #   1. Mass property aggregation (mass, CoM, composite inertia via parallel axis theorem)
+  #   2. Aerodynamic surface area aggregation (total wetted area, per-axis projected areas)
+  # Composite inertia, CoM, and surface areas are computed ONCE at episode init.
+  #
+  # Fields per primitive:
+  #   name:            human-readable identifier
+  #   shape:           "cylinder" | "box" | "sphere"
+  #   mass:            kg
+  #   <dimensions>:    shape-specific (radius/height, dimensions [x,y,z], radius)
+  #   position:        [x, y, z] m — local CoM in body frame (FRD)
+  #   orientation:     [roll, pitch, yaw] deg — rotation relative to body frame (optional, default [0,0,0])
+  #   surface_area:    m² — total wetted surface area (for skin friction / aero bookkeeping)
+  #   drag_facing:     {x, y, z} m² — projected area along each body axis (for directional drag)
+  #   Cd_local:        shape-specific drag coefficient (0.0 if shielded/internal)
+  #   randomize_mass:  fractional perturbation per episode (optional, e.g., 0.10 = ±10%)
+
+  primitives:
+    # ── EDF Duct (outer shroud) ──
+    - name: "edf_duct"
+      shape: "cylinder"
+      mass: 0.85               # kg (aluminium duct shroud)
+      radius: 0.045            # m (90 mm outer diameter)
+      height: 0.15             # m (duct axial length)
+      position: [0, 0, 0.05]  # m, body frame — slightly below geometric center
+      orientation: [0, 0, 0]   # aligned with body z-axis (thrust axis)
+      surface_area: 0.0424     # m², 2πrh + 2πr² (lateral + end caps)
+      drag_facing:
+        x: 0.0135              # m², side profile (d × h)
+        y: 0.0135              # m², side profile
+        z: 0.00636             # m², top/bottom (πr²)
+      Cd_local: 0.82           # bluff cylinder
+
+    # ── EDF Motor + Rotor Assembly ──
+    - name: "edf_motor_rotor"
+      shape: "cylinder"
+      mass: 0.35               # kg (motor stator + rotor + hub)
+      radius: 0.040            # m
+      height: 0.04             # m
+      position: [0, 0, 0.06]  # m, centered inside duct
+      orientation: [0, 0, 0]
+      surface_area: 0.0        # internal — not exposed to external airstream
+      drag_facing: { x: 0, y: 0, z: 0 }
+      Cd_local: 0.0            # shielded by duct
+
+    # ── 8S LiPo Battery Pack ──
+    - name: "battery_8s_lipo"
+      shape: "box"
+      mass: 0.80               # kg
+      dimensions: [0.15, 0.05, 0.04]  # m [length_x, width_y, height_z]
+      position: [0.02, 0, -0.03]      # m, slightly forward and above CoM
+      orientation: [0, 0, 0]
+      surface_area: 0.031      # m², 2(lw + lh + wh)
+      drag_facing:
+        x: 0.002               # m², w × h
+        y: 0.006               # m², l × h
+        z: 0.0075              # m², l × w
+      Cd_local: 1.05           # box/rectangular prism
+
+    # ── Jetson Nano + Carrier Board ──
+    - name: "jetson_nano"
+      shape: "box"
+      mass: 0.14               # kg
+      dimensions: [0.08, 0.08, 0.03]  # m
+      position: [-0.04, 0, -0.05]     # m, aft and above
+      orientation: [0, 0, 0]
+      surface_area: 0.0224     # m²
+      drag_facing:
+        x: 0.0024              # m²
+        y: 0.0024              # m²
+        z: 0.0064              # m²
+      Cd_local: 1.05
+
+    # ── Carbon Fibre Frame + 3D-Printed Joints ──
+    - name: "frame_structure"
+      shape: "cylinder"
+      mass: 0.50               # kg
+      radius: 0.06             # m (effective outer envelope)
+      height: 0.30             # m (total airframe height)
+      position: [0, 0, 0]     # m, centered at body frame origin
+      orientation: [0, 0, 0]
+      surface_area: 0.113      # m², lateral surface (2πrh)
+      drag_facing:
+        x: 0.036               # m², d × h
+        y: 0.036               # m²
+        z: 0.01131             # m², πr²
+      Cd_local: 0.50           # semi-streamlined open truss
+
+    # ── ESC (120 A) ──
+    - name: "esc_120a"
+      shape: "box"
+      mass: 0.12               # kg
+      dimensions: [0.07, 0.04, 0.02]  # m
+      position: [0.03, 0.02, -0.02]   # m
+      orientation: [0, 0, 0]
+      surface_area: 0.010      # m²
+      drag_facing:
+        x: 0.0008              # m²
+        y: 0.0014              # m²
+        z: 0.0028              # m²
+      Cd_local: 1.05
+
+    # ── Wiring Harness + Connectors ──
+    - name: "wiring_misc"
+      shape: "sphere"
+      mass: 0.10               # kg (aggregate)
+      radius: 0.025            # m (effective bounding sphere)
+      position: [0, 0, -0.02] # m
+      surface_area: 0.00785    # m², 4πr²
+      drag_facing:
+        x: 0.00196             # m², πr²
+        y: 0.00196             # m²
+        z: 0.00196             # m²
+      Cd_local: 0.47           # sphere
+
+    # ── IMU (BNO085) ──
+    - name: "imu_bno085"
+      shape: "box"
+      mass: 0.01               # kg
+      dimensions: [0.02, 0.02, 0.005]  # m
+      position: [0, 0, -0.06] # m, mounted high on frame (above CoM)
+      orientation: [0, 0, 0]
+      surface_area: 0.0012     # m²
+      drag_facing: { x: 0, y: 0, z: 0 }
+      Cd_local: 0.0            # negligible
+
+    # ── Optical Flow Camera (PX4) ──
+    - name: "optical_flow_camera"
+      shape: "box"
+      mass: 0.02               # kg
+      dimensions: [0.03, 0.03, 0.01]  # m
+      position: [0, 0, -0.10] # m, mounted on underside (top in FRD = above)
+      orientation: [0, 0, 0]
+      surface_area: 0.003      # m²
+      drag_facing: { x: 0, y: 0, z: 0 }
+      Cd_local: 0.0            # negligible
+
+    # ── Servo Actuators (4× Freewing 9 g Digital Metal Gear for fin control) ──
+    - name: "servo_fin_1"
+      shape: "box"
+      mass: 0.010              # kg (~9–12 g, Freewing 9 g servo)
+      dimensions: [0.0235, 0.012, 0.027]  # m (23.5×12×27 mm)
+      position: [0, 0.045, 0.10]   # m, right fin servo
+      orientation: [0, 0, 0]
+      surface_area: 0.0023     # m²
+      Cd_local: 0.0            # inside duct shroud
+
+    - name: "servo_fin_2"
+      shape: "box"
+      mass: 0.010
+      dimensions: [0.0235, 0.012, 0.027]
+      position: [0, -0.045, 0.10]  # m, left fin servo
+      orientation: [0, 0, 0]
+      surface_area: 0.0023
+      Cd_local: 0.0
+
+    - name: "servo_fin_3"
+      shape: "box"
+      mass: 0.010
+      dimensions: [0.0235, 0.012, 0.027]
+      position: [0.045, 0, 0.10]   # m, forward fin servo
+      orientation: [0, 0, 0]
+      surface_area: 0.0023
+      Cd_local: 0.0
+
+    - name: "servo_fin_4"
+      shape: "box"
+      mass: 0.010
+      dimensions: [0.0235, 0.012, 0.027]
+      position: [-0.045, 0, 0.10]  # m, aft fin servo
+      orientation: [0, 0, 0]
+      surface_area: 0.0023
+      Cd_local: 0.0
+
+    # ── Variable Payload (domain randomization target) ──
+    - name: "payload_variable"
+      shape: "sphere"
+      mass: 0.20               # kg (water / ballast for CoM shift tests)
+      radius: 0.03             # m
+      position: [0, 0, -0.08] # m
+      surface_area: 0.01131    # m², 4πr²
+      drag_facing:
+        x: 0.00283             # m², πr²
+        y: 0.00283
+        z: 0.00283
+      Cd_local: 0.47
+      randomize_mass: 0.10     # ±10% uniform perturbation per episode
+
+  # ─── EDF Propulsion System ───────────────────────────────────────
+  # Complete EDF spec for thrust model, ground effect, gyroscopic coupling.
+  # Hardware: FMS 90 mm 12-Blade Metal Ducted Fan.
+  edf:
+    unit_name: "FMS 90mm 12-Blade Metal"
+    fan_diameter: 0.090        # m
+    duct_inner_diameter: 0.088 # m
+    duct_outer_diameter: 0.090 # m
+    blade_count: 12
+    max_static_thrust: 45.0    # N (manufacturer rated, sea-level ISA)
+    max_rpm: 95000             # RPM
+    max_omega: 9948.0          # rad/s (= 95000 × 2π / 60)
+    k_thrust: 4.55e-7          # N/(rad/s)², from T_max / ω_max² (calibrate from static test)
+    k_torque: 1.0e-8           # N·m/(rad/s)², reaction torque coefficient (calibrate from test)
+    I_fan: 0.001               # kg·m², fan rotor MoI about spin axis
+    tau_motor: 0.10            # s, 1st-order thrust lag time constant
+    r_thrust: [0, 0, 0.08]    # m, thrust application point (body frame)
+    r_duct: 0.045              # m, duct radius (ground effect reference)
+    exhaust_velocity_max: 80.0 # m/s, peak exhaust velocity at max RPM
+    motor_kV: 1750             # RPM/V, motor velocity constant
+    battery_cells: 8           # S count
+    battery_voltage_nominal: 29.6  # V (8 × 3.7 V)
+    battery_voltage_full: 33.6     # V (8 × 4.2 V)
+    esc_max_current: 120       # A
+    esc_type: "120A BLHeli_32"
+
+  # ─── Aerodynamic Properties (Combined Shape) ────────────────────
+  aero:
+    # NOTE: rho is provided per-step by EnvironmentModel (see env.md §4).
+    # The vehicle config no longer specifies a fixed rho.
+    Cd: 0.7                    # overall bluff body drag coefficient (tunable)
+    r_cp: [0, 0, 0.05]        # m, center of pressure (body frame)
+
+    # Per-axis projected area and total surface area are auto-computed from
+    # primitives at init. These fallback values are used if auto-compute is disabled.
+    A_proj: 0.01               # m², fallback projected frontal area
+    compute_directional_drag: true  # aggregate per-axis drag_facing from primitives
+    total_surface_area: null   # m², auto-computed from Σ primitive surface_area_i
+
+  # ─── Fin Control Surfaces ────────────────────────────────────────
+  fins:
+    count: 4
+
+    # ── Fin Airfoil & Planform Geometry ──
+    airfoil_profile: "NACA0012"       # symmetric, 12% thickness
+    chord: 0.050                       # m, along exhaust flow direction
+    span: 0.040                        # m, radial extent into exhaust stream
+    thickness_ratio: 0.12              # t/c (NACA 0012)
+    max_thickness: 0.006               # m, = chord × thickness_ratio
+    planform_area: 0.002               # m², = chord × span (per fin)
+    wetted_area: 0.0041                # m², ≈ 2.06 × planform_area (both surfaces)
+
+    # ── Aerodynamic Coefficients ──
+    Cl_alpha: 6.283                    # /rad, thin-airfoil lift slope (2π)
+    Cd0: 0.01                          # parasitic drag coefficient
+    AR: 0.80                           # aspect ratio = span² / planform_area
+    stall_angle: 0.262                 # rad (15°), onset of C_L plateau
+    post_stall_model: "tanh"           # "tanh" soft clamp or "flat" plateau
+
+    # ── Deflection Limits ──
+    max_deflection: 0.349              # rad (±20°), mechanical servo travel limit
+    rate_limit: 10.5                   # rad/s (~600°/s at 6 V), Freewing 9 g digital servo no-load speed
+
+    # ── Servo Actuator Dynamics (Freewing 9 g Digital Metal Gear) ──
+    servo:
+      type: "digital"                  # digital hobby servo (not programmable high-rate)
+      gear_train: "full_metal"         # low backlash, high stiffness
+      supply_voltage: 6.0              # V, assumed LiPo supply
+      transit_time_60deg: 0.10         # s, at 6 V (0.12 s at 4.8 V)
+      max_angular_velocity: 10.5       # rad/s (~600°/s at 6 V)
+      torque: 0.186                    # N·m (~1.9 kg·cm at 6 V)
+      tau_servo: 0.04                  # s, effective first-order position lag time constant
+      tau_servo_range: [0.03, 0.05]    # s, DR randomization range (±20%)
+      bandwidth_hz: 13.0               # Hz, closed-loop position bandwidth estimate
+      pwm_frame_rate: 50               # Hz, standard PWM (50–333 Hz unofficially tolerated)
+      deadband_us: 2                   # µs, digital servo deadband
+      weight_kg: 0.010                 # kg (~9–12 g)
+      dimensions_mm: [23.5, 12, 27]    # mm [length, width, height]
+      aero_load_derating: 0.3          # fraction — effective slew 20–50% slower under exhaust load
+
+    # ── Exhaust Interaction ──
+    V_exhaust_nominal: 70              # m/s at full RPM
+    exhaust_velocity_ratio: true       # V_exhaust scales linearly with ω_fan / ω_fan_max
+
+    # ── Per-Fin Configuration (body frame) ──
+    fins_config:
+      - name: "fin_1_right"
+        position: [0, 0.04, 0.12]     # m, body frame
+        hinge_axis: [1, 0, 0]         # deflection rotates about body x-axis
+        lift_direction: [1, 0, 0]     # lift acts in body x-direction
+        drag_direction: [0, 0, 1]     # drag opposes exhaust (body z)
+        angular_offset_deg: 0         # azimuthal position (0° = starboard)
+
+      - name: "fin_2_left"
+        position: [0, -0.04, 0.12]
+        hinge_axis: [1, 0, 0]
+        lift_direction: [1, 0, 0]
+        drag_direction: [0, 0, 1]
+        angular_offset_deg: 180
+
+      - name: "fin_3_forward"
+        position: [0.04, 0, 0.12]
+        hinge_axis: [0, 1, 0]
+        lift_direction: [0, 1, 0]
+        drag_direction: [0, 0, 1]
+        angular_offset_deg: 90
+
+      - name: "fin_4_aft"
+        position: [-0.04, 0, 0.12]
+        hinge_axis: [0, 1, 0]
+        lift_direction: [0, 1, 0]
+        drag_direction: [0, 0, 1]
+        angular_offset_deg: 270
+
+  # ─── Computed Properties (auto-populated at init) ────────────────
+  _computed:
+    total_mass: null           # kg, Σ m_i
+    center_of_mass: null       # [x, y, z] m, mass-weighted centroid (body frame)
+    inertia_tensor: null       # [[Ixx, Ixy, Ixz], [Iyx, Iyy, Iyz], [Izx, Izy, Izz]] kg·m²
+    inertia_tensor_inv: null   # (I)^{-1}, precomputed for Euler's equation
+    principal_inertias: null   # [Ixx, Iyy, Izz] kg·m² (if off-diag < 5% of diag)
+    total_surface_area: null   # m², Σ surface_area_i
+    projected_area_x: null     # m², Σ drag_facing.x_i (side profile)
+    projected_area_y: null     # m², Σ drag_facing.y_i (side profile)
+    projected_area_z: null     # m², Σ drag_facing.z_i (top/bottom profile)
+
+  # ─── Mass Override (from CAD or measured) ────────────────────────
+  cad_override:
+    use_cad_override: false
+    source: null               # "inventor" | "solidworks" | "measured" | null
+    source_file: null          # path to CAD export (e.g., "cad/drone_assembly.step")
+    total_mass: null           # kg
+    center_of_mass: null       # [x, y, z] m, in body frame
+    inertia_tensor: null       # 3×3 kg·m², about CoM in body frame axes
+    total_surface_area: null   # m²
+

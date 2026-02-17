@@ -1,0 +1,117 @@
+vehicle:
+  # Deterministic, simplified vehicle config for unit tests.
+  gravity: 9.81
+  dt: 0.005
+  quat_normalize_interval: 10
+
+  # Single primitive, no drag, no randomization.
+  primitives:
+    - name: "test_body"
+      shape: "cylinder"
+      mass: 1.0
+      radius: 0.05
+      height: 0.20
+      position: [0.0, 0.0, 0.0]
+      orientation: [0.0, 0.0, 0.0]
+      surface_area: 0.0
+      drag_facing: { x: 0.0, y: 0.0, z: 0.0 }
+      Cd_local: 0.0
+
+  edf:
+    unit_name: "TEST_EDF"
+    fan_diameter: 0.10
+    duct_inner_diameter: 0.10
+    duct_outer_diameter: 0.10
+    blade_count: 1
+    max_static_thrust: 20.0
+    max_rpm: 60000
+    max_omega: 6283.185307179586  # 60000 * 2π / 60
+    k_thrust: 5.067075188113866e-7  # 20 / max_omega^2
+    k_torque: 0.0
+    I_fan: 0.001
+    tau_motor: 0.10
+    r_thrust: [0.0, 0.0, 0.0]
+    r_duct: 0.05
+    exhaust_velocity_max: 50.0
+
+  aero:
+    Cd: 0.0
+    r_cp: [0.0, 0.0, 0.0]
+    A_proj: 0.0
+    compute_directional_drag: false
+    total_surface_area: 0.0
+
+  fins:
+    count: 4
+    airfoil_profile: "TEST"
+    chord: 0.05
+    span: 0.04
+    thickness_ratio: 0.12
+    max_thickness: 0.006
+    planform_area: 0.002
+    wetted_area: 0.004
+
+    Cl_alpha: 6.283
+    Cd0: 0.0
+    AR: 0.80
+    stall_angle: 0.262
+    post_stall_model: "tanh"
+
+    max_deflection: 0.349
+    rate_limit: 10.5
+
+    servo:
+      type: "digital"
+      tau_servo: 0.04
+      tau_servo_range: [0.04, 0.04]
+      aero_load_derating: 0.0
+
+    V_exhaust_nominal: 50.0
+    exhaust_velocity_ratio: true
+
+    fins_config:
+      - name: "fin_1"
+        position: [0.0, 0.04, 0.0]
+        hinge_axis: [1.0, 0.0, 0.0]
+        lift_direction: [1.0, 0.0, 0.0]
+        drag_direction: [0.0, 0.0, 1.0]
+        angular_offset_deg: 0
+      - name: "fin_2"
+        position: [0.0, -0.04, 0.0]
+        hinge_axis: [1.0, 0.0, 0.0]
+        lift_direction: [1.0, 0.0, 0.0]
+        drag_direction: [0.0, 0.0, 1.0]
+        angular_offset_deg: 180
+      - name: "fin_3"
+        position: [0.04, 0.0, 0.0]
+        hinge_axis: [0.0, 1.0, 0.0]
+        lift_direction: [0.0, 1.0, 0.0]
+        drag_direction: [0.0, 0.0, 1.0]
+        angular_offset_deg: 90
+      - name: "fin_4"
+        position: [-0.04, 0.0, 0.0]
+        hinge_axis: [0.0, 1.0, 0.0]
+        lift_direction: [0.0, 1.0, 0.0]
+        drag_direction: [0.0, 0.0, 1.0]
+        angular_offset_deg: 270
+
+  _computed:
+    total_mass: null
+    center_of_mass: null
+    inertia_tensor: null
+    inertia_tensor_inv: null
+    principal_inertias: null
+    total_surface_area: null
+    projected_area_x: null
+    projected_area_y: null
+    projected_area_z: null
+
+  cad_override:
+    use_cad_override: false
+    source: null
+    source_file: null
+    total_mass: null
+    center_of_mass: null
+    inertia_tensor: null
+    total_surface_area: null
+

@@ -1,0 +1,28 @@
+environment:
+  seed: 42
+
+  # Deterministic ISA-only atmosphere (no per-episode randomization).
+  atmosphere:
+    T_base: 288.15
+    T_lapse: -0.0065
+    P_base: 101325.0
+    rho_ref: 1.225
+    randomize_T: 0.0
+    randomize_P: 0.0
+
+  # Zero wind, zero turbulence, no gusts.
+  wind:
+    dt: 0.005
+    V_ref: 10.0
+    mean_vector_range_lo: [0.0, 0.0, 0.0]
+    mean_vector_range_hi: [0.0, 0.0, 0.0]
+    turbulence_intensity: 0.0
+    gust_prob: 0.0
+    gust_magnitude_range: [0.0, 0.0]
+    episode_duration: 15.0
+
+  curriculum:
+    enabled: false
+    ramp_fraction: 1.0
+    phases: []
+

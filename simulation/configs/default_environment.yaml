@@ -1,0 +1,44 @@
+environment:
+  seed: 42
+
+  atmosphere:
+    T_base: 288.15          # K, ISA sea-level temperature
+    T_lapse: -0.0065        # K/m, tropospheric lapse rate
+    P_base: 101325.0        # Pa, ISA sea-level pressure
+    rho_ref: 1.225          # kg/m³, reference density for thrust scaling
+    randomize_T: 10.0       # ±K, per-episode domain randomization
+    randomize_P: 2000.0     # ±Pa, per-episode domain randomization
+
+  wind:
+    dt: 0.005               # s, integration timestep (must match vehicle dt)
+    V_ref: 10.0             # m/s, reference airspeed for Dryden filter design
+    mean_vector_range_lo: [-10.0, -10.0, -2.0]   # m/s, [N, E, D] min
+    mean_vector_range_hi: [10.0, 10.0, 2.0]      # m/s, [N, E, D] max
+    turbulence_intensity: 0.3     # Dryden sigma_w scaling
+    gust_prob: 0.1                # probability of gust event per episode
+    gust_magnitude_range: [3.0, 8.0]   # m/s, amplitude bounds
+    episode_duration: 15.0        # s, for gust timing bounds (matches training.md max_episode_time)
+
+  curriculum:
+    enabled: false                # per training.md §10 — enable only if uniform DR fails at 5M steps
+    ramp_fraction: 0.7            # fraction of training to reach full difficulty
+    phases:
+      - fraction: 0.3
+        wind_range: [0, 2]        # aligned with training.md §10.2 "Easy"
+        rand_T: 2.0
+        rand_P: 500.0
+        gust_prob: 0.0
+        sensor_noise_scale: 0.5
+      - fraction: 0.7
+        wind_range: [0, 5]        # aligned with training.md §10.2 "Medium"
+        rand_T: 5.0
+        rand_P: 1000.0
+        gust_prob: 0.05
+        sensor_noise_scale: 0.75
+      - fraction: 1.0
+        wind_range: [0, 10]       # aligned with training.md §10.2 "Hard"
+        rand_T: 10.0
+        rand_P: 2000.0
+        gust_prob: 0.1
+        sensor_noise_scale: 1.0
+
