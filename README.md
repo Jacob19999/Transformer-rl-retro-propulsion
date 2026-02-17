@@ -6,6 +6,8 @@
 
 ---
 
+![pid_viz_seed42](https://github.com/user-attachments/assets/d4f46d5a-93cf-4b06-a0e1-5433ce99c1a3)
+
 ## Overview
 
 This research project investigates the **simulation-to-hardware transfer** of a **Gated Transformer-XL (GTrXL) enhanced Proximal Policy Optimization (PPO)** algorithm for thrust-vectoring control (TVC) in disturbance-resistant retro-propulsive landings. Motivated by the growing need for rocket booster recovery in reusable launch vehicles (e.g., SpaceX Falcon 9, Starship, Blue Origin New Glenn), the project addresses fundamental limitations in traditional controllers:
