@@ -116,9 +116,13 @@ class PIDController(Controller):
         s = self._gain_scale(h_agl)
 
         # --- Outer loop: altitude PID -> normalized throttle action a0 ---
-        # Use explicit altitude feature (obs[16]) with target altitude = 0 m.
+        # Use explicit altitude feature (obs[16]) with configurable setpoint.
+        # Default setpoint is 0 m AGL (touchdown). Stage 18 tuning may override
+        # this to tune about a hover operating point.
         # h_agl is positive upwards; to descend, error should be negative.
-        alt_error = 0.0 - h_agl
+        Kz = dict(self.outer["altitude"])
+        alt_target = float(Kz.get("target_h_agl", 0.0))
+        alt_error = alt_target - h_agl
         self.alt_integral = float(
             np.clip(
                 self.alt_integral + alt_error * self.dt,
@@ -129,7 +133,6 @@ class PIDController(Controller):
         alt_deriv = (alt_error - self.prev_alt_error) / self.dt
         self.prev_alt_error = float(alt_error)
 
-        Kz = dict(self.outer["altitude"])
         thrust_action = (
             s * float(Kz.get("Kp", 0.0)) * alt_error
             + s * float(Kz.get("Ki", 0.0)) * self.alt_integral

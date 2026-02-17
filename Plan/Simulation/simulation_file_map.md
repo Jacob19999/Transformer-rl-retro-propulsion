@@ -29,6 +29,7 @@
   - `simulation/training/controllers/base.py` — `Controller` ABC: `get_action(obs)`, `reset()`, `update_memory()`. **Stage 16**.
   - `simulation/training/controllers/pid_controller.py` — cascaded PID baseline controller (altitude PID + lateral PD + attitude PD). **Stage 17**.
   - `simulation/training/scripts/__init__.py` — importable entry points for training/eval scripts.
+  - `simulation/training/scripts/tune_pid.py` — PID gain tuning script (linearization + Ziegler–Nichols + grid search; saves tuned gains to `configs/pid.yaml`). **Stage 18**.
   - `simulation/training/configs/__init__.py` — controller-specific config package.
 
 - **Configs**

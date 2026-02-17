@@ -301,10 +301,10 @@
 
 | #    | Task                                                                       | Status  | Files                            | Depends On | Notes                                                   |
 | ---- | -------------------------------------------------------------------------- | ------- | -------------------------------- | ---------- | ------------------------------------------------------- |
-| 18.1 | Implement linearization script: numerical Jacobians A, B at hover trim     | `[ ]` | `training/scripts/tune_pid.py` | 11.1, 17.1 | training.md §8.4 Step 1. Finite-difference Jacobians   |
-| 18.2 | Implement Ziegler-Nichols tuning per axis (altitude, lateral, attitude)    | `[ ]` | `training/scripts/tune_pid.py` | 18.1       | Increase K_p → find K_u, T_u → compute PID gains      |
-| 18.3 | Implement grid search: run N episodes per gain set, pick best success rate | `[ ]` | `training/scripts/tune_pid.py` | 18.2, 12.1 | ±30% of Z-N gains, 5 steps per axis, 100 episodes each |
-| 18.4 | Run PID tuning, save best gains to `configs/pid.yaml`                    | `[ ]` | `configs/pid.yaml`             | 18.1–18.3 | Target: >50% success rate                               |
+| 18.1 | Implement linearization script: numerical Jacobians A, B at hover trim     | `[x]` | `training/scripts/tune_pid.py` | 11.1, 17.1 | training.md §8.4 Step 1. Finite-difference Jacobians   |
+| 18.2 | Implement Ziegler-Nichols tuning per axis (altitude, lateral, attitude)    | `[x]` | `training/scripts/tune_pid.py` | 18.1       | Increase K_p → find K_u, T_u → compute PID gains      |
+| 18.3 | Implement grid search: run N episodes per gain set, pick best success rate | `[x]` | `training/scripts/tune_pid.py` | 18.2, 12.1 | ±30% of Z-N gains, 5 steps per axis, 100 episodes each |
+| 18.4 | Run PID tuning, save best gains to `configs/pid.yaml`                    | `[x]` | `configs/pid.yaml`             | 18.1–18.3 | Target: >50% success rate                               |
 
 ---
 
