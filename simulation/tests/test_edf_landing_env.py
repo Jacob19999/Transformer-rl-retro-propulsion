@@ -25,6 +25,16 @@ def _make_env() -> EDFLandingEnv:
             "dt_policy": 0.025,
             "max_episode_time": 1.0,
             "target_position": [0.0, 0.0, 0.0],
+            # Make ICs deterministic and numerically gentle for unit tests.
+            "initial_conditions": {
+                "pos_xy_range": [0.0, 0.0],
+                "altitude_range": [5.0, 5.0],
+                "vel_xy_range": [0.0, 0.0],
+                "descent_rate_range": [0.0, 0.0],
+                "tilt_range_rad": 0.0,
+                "yaw_range": [0.0, 0.0],
+                "omega_range": [0.0, 0.0],
+            },
         }
     )
 
@@ -64,7 +74,7 @@ def test_terminates_on_fast_ground_contact() -> None:
 
     # Force a near-ground, high downward velocity state so we trigger hard ground contact.
     env.vehicle.state[0:3] = np.array([0.0, 0.0, -1e-3], dtype=float)  # 1 mm above ground
-    env.vehicle.state[3:6] = np.array([0.0, 0.0, 3.0], dtype=float)  # 3 m/s down in body (q set below)
+    env.vehicle.state[3:6] = np.array([0.0, 0.0, 6.0], dtype=float)  # 6 m/s down in body (q set below)
     env.vehicle.state[6:10] = np.array([1.0, 0.0, 0.0, 0.0], dtype=float)  # upright
     env.vehicle.state[10:13] = np.zeros(3, dtype=float)
 

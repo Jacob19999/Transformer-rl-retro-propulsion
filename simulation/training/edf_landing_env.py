@@ -34,6 +34,7 @@ from simulation.config_loader import load_config
 from simulation.dynamics.quaternion_utils import euler_to_quat, quat_to_dcm
 from simulation.dynamics.vehicle import CONTROL_DIM, VehicleDynamics
 from simulation.environment.environment_model import EnvironmentModel
+from simulation.training.observation import ObservationConfig, ObservationPipeline
 
 
 OBS_DIM = 20
@@ -127,16 +128,35 @@ class EDFLandingEnv(gym.Env):
         self.oob_radius = float(term_cfg.get("oob_radius", 20.0))
         self.oob_alt_margin = float(term_cfg.get("oob_alt_margin", 5.0))
 
+        # Initial-condition sampling configuration (training.md §6.1)
+        ic_cfg = cfg.get("initial_conditions", {})
+        self.ic_pos_xy_range = self._range2(ic_cfg.get("pos_xy_range", [-2.0, 2.0]), name="pos_xy_range")
+        self.ic_altitude_range = self._range2(ic_cfg.get("altitude_range", [5.0, 10.0]), name="altitude_range")
+        self.ic_vel_xy_range = self._range2(ic_cfg.get("vel_xy_range", [-2.0, 2.0]), name="vel_xy_range")
+        self.ic_descent_rate_range = self._range2(
+            ic_cfg.get("descent_rate_range", [0.0, 3.0]), name="descent_rate_range"
+        )
+        self.ic_tilt_range_rad = float(ic_cfg.get("tilt_range_rad", np.deg2rad(5.0)))
+        self.ic_yaw_range = self._range2(ic_cfg.get("yaw_range", [0.0, 2.0 * np.pi]), name="yaw_range")
+        self.ic_omega_range = self._range2(ic_cfg.get("omega_range", [-0.2, 0.2]), name="omega_range")
+
         # Internal episode state
         self.step_count = 0
         self.prev_action = np.zeros(ACT_DIM, dtype=float)
-        self.wind_ema = np.zeros(3, dtype=float)
-        self.wind_ema_alpha = float(cfg.get("wind_ema_alpha", 0.05))
         self.prev_velocity: np.ndarray | None = None
         self.prev_accel: np.ndarray | None = None
         self.prev_potential: float | None = None
         self.h0 = 0.0
         self._touched_ground = False
+        self._hard_impact = False
+        self._impact_vz_down: float | None = None
+
+        # Observation pipeline (Stage 13)
+        obs_section = dict(cfg.get("observation", {}))
+        # Backward-compat: Stage 12 stored this at the root.
+        if "wind_ema_alpha" in cfg and "wind_ema_alpha" not in obs_section:
+            obs_section["wind_ema_alpha"] = cfg["wind_ema_alpha"]
+        self.obs_pipeline = ObservationPipeline(ObservationConfig.from_config(obs_section))
 
     def _load_root_config(self, config: Mapping[str, Any] | str | Path | None) -> dict[str, Any]:
         """Load env config dict.
@@ -158,6 +178,17 @@ class EDFLandingEnv(gym.Env):
             return dict(cfg.get("training", cfg))
 
         return dict(config)
+
+    @staticmethod
+    def _range2(value: object, *, name: str) -> tuple[float, float]:
+        arr = np.asarray(value, dtype=float).reshape(-1)
+        if arr.size != 2:
+            raise ValueError(f"{name} must have 2 elements [lo, hi], got {arr!r}.")
+        lo = float(arr[0])
+        hi = float(arr[1])
+        if hi < lo:
+            raise ValueError(f"{name} must satisfy hi >= lo, got [{lo}, {hi}].")
+        return lo, hi
 
     def _scale_action(self, action: np.ndarray) -> np.ndarray:
         """Convert normalized [-1,1] action to physical units [T_cmd, delta_1..4]."""
@@ -181,26 +212,27 @@ class EDFLandingEnv(gym.Env):
         rng = self.np_random
 
         # Position (NED): z is down, so altitude h -> p_z = -h
-        off_x = float(rng.uniform(-2.0, 2.0))
-        off_y = float(rng.uniform(-2.0, 2.0))
-        h0 = float(rng.uniform(5.0, 10.0))
+        off_x = float(rng.uniform(*self.ic_pos_xy_range))
+        off_y = float(rng.uniform(*self.ic_pos_xy_range))
+        h0 = float(rng.uniform(*self.ic_altitude_range))
         p0 = self.p_target + np.array([off_x, off_y, -h0], dtype=float)
 
         # Inertial velocity (NED)
-        vx_i = float(rng.uniform(-2.0, 2.0))
-        vy_i = float(rng.uniform(-2.0, 2.0))
-        vz_i = float(rng.uniform(0.0, 3.0))  # positive = downward in NED
+        vx_i = float(rng.uniform(*self.ic_vel_xy_range))
+        vy_i = float(rng.uniform(*self.ic_vel_xy_range))
+        vz_i = float(rng.uniform(*self.ic_descent_rate_range))  # positive = downward in NED
 
         # Orientation: small roll/pitch tilt + random yaw
-        roll = float(rng.uniform(-np.deg2rad(5.0), np.deg2rad(5.0)))
-        pitch = float(rng.uniform(-np.deg2rad(5.0), np.deg2rad(5.0)))
-        yaw = float(rng.uniform(0.0, 2.0 * np.pi))
+        roll = float(rng.uniform(-self.ic_tilt_range_rad, self.ic_tilt_range_rad))
+        pitch = float(rng.uniform(-self.ic_tilt_range_rad, self.ic_tilt_range_rad))
+        yaw = float(rng.uniform(*self.ic_yaw_range))
         q0 = euler_to_quat(roll, pitch, yaw)
         R = quat_to_dcm(q0)
 
         v_b0 = R.T @ np.array([vx_i, vy_i, vz_i], dtype=float)
 
-        omega0 = np.asarray(rng.uniform(-0.2, 0.2, size=3), dtype=float).reshape(3)
+        omega_lo, omega_hi = self.ic_omega_range
+        omega0 = np.asarray(rng.uniform(omega_lo, omega_hi, size=3), dtype=float).reshape(3)
         T_init = float(self.vehicle.mass * self.vehicle.g)
 
         self.h0 = h0
@@ -216,11 +248,13 @@ class EDFLandingEnv(gym.Env):
 
         self.step_count = 0
         self.prev_action = np.zeros(ACT_DIM, dtype=float)
-        self.wind_ema = np.zeros(3, dtype=float)
         self.prev_velocity = None
         self.prev_accel = None
         self.prev_potential = None
         self._touched_ground = False
+        self._hard_impact = False
+        self._impact_vz_down = None
+        self.obs_pipeline.reset(self.np_random)
 
         obs = self._get_obs()
         info = self._get_info()
@@ -235,41 +269,21 @@ class EDFLandingEnv(gym.Env):
     def _get_obs(self) -> np.ndarray:
         """Compute 20-dim observation (training.md §3.2)."""
         p, v_b, R, omega, T = self._state_terms()
-        v_inertial = R @ v_b
         env_vars = self.env_model.sample_at_state(self.vehicle.time, p)
         v_wind_ned = np.asarray(env_vars["wind"], dtype=float).reshape(3)
-        v_wind_body = R.T @ v_wind_ned
-
-        # Target offset in body frame
-        e_p_body = R.T @ (self.p_target - p)
-
-        # Gravity direction in body frame (NED gravity direction = +z)
-        g_body = R.T @ np.array([0.0, 0.0, 1.0], dtype=float)
-
-        # Wind EMA estimate (body frame)
-        a = float(self.wind_ema_alpha)
-        self.wind_ema = (1.0 - a) * self.wind_ema + a * v_wind_body
-
-        h_agl = max(float(-p[2]), 0.0)
-        speed = float(np.linalg.norm(v_b))
-        ang_speed = float(np.linalg.norm(omega))
-        twr = float(T / (self.vehicle.mass * self.vehicle.g + 1e-9))
-        time_frac = float(np.clip(self.vehicle.time / max(self.max_time, 1e-9), 0.0, 1.0))
-
-        obs = np.concatenate(
-            [
-                e_p_body.astype(float),
-                v_b.astype(float),
-                g_body.astype(float),
-                omega.astype(float),
-                np.array([twr], dtype=float),
-                self.wind_ema.astype(float),
-                np.array([h_agl, speed, ang_speed, time_frac], dtype=float),
-            ]
+        return self.obs_pipeline.get_obs(
+            p=p,
+            v_b=v_b,
+            R_body_to_inertial=R,
+            omega=omega,
+            T=T,
+            mass=self.vehicle.mass,
+            g=self.vehicle.g,
+            p_target=self.p_target,
+            v_wind_ned=v_wind_ned,
+            t=self.vehicle.time,
+            max_time=self.max_time,
         )
-        if obs.size != OBS_DIM:
-            raise RuntimeError(f"Expected obs dim {OBS_DIM}, got {obs.size}.")
-        return obs.astype(np.float32)
 
     def _tilt_angle(self, R: np.ndarray) -> float:
         g_body = R.T @ np.array([0.0, 0.0, 1.0], dtype=float)
@@ -281,6 +295,11 @@ class EDFLandingEnv(gym.Env):
         h_agl = max(float(-p[2]), 0.0)
         tilt = self._tilt_angle(R)
 
+        # Immediate hard-impact crash (training.md §6.3). This is detected at the
+        # instant of first ground penetration, before the contact impulse settles.
+        if self._hard_impact:
+            return TerminationResult(True, False, True, False, "hard_ground_contact")
+
         # Ground contact / touchdown checks
         landed = (
             h_agl < self.h_land
@@ -288,10 +307,7 @@ class EDFLandingEnv(gym.Env):
             and tilt < self.tilt_land
             and float(np.linalg.norm(omega)) < self.omega_land
         )
-        on_ground = h_agl <= 0.0
-        hard_ground_contact = on_ground and float(abs(v_inertial[2])) > self.vz_hard_crash
-
-        crashed = (h_agl < self.h_land and not landed) or hard_ground_contact
+        crashed = (h_agl < self.h_land and not landed)
         extreme_tilt = tilt > self.tilt_abort
 
         # Out of bounds (relative to target)
@@ -302,8 +318,6 @@ class EDFLandingEnv(gym.Env):
             return TerminationResult(True, True, False, False, "landed")
         if crashed:
             return TerminationResult(True, False, True, False, "crashed")
-        if hard_ground_contact:
-            return TerminationResult(True, False, True, False, "hard_ground_contact")
         if extreme_tilt:
             return TerminationResult(True, False, False, False, "extreme_tilt")
         if oob:
@@ -325,6 +339,10 @@ class EDFLandingEnv(gym.Env):
 
         v_inertial = R @ v_b
         vz_down = float(v_inertial[2])  # positive = downward
+        if (not self._hard_impact) and vz_down > self.vz_hard_crash:
+            self._hard_impact = True
+            self._impact_vz_down = vz_down
+
         F = self.k_ground * penetration + self.c_ground * max(0.0, vz_down)
         F = max(0.0, float(F))
 

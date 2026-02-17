@@ -227,11 +227,11 @@
 
 | #    | Task                                                                   | Status  | Files                           | Depends On | Notes                                                                                                                           |
 | ---- | ---------------------------------------------------------------------- | ------- | ------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| 13.1 | Implement `_get_obs()` — compute 20-dim observation from true state | `[ ]` | `training/observation.py`     | 12.1       | training.md §3.2. Target offset in body frame, gravity direction, angular vel, TWR, wind EMA, alt, speed, ang_speed, time_frac |
-| 13.2 | Implement sensor noise injection: Gaussian per component               | `[ ]` | `training/observation.py`     | 13.1       | training.md §3.5. Configurable σ values from BNO085 datasheet                                                                 |
-| 13.3 | Implement wind EMA estimate:`α=0.05` exponential moving average     | `[ ]` | `training/observation.py`     | 13.1       | training.md §3.3 wind estimate rationale                                                                                       |
-| 13.4 | Integrate observation module into `EDFLandingEnv._get_obs()`         | `[ ]` | `training/edf_landing_env.py` | 13.1–13.3 | Replace placeholder with actual observation code                                                                                |
-| 13.5 | Write observation unit tests                                           | `[ ]` | `tests/test_observation.py`   | 13.1–13.3 | Correct shape (20,); noise=0 → matches true state; noise stdev ≈ configured σ over N samples                                 |
+| 13.1 | Implement `_get_obs()` — compute 20-dim observation from true state | `[x]` | `training/observation.py`     | 12.1       | training.md §3.2. Target offset in body frame, gravity direction, angular vel, TWR, wind EMA, alt, speed, ang_speed, time_frac |
+| 13.2 | Implement sensor noise injection: Gaussian per component               | `[x]` | `training/observation.py`     | 13.1       | training.md §3.5. Configurable σ values from BNO085 datasheet                                                                 |
+| 13.3 | Implement wind EMA estimate:`α=0.05` exponential moving average     | `[x]` | `training/observation.py`     | 13.1       | training.md §3.3 wind estimate rationale                                                                                       |
+| 13.4 | Integrate observation module into `EDFLandingEnv._get_obs()`         | `[x]` | `training/edf_landing_env.py` | 13.1–13.3 | Replace placeholder with actual observation code                                                                                |
+| 13.5 | Write observation unit tests                                           | `[x]` | `tests/test_observation.py`   | 13.1–13.3 | Correct shape (20,); noise=0 → matches true state; noise stdev ≈ configured σ over N samples                                 |
 
 ---
 
