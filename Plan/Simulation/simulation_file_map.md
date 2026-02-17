@@ -12,13 +12,17 @@
 
 - **Dynamics**
   - `simulation/dynamics/__init__.py` — package marker for dynamics modules (vehicle, thrust, aero, fins, servo, integrator, quaternions).
+  - `simulation/dynamics/vehicle.py` — VehicleDynamics top-level assembly (Stage 11).
 
 - **Environment**
   - `simulation/environment/__init__.py` — package marker for environment modules (atmosphere, wind, environment assembly).
   - `simulation/environment/atmosphere_model.py` — ISA baseline + per-episode randomization; provides `(T, P, rho)` for force models. **Stage 8**.
+  - `simulation/environment/wind_model.py` — mean wind + Dryden turbulence + discrete gusts; provides `v_wind` (3,) NED. **Stage 9**.
+  - `simulation/environment/environment_model.py` — top-level environment assembly (composes atmosphere + wind); provides `sample_at_state(t, p)` dict. **Stage 10**.
 
 - **Training**
   - `simulation/training/__init__.py` — package marker for Gym env + training utilities.
+  - `simulation/training/edf_landing_env.py` — Gymnasium `EDFLandingEnv` wrapper (spaces, reset/step, termination, ground contact, info). **Stage 12**.
   - `simulation/training/controllers/__init__.py` — controller package (PID, PPO-MLP, GTrXL-PPO, SCP).
   - `simulation/training/scripts/__init__.py` — importable entry points for training/eval scripts.
   - `simulation/training/configs/__init__.py` — controller-specific config package.
@@ -40,6 +44,10 @@
   - `simulation/tests/test_servo_model.py` — unit tests for servo rate-limited first-order lag, rate limiting, reset randomization. **Stage 6**.
   - `simulation/tests/test_integrator.py` — unit tests for RK4 integrator accuracy and quaternion re-normalization behavior. **Stage 7**.
   - `simulation/tests/test_atmosphere_model.py` — unit tests for ISA sea-level density, randomization bounds, and ideal gas consistency. **Stage 8**.
+  - `simulation/tests/test_wind_model.py` — unit tests for Dryden filter, mean wind, gusts, seeded reproducibility, zero config. **Stage 9**.
+  - `simulation/tests/test_environment_model.py` — unit tests for environment assembly: keys/shapes, NED altitude conversion, seeded determinism. **Stage 10**.
+  - `simulation/tests/test_vehicle_dynamics.py` — integration tests for VehicleDynamics: free fall, hover, gyro, wind, energy. **Stage 11**.
+  - `simulation/tests/test_edf_landing_env.py` — unit tests for Gym wrapper: space shapes, reset/step validity, termination on ground contact. **Stage 12**.
 
 - **Isaac (Phase 2, optional)**
   - `simulation/isaac/__init__.py` — Isaac Sim integration package marker.
@@ -58,14 +66,16 @@
   - `simulation/dynamics/fin_model.py` — 4× NACA 0012 fins in exhaust (thin-airfoil lift, induced drag, per-fin force, exhaust velocity scaling, mechanical clamp, total force/torque). **Stage 5**.
   - `simulation/dynamics/servo_model.py` — rate-limited first-order lag actuator model for fin servos, with per-episode tau + derating randomization. **Stage 6**.
   - `simulation/dynamics/integrator.py` — generic fixed-step RK4 integrator (`rk4_step`) plus optional periodic quaternion re-normalization (`RK4Integrator`). **Stage 7**.
-  - TODO: Add file entries here as we implement `vehicle.py` (Stage 11).
+  - `simulation/dynamics/vehicle.py` — VehicleDynamics top-level assembly: state, derivs, step, reset; composes all sub-models. **Stage 11**.
 
 - **Environment**
   - `simulation/environment/atmosphere_model.py` — ISA lapse + barometric pressure + ideal gas density; `reset()` randomizes base \(T_{base}, P_{base}\). **Stage 8**.
-  - TODO: Add file entries here as we implement `wind_model.py`, `environment_model.py` (Stages 9–10).
+  - `simulation/environment/wind_model.py` — mean wind + Dryden turbulence (DrydenFilter) + discrete gusts; `reset()` resamples mean wind and gust params. **Stage 9**.
+  - `simulation/environment/environment_model.py` — assembly wrapper composing `AtmosphereModel` + `WindModel`; `reset(seed)` ensures reproducibility with independent RNG streams. **Stage 10**.
 
 - **Training / Gym**
-  - TODO: Add file entries here as we implement `edf_landing_env.py`, `observation.py`, `reward.py`, `curriculum.py`, controllers, and training/eval scripts (Stages 12–23).
+  - `simulation/training/edf_landing_env.py` — Stage 12 Gymnasium wrapper. Note: tests will skip if `gymnasium` isn't installed, but `requirements.txt` pins `gymnasium>=0.29`.
+  - TODO: Add entries as we implement `observation.py`, `reward.py`, `curriculum.py`, controllers, and training/eval scripts (Stages 13–23).
 
 - **Configs**
   - Keep `default_*.yaml` and `test_*.yaml` in sync with the plan docs (`vehicle.md`, `env.md`, `training.md`). Any intentional deviations should be documented inline in the YAML and briefly summarized here.
