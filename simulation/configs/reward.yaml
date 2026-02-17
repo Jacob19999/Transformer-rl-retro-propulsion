@@ -1,0 +1,21 @@
+reward:
+  # Step rewards (training.md §5.3)
+  alive_bonus: 0.1
+  shaping:
+    distance_coeff: 1.0       # c_d
+    velocity_coeff: 0.2       # c_v
+    gamma: 0.99               # discount for potential shaping
+  orientation_weight: 0.5     # w_theta
+  jerk_weight: 0.05           # w_j
+  jerk_reference: 10.0        # m/s^3, normalization reference (RQ1 threshold)
+  fuel_weight: 0.01           # w_f
+  action_smooth_weight: 0.02  # w_a
+
+  # Terminal rewards (training.md §5.4)
+  landing_success: 100.0      # R_land
+  precision_bonus: 50.0       # R_prec
+  precision_sigma: 0.1        # m, Gaussian width
+  soft_touchdown: 20.0        # R_soft
+  crash_penalty: 100.0        # R_crash
+  oob_penalty: 50.0           # R_oob
+

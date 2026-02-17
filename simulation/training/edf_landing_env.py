@@ -35,6 +35,7 @@ from simulation.dynamics.quaternion_utils import euler_to_quat, quat_to_dcm
 from simulation.dynamics.vehicle import CONTROL_DIM, VehicleDynamics
 from simulation.environment.environment_model import EnvironmentModel
 from simulation.training.observation import ObservationConfig, ObservationPipeline
+from simulation.training.reward import RewardFunction
 
 
 OBS_DIM = 20
@@ -99,23 +100,8 @@ class EDFLandingEnv(gym.Env):
         self.c_ground = float(ground_cfg.get("c_damper", 500.0))
         self.settle_steps = int(ground_cfg.get("settle_substeps", 5))
 
-        # Reward (training.md §5) — minimal in-env implementation for Stage 12
-        reward_cfg = cfg.get("reward", {})
-        self.gamma = float(reward_cfg.get("gamma", 0.99))
-        self.alive_bonus = float(reward_cfg.get("alive_bonus", 0.1))
-        self.c_d = float(reward_cfg.get("c_d", 1.0))
-        self.c_v = float(reward_cfg.get("c_v", 0.2))
-        self.w_theta = float(reward_cfg.get("w_theta", 0.5))
-        self.w_j = float(reward_cfg.get("w_j", 0.05))
-        self.j_ref = float(reward_cfg.get("j_ref", 10.0))
-        self.w_f = float(reward_cfg.get("w_f", 0.01))
-        self.w_a = float(reward_cfg.get("w_a", 0.02))
-        self.R_land = float(reward_cfg.get("R_land", 100.0))
-        self.R_prec = float(reward_cfg.get("R_prec", 50.0))
-        self.sigma_prec = float(reward_cfg.get("sigma_prec", 0.1))
-        self.R_soft = float(reward_cfg.get("R_soft", 20.0))
-        self.R_crash = float(reward_cfg.get("R_crash", 100.0))
-        self.R_oob = float(reward_cfg.get("R_oob", 50.0))
+        # Reward function (Stage 14)
+        self.reward_fn = RewardFunction(cfg.get("reward"))
 
         # Termination thresholds (training.md §6.3)
         term_cfg = cfg.get("termination", {})
@@ -142,10 +128,6 @@ class EDFLandingEnv(gym.Env):
 
         # Internal episode state
         self.step_count = 0
-        self.prev_action = np.zeros(ACT_DIM, dtype=float)
-        self.prev_velocity: np.ndarray | None = None
-        self.prev_accel: np.ndarray | None = None
-        self.prev_potential: float | None = None
         self.h0 = 0.0
         self._touched_ground = False
         self._hard_impact = False
@@ -170,7 +152,12 @@ class EDFLandingEnv(gym.Env):
             base = Path(__file__).resolve().parents[1] / "configs"
             v = load_config(base / "default_vehicle.yaml")
             e = load_config(base / "default_environment.yaml")
-            return {"vehicle": v.get("vehicle", v), "environment": e.get("environment", e)}
+            r = load_config(base / "reward.yaml")
+            return {
+                "vehicle": v.get("vehicle", v),
+                "environment": e.get("environment", e),
+                "reward": r.get("reward", r),
+            }
 
         if isinstance(config, (str, Path)):
             cfg = load_config(config)
@@ -247,14 +234,11 @@ class EDFLandingEnv(gym.Env):
         self.vehicle.reset(ic, seed=seed)
 
         self.step_count = 0
-        self.prev_action = np.zeros(ACT_DIM, dtype=float)
-        self.prev_velocity = None
-        self.prev_accel = None
-        self.prev_potential = None
         self._touched_ground = False
         self._hard_impact = False
         self._impact_vz_down = None
         self.obs_pipeline.reset(self.np_random)
+        self.reward_fn.reset()
 
         obs = self._get_obs()
         info = self._get_info()
@@ -357,63 +341,6 @@ class EDFLandingEnv(gym.Env):
             self.vehicle.state[2] = 0.0
         self._touched_ground = True
 
-    def _potential(self) -> float:
-        p, v_b, _R, _omega, _T = self._state_terms()
-        e_p = self.p_target - p
-        return float(-self.c_d * np.linalg.norm(e_p) - self.c_v * np.linalg.norm(v_b))
-
-    def _terminal_reward(self, term: TerminationResult) -> float:
-        if term.landed:
-            p, v_b, R, _omega, _T = self._state_terms()
-            v_inertial = R @ v_b
-            e_xy = p[:2] - self.p_target[:2]
-            cep = float(np.linalg.norm(e_xy))
-            v_touch = float(np.linalg.norm(v_inertial))
-            r_prec = self.R_prec * float(np.exp(-(cep * cep) / (2.0 * self.sigma_prec * self.sigma_prec)))
-            r_soft = self.R_soft * max(0.0, (1.0 - v_touch / max(self.v_land, 1e-9)))
-            return float(self.R_land + r_prec + r_soft)
-        if term.crashed:
-            return float(-self.R_crash)
-        if term.oob:
-            return float(-self.R_oob)
-        return 0.0
-
-    def _step_reward(self, action: np.ndarray, u_phys: np.ndarray) -> float:
-        # Alive + potential shaping
-        phi = self._potential()
-        if self.prev_potential is None:
-            shape = 0.0
-        else:
-            shape = self.gamma * phi - float(self.prev_potential)
-        self.prev_potential = phi
-
-        # Orientation penalty
-        _p, _v_b, R, omega, T = self._state_terms()
-        g_body = R.T @ np.array([0.0, 0.0, 1.0], dtype=float)
-        orient = -self.w_theta * (1.0 - float(g_body[2]))
-
-        # Fuel penalty (proxy)
-        T_cmd = float(u_phys[0])
-        T_max = self.vehicle.thrust_model.config.T_max
-        if T_max is None:
-            T_max = float(self.vehicle.mass * self.vehicle.g) * (1.0 + self.throttle_range)
-        fuel = -self.w_f * (T_cmd / max(float(T_max), 1e-9)) * float(self.dt_policy)
-
-        # Action smoothness
-        act_smooth = -self.w_a * float(np.linalg.norm(np.asarray(action, dtype=float) - self.prev_action))
-
-        # Jerk penalty (finite-difference; skip first 2 steps)
-        jerk_pen = 0.0
-        if self.prev_velocity is not None:
-            accel = (np.asarray(self.vehicle.state[3:6], dtype=float) - self.prev_velocity) / float(self.dt_policy)
-            if self.prev_accel is not None and self.step_count >= 2:
-                jerk = float(np.linalg.norm(accel - self.prev_accel) / float(self.dt_policy))
-                jerk_pen = -self.w_j * (jerk / max(self.j_ref, 1e-9))
-            self.prev_accel = accel
-        self.prev_velocity = np.asarray(self.vehicle.state[3:6], dtype=float).copy()
-
-        return float(self.alive_bonus + shape + orient + jerk_pen + fuel + act_smooth)
-
     def step(self, action: np.ndarray):
         a = np.asarray(action, dtype=float).reshape(ACT_DIM)
         a = np.clip(a, -1.0, 1.0)
@@ -436,9 +363,33 @@ class EDFLandingEnv(gym.Env):
         terminated = bool(term.terminated)
         truncated = bool(self.step_count >= self.max_steps)
 
-        reward = self._step_reward(a, u)
+        p, v_b, R, _omega, _T = self._state_terms()
+        T_cmd = float(u[0])
+        T_max = self.vehicle.thrust_model.config.T_max
+        if T_max is None:
+            T_max = float(self.vehicle.mass * self.vehicle.g) * (1.0 + self.throttle_range)
+
+        reward = self.reward_fn.step_reward(
+            p=p,
+            v_b=v_b,
+            R_body_to_inertial=R,
+            p_target=self.p_target,
+            action=a,
+            T_cmd=T_cmd,
+            T_max=float(T_max),
+            dt_policy=float(self.dt_policy),
+        )
         if terminated:
-            reward += self._terminal_reward(term)
+            reward += self.reward_fn.terminal_reward(
+                landed=bool(term.landed),
+                crashed=bool(term.crashed),
+                out_of_bounds=bool(term.oob),
+                p=p,
+                v_b=v_b,
+                R_body_to_inertial=R,
+                p_target=self.p_target,
+                v_max_touchdown=float(self.v_land),
+            )
 
         info = self._get_info()
         info.update(
@@ -450,7 +401,6 @@ class EDFLandingEnv(gym.Env):
             }
         )
 
-        self.prev_action = a.copy()
         self.step_count += 1
         return obs, float(reward), terminated, truncated, info
 
