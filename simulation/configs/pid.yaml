@@ -1,0 +1,48 @@
+pid:
+  # Baseline gains (training.md §15.5). These are initial values and are expected
+  # to be refined in Stage 18 (linearization + Ziegler-Nichols + grid search).
+  #
+  # Note: The controller outputs normalized actions in [-1, 1]^5. These gains are
+  # therefore "normalized-space" starting points, not guaranteed physical units.
+
+  # Controller update timestep (policy rate)
+  dt: 0.025
+
+  # Used to normalize fin deflection commands to [-1, 1]
+  delta_max: 0.26  # rad (~15°)
+
+  outer_loop:
+    altitude:
+      Kp: 2.0                 # initial
+      Ki: 0.5
+      Kd: 1.0
+      integral_limit: 5.0     # anti-windup clamp (integral state limit)
+    lateral_x:
+      Kp: 0.3
+      Kd: 0.15
+    lateral_y:
+      Kp: 0.3
+      Kd: 0.15
+    max_tilt_cmd_deg: 20.0    # clamp commanded roll/pitch
+
+  inner_loop:
+    roll:
+      Kp: 5.0
+      Kd: 1.0
+    pitch:
+      Kp: 5.0
+      Kd: 1.0
+
+  gain_schedule:
+    enabled: false
+    phases:
+      - name: descent
+        altitude_range: [2.0, 100.0]
+        gain_scale: 1.0
+      - name: approach
+        altitude_range: [0.5, 2.0]
+        gain_scale: 0.7
+      - name: terminal
+        altitude_range: [0.0, 0.5]
+        gain_scale: 0.5
+

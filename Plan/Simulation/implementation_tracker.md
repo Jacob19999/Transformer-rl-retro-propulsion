@@ -285,13 +285,13 @@
 
 | #    | Task                                                                      | Status  | Files                                      | Depends On | Notes                                                                     |
 | ---- | ------------------------------------------------------------------------- | ------- | ------------------------------------------ | ---------- | ------------------------------------------------------------------------- |
-| 17.1 | Implement outer loop: altitude PID → throttle command                    | `[ ]` | `training/controllers/pid_controller.py` | 16.1       | training.md §7.3.2. PID with anti-windup                                 |
-| 17.2 | Implement outer loop: lateral PD → desired roll/pitch angles             | `[ ]` | `training/controllers/pid_controller.py` | 17.1       | Clamp desired angles ±20°                                               |
-| 17.3 | Implement inner loop: attitude PD → fin deflections                      | `[ ]` | `training/controllers/pid_controller.py` | 17.2       | training.md §7.3.3. Map pitch→fins 1/2, roll→fins 3/4                  |
-| 17.4 | Implement `PIDController.reset()` — zero integral + derivative states  | `[ ]` | `training/controllers/pid_controller.py` | 17.1–17.3 | —                                                                        |
-| 17.5 | Implement `PIDController.get_action(obs)` — output normalized [-1,1]^5 | `[ ]` | `training/controllers/pid_controller.py` | 17.1–17.3 | Appendix B full implementation                                            |
-| 17.6 | Create `configs/pid.yaml` — initial gain values                        | `[ ]` | `configs/pid.yaml`                       | —         | training.md §15.5                                                        |
-| 17.7 | Write PID controller tests                                                | `[ ]` | `tests/test_pid_controller.py`           | 17.1–17.6 | Hover → near-zero fin commands; position error → correct tilt direction |
+| 17.1 | Implement outer loop: altitude PID → throttle command                    | `[x]` | `training/controllers/pid_controller.py` | 16.1       | training.md §7.3.2. PID with anti-windup                                 |
+| 17.2 | Implement outer loop: lateral PD → desired roll/pitch angles             | `[x]` | `training/controllers/pid_controller.py` | 17.1       | Clamp desired angles ±20°                                               |
+| 17.3 | Implement inner loop: attitude PD → fin deflections                      | `[x]` | `training/controllers/pid_controller.py` | 17.2       | training.md §7.3.3. Map pitch→fins 1/2, roll→fins 3/4                  |
+| 17.4 | Implement `PIDController.reset()` — zero integral + derivative states  | `[x]` | `training/controllers/pid_controller.py` | 17.1–17.3 | —                                                                        |
+| 17.5 | Implement `PIDController.get_action(obs)` — output normalized [-1,1]^5 | `[x]` | `training/controllers/pid_controller.py` | 17.1–17.3 | Appendix B full implementation                                            |
+| 17.6 | Create `configs/pid.yaml` — initial gain values                        | `[x]` | `configs/pid.yaml`                       | —         | training.md §15.5                                                        |
+| 17.7 | Write PID controller tests                                                | `[x]` | `tests/test_pid_controller.py`           | 17.1–17.6 | Hover → near-zero fin commands; position error → correct tilt direction |
 
 ---
 

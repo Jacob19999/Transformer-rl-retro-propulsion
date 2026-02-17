@@ -27,6 +27,7 @@
   - `simulation/training/reward.py` — reward function (potential-based shaping + terminal rewards/penalties). **Stage 14**.
   - `simulation/training/controllers/__init__.py` — controller package (PID, PPO-MLP, GTrXL-PPO, SCP).
   - `simulation/training/controllers/base.py` — `Controller` ABC: `get_action(obs)`, `reset()`, `update_memory()`. **Stage 16**.
+  - `simulation/training/controllers/pid_controller.py` — cascaded PID baseline controller (altitude PID + lateral PD + attitude PD). **Stage 17**.
   - `simulation/training/scripts/__init__.py` — importable entry points for training/eval scripts.
   - `simulation/training/configs/__init__.py` — controller-specific config package.
 
@@ -36,6 +37,7 @@
   - `simulation/configs/default_environment.yaml` — **main environment config** copied from `env.md §7.1`.
   - `simulation/configs/reward.yaml` — reward weights config (training.md §15.2). **Stage 14**.
   - `simulation/configs/domain_randomization.yaml` — actuator delay and observation latency DR (training.md §6.2). **Stage 15**.
+  - `simulation/configs/pid.yaml` — PID baseline gains (training.md §15.5). **Stage 17**.
   - `simulation/configs/test_vehicle.yaml` — simplified, zero-drag, no-DR vehicle config for unit tests.
   - `simulation/configs/test_environment.yaml` — zero-wind, zero-randomization environment config for deterministic tests.
 
@@ -55,6 +57,7 @@
   - `simulation/tests/test_edf_landing_env.py` — unit tests for Gym wrapper: space shapes, reset/step validity, termination on ground contact, DR (actuator delay, obs latency). **Stage 12, 15**.
   - `simulation/tests/test_observation.py` — unit tests for observation pipeline: shape/layout, wind EMA behavior, noise std sanity. **Stage 13**.
   - `simulation/tests/test_reward.py` — unit tests for reward function: shaping sign, terminal bonuses/penalties. **Stage 14**.
+  - `simulation/tests/test_pid_controller.py` — unit tests for PID baseline controller: hover fin neutrality, tilt direction, clipping, reset. **Stage 17**.
 
 - **Isaac (Phase 2, optional)**
   - `simulation/isaac/__init__.py` — Isaac Sim integration package marker.
