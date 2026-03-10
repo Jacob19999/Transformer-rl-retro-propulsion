@@ -6,10 +6,10 @@
 
 ## Prerequisites
 
-- NVIDIA Isaac Sim 4.x installed (IsaacLab 1.x)
+- NVIDIA Isaac Sim 5.1.0 installed with IsaacLab 2.3
 - NVIDIA GPU with ≥8 GB VRAM (16 GB recommended for 512+ parallel envs)
-- Python 3.10+ with Isaac Sim Python environment activated
-- Existing project dependencies: `pip install -r requirements.txt`
+- **Python 3.11** via Isaac Sim's bundled Python environment (not system Python)
+- Existing project dependencies: `pip install -r requirements.txt` (within Isaac Sim Python env)
 
 ---
 

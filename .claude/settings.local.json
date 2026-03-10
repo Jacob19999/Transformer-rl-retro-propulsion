@@ -4,7 +4,8 @@
       "Bash(powershell -ExecutionPolicy Bypass -Command \"& ''./.specify/scripts/powershell/update-agent-context.ps1'' -AgentType claude\")",
       "Bash(ruff --version)",
       "Bash(flake8 --version)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(powershell -ExecutionPolicy Bypass -Command \"& ''./.specify/scripts/powershell/setup-plan.ps1'' -Json\")"
     ]
   },
   "hooks": {

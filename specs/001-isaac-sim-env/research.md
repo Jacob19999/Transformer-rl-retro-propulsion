@@ -7,13 +7,14 @@
 
 ## Decision 1: Isaac Sim / IsaacLab API Version
 
-**Decision**: Target **IsaacLab** (the successor to OmniIsaacGymEnvs) based on Isaac Sim 4.x.
+**Decision**: Target **IsaacLab 2.3** paired with **Isaac Sim 5.1.0**.
 
-**Rationale**: NVIDIA deprecated OmniIsaacGymEnvs in favor of IsaacLab (formerly Isaac Gym) as of Isaac Sim 4.0 (2024). IsaacLab provides the `ManagerBasedRLEnv` and `DirectRLEnv` APIs for vectorized training, replaces `VecEnvBase`, and is actively maintained. Using IsaacLab's `DirectRLEnv` (the lower-overhead variant) is the right fit for this custom control task where we need full control over observation construction and force application.
+**Rationale**: Isaac Sim 5.1.0 pairs with IsaacLab 2.3 (GA, October 2025). IsaacLab 2.x introduced a major package rename (all `omni.isaac.lab.`* → `isaaclab.*`) at the Isaac Sim 4.5 transition. IsaacLab's `DirectRLEnv` (imported from `isaaclab.envs`) is the correct base class for this custom control task — it provides the lowest overhead and full control over observation construction and force application, with the scene managed declaratively via `InteractiveSceneCfg`.
 
 **Alternatives considered**:
-- OmniIsaacGymEnvs: Deprecated; no new development
-- Raw Isaac Sim Python scripting: No vectorization support; single-environment only
+
+- OmniIsaacGymEnvs: Completely deprecated; final version was 4.0.0; not compatible with Isaac Sim 5.x
+- IsaacLab 1.x / Isaac Sim 4.x: Older generation; different import paths; do not match user's installed version
 - Isaac Gym (Preview): Outdated, no USD workflow; asset pipeline incompatible
 
 ---
@@ -25,6 +26,7 @@
 **Rationale**: The existing YAML config already defines all geometric primitives (cylinders, boxes, spheres) with positions, dimensions, masses, and orientations. A Python script can read these primitives and emit corresponding USD `UsdGeom.Cylinder`, `UsdGeom.Cube`, and `UsdGeom.Sphere` prims, attach `UsdPhysics.RigidBodyAPI` to the root, set mass/inertia via `UsdPhysics.MassAPI`, and create `UsdPhysics.RevoluteJoint` prims for the four fins. This avoids manual USD authoring entirely and keeps asset generation reproducible and config-driven.
 
 **Alternatives considered**:
+
 - Manual USD authoring in Omniverse Composer: Not config-driven; breaks FR-014
 - FBX/OBJ import: Loses physics metadata; requires separate PhysX setup
 - URDF-to-USD conversion: URDF format does not support the YAML primitive structure directly; requires intermediate transformation
@@ -33,14 +35,24 @@
 
 ## Decision 3: EDF Thrust & Fin Force Application
 
-**Decision**: Apply EDF thrust and fin aerodynamic forces as **external forces via IsaacLab's `ArticulationView.apply_forces_and_torques_at_pos()`** each simulation step.
+**Decision**: Apply EDF thrust and fin aerodynamic forces using **IsaacLab 2.x's buffer-then-flush pattern** via `Articulation.set_external_force_and_torque()` followed by `Articulation.write_data_to_sim()` before each `sim.step()`.
 
-**Rationale**: PhysX does not natively model EDF dynamics (rpm-squared thrust, first-order lag, ground effect) or NACA0012 aerodynamics in the exhaust stream. These must be computed in Python each step and injected as body forces. IsaacLab's `ArticulationView` supports batched force/torque application across all parallel environments in a single GPU tensor operation, which maintains vectorization performance. The first-order lag for the thrust model and servo model must be integrated in Python state variables that persist across steps.
+**Rationale**: PhysX does not natively model EDF dynamics (rpm-squared thrust, first-order lag, ground effect) or NACA0012 aerodynamics in the exhaust stream. In IsaacLab 2.x, `ArticulationView` (from `omni.isaac.core`) is no longer used directly; the replacement is `Articulation` from `isaaclab.assets`. External forces are staged in a buffer via `robot.set_external_force_and_torque(forces, torques, body_ids=..., env_ids=None)` and flushed with `robot.write_data_to_sim()` before the physics step. Forces are applied in the body's **local frame**. This maintains batched GPU tensor operations across all parallel environments. First-order lag state (thrust, servo positions) is maintained in persistent Python/PyTorch tensors.
+
+**Concrete API**:
+
+```python
+# forces/torques shape: (num_envs, num_bodies, 3) — torch.Tensor, on device
+robot.set_external_force_and_torque(forces=f_tensor, torques=tau_tensor, body_ids=[body_idx])
+robot.write_data_to_sim()
+sim.step()
+```
 
 **Alternatives considered**:
-- PhysX native joints/drives for thrust: Cannot represent EDF nonlinear thrust curve; no equivalent to k_thrust × ω²
-- Warp kernels: More complex to implement; premature optimization; Python force application is sufficient for 1024 envs
-- Pre-baked force tables (lookup): Loses physical continuity; breaks physics fidelity principle
+
+- `ArticulationView.apply_forces_and_torques_at_pos()`: IsaacLab 1.x API; removed in 2.x
+- PhysX native joints/drives for thrust: Cannot represent EDF nonlinear thrust curve
+- Warp kernels: Premature optimization; Python tensor approach sufficient for 1024 envs
 
 ---
 
@@ -51,6 +63,7 @@
 **Rationale**: The constitution mandates Gymnasium API compliance. IsaacLab's `DirectRLEnv` returns tensors instead of numpy arrays and has a slightly different reset/step signature. A thin wrapper converts tensor outputs to numpy, handles vectorized batch dimensions, and exposes the standard Gymnasium interface. This allows the existing SB3 PPO training pipeline to consume the Isaac Sim env with minimal changes.
 
 **Alternatives considered**:
+
 - Modify training scripts to accept IsaacLab directly: Breaks Gymnasium contract; increases coupling
 - Use SB3's `VecEnv` wrapper: Designed for CPU envs; does not efficiently handle GPU tensor outputs from IsaacLab
 
@@ -58,15 +71,18 @@
 
 ## Decision 5: Timestep & Physics Fidelity
 
-**Decision**: Use Isaac Sim at **1/120s rendering step** with **physics substeps = 4**, giving an effective physics dt of **~2.08 ms** (below the 5ms threshold in the constitution).
+**Decision**: Set `SimulationCfg(dt=1/120)` and `DirectRLEnvCfg(decimation=1)` in IsaacLab 2.x, giving a physics step of **8.33 ms** matching the specified 1/120s requirement. Configure `SimulationCfg(num_substeps=4)` within each physics step, giving an effective integration dt of **~2.08 ms**.
 
-**Rationale**: The constitution requires RK4 at dt=0.005s minimum for numerical stability. Isaac Sim uses an implicit integrator (PhysX TGS - Temporal Gauss-Seidel) rather than RK4. PhysX's TGS integrator at 1/120s with 4 substeps provides sufficient accuracy for the drone's dynamics (total mass ~3.1 kg, max thrust 45N, max angular rates moderate). The effective 2.08ms physics dt satisfies the spirit of the dt≤5ms requirement. This is documented as a justified deviation: the implicit integrator with substeps is numerically stable at this timescale without requiring RK4.
+**IsaacLab 2.x timestep model**: In IsaacLab 2.x, `SimulationCfg.dt` is the physics step interval. `DirectRLEnvCfg.decimation` is how many physics steps run per policy step (i.e., per `env.step()` call). `SimulationCfg.num_substeps` sets PhysX internal substeps within each `dt`. Setting `decimation=1` means the policy receives observations and sends actions every physics step (1/120s).
 
-**Note on Constitution**: The constitution states "RK4 at dt=0.005s is the minimum acceptable timestep" - this applies to the custom Python simulation. The Isaac Sim environment uses a different integrator. A Complexity Tracking entry is added to the plan to document this.
+**Rationale**: PhysX TGS (implicit integrator) with 4 substeps at 1/120s provides effective dt ≈ 2.08ms, finer than the custom sim's 5ms RK4 baseline. This satisfies the spirit of the constitution's timestep requirement. The implicit integrator is more stable than explicit RK4 at equivalent dt.
+
+**Note on Constitution**: The constitution's "RK4 at dt=0.005s" applies to the custom Python sim. Isaac Sim uses PhysX TGS; this is documented as a justified deviation.
 
 **Alternatives considered**:
-- 1/120s with no substeps: Effective dt = 8.33ms, coarser than constitution requirement
-- 1/240s rendering step: Higher GPU cost; diminishing returns on physics accuracy for this mass regime
+
+- `SimulationCfg(dt=1/120, num_substeps=1)`: Effective dt = 8.33ms, coarser than constitution requirement
+- `SimulationCfg(dt=1/240)`: Higher GPU cost; diminishing accuracy returns for this mass regime
 
 ---
 
@@ -77,6 +93,7 @@
 **Rationale**: The observation format (body-frame error, gravity direction, wind EMA, etc.) requires custom computation beyond what PhysX natively exposes. Since IsaacLab returns raw world-frame state tensors, we replicate `compute_true_observation()` logic but vectorized across all parallel environments using tensor operations. Wind EMA can be maintained as a persistent tensor; initial version uses zero wind (no `WindModel` in Isaac Sim scope).
 
 **Alternatives considered**:
+
 - Expose raw PhysX state (fewer dimensions): Breaks FR-013; incompatible with downstream policy
 - Port observation.py to Warp GPU kernels: Premature optimization; Python tensor ops sufficient
 
@@ -89,6 +106,7 @@
 **Rationale**: The spec includes a deletion clause - if single-env suffices for PID tuning, parallelism can be deferred. Since the difference is only a config value (`num_envs`), implementing both costs negligible additional complexity. A single `num_envs=1` config produces a non-vectorized env; setting `num_envs=128` enables parallel training. This eliminates the decision entirely.
 
 **Alternatives considered**:
+
 - Implement only vectorized: Forces GPU overhead even during PID tuning and debugging
 - Implement only single-env: Requires significant refactor later for RL training
 
@@ -102,17 +120,30 @@
 
 ---
 
+## Decision 9: Scene Setup & Asset Management (IsaacLab 2.x)
+
+**Decision**: Use IsaacLab 2.x's **declarative `InteractiveSceneCfg`** for scene setup. Override `_setup_scene()` in `DirectRLEnv` and instantiate `InteractiveScene(self.cfg.scene)`. Access assets at runtime via `self.scene["robot"]`.
+
+**Rationale**: IsaacLab 2.x replaced the imperative `set_up_scene()` pattern (OmniIsaacGymEnvs style) with a dataclass-driven scene descriptor. Ground plane is configured via `TerrainImporterCfg(terrain_type="plane")`. The drone USD is referenced via `ArticulationCfg(spawn=sim_utils.UsdFileCfg(usd_path=...), prim_path="{ENV_REGEX_NS}/Drone")`. The `{ENV_REGEX_NS}` macro automatically replicates the drone across all parallel environments.
+
+**IsaacLab 2.x `Articulation` replaces `ArticulationView`**: State is accessed via `robot.data.root_pos_w`, `robot.data.root_quat_w`, `robot.data.root_lin_vel_b`, `robot.data.root_ang_vel_b`, `robot.data.joint_pos`, etc. Initial state is set with `robot.write_root_pose_to_sim()` and `robot.write_root_velocity_to_sim()` at reset.
+
+---
+
 ## Summary of Key Numbers
 
-| Parameter | Value | Source |
-|-----------|-------|--------|
-| Total drone mass | ~3.1 kg | YAML primitives aggregate |
-| EDF max thrust | 45 N | `edf.max_static_thrust` |
-| Fin deflection limit (mechanical) | ±20° | `fins.max_deflection` = 0.349 rad |
-| Fin deflection limit (control spec) | ±15° | Spec FR-002 (reduced from mechanical for safety) |
-| Servo time constant | 0.04 s | `fins.servo.tau_servo` |
-| Motor thrust lag | 0.10 s | `edf.tau_motor` |
-| Observation dimensions | 20 | `observation.py` `OBS_DIM` |
-| Action dimensions | 5 | [T_cmd, δ1, δ2, δ3, δ4] |
-| Isaac Sim physics dt | ~2.08 ms | 1/120s ÷ 4 substeps |
-| Observation layout | [e_p_body(3), v_b(3), g_body(3), ω(3), twr(1), wind_ema(3), scalars(4)] | `observation.py` |
+
+| Parameter                           | Value                                                                   | Source                                           |
+| ----------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------ |
+| Total drone mass                    | ~3.1 kg                                                                 | YAML primitives aggregate                        |
+| EDF max thrust                      | 45 N                                                                    | `edf.max_static_thrust`                          |
+| Fin deflection limit (mechanical)   | ±20°                                                                    | `fins.max_deflection` = 0.349 rad                |
+| Fin deflection limit (control spec) | °±15                                                                   | Spec FR-002 (reduced from mechanical for safety) |
+| Servo time constant                 | 0.04 s                                                                  | `fins.servo.tau_servo`                           |
+| Motor thrust lag                    | 0.10 s                                                                  | `edf.tau_motor`                                  |
+| Observation dimensions              | 20                                                                      | `observation.py` `OBS_DIM`                       |
+| Action dimensions                   | 5                                                                       | [T_cmd, δ1, δ2, δ3, δ4]                          |
+| Isaac Sim physics dt                | ~2.08 ms                                                                | 1/120s ÷ 4 substeps                              |
+| Observation layout                  | [e_p_body(3), v_b(3), g_body(3), ω(3), twr(1), wind_ema(3), scalars(4)] | `observation.py`                                 |
+
+

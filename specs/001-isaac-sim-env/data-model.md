@@ -122,9 +122,9 @@ Configuration aggregating all parameters for the Isaac Sim environment, loaded f
 **Fields**:
 - `num_envs` (int): Number of parallel environment instances (1 for single-env; 128–1024 for training)
 - `episode_length_steps` (int): Maximum steps per episode (default: 600 = 5 s at 1/120s)
-- `physics_dt` (float, s): Simulation timestep = 1/120 ≈ 0.00833
-- `rendering_dt` (float, s): Rendering update rate (may be lower than physics_dt)
-- `num_physics_substeps` (int): PhysX substeps per rendering step (default: 4)
+- `physics_dt` (float, s): Simulation timestep = 1/120 ≈ 0.00833 (maps to `SimulationCfg.dt`)
+- `decimation` (int): Physics steps per policy step = 1 (maps to `DirectRLEnvCfg.decimation`)
+- `num_physics_substeps` (int): PhysX TGS substeps per physics step (default: 4, maps to `SimulationCfg.num_substeps`)
 - `spawn_altitude_range` (vector2, m): [min, max] altitude at reset (default: [5.0, 10.0])
 - `spawn_velocity_magnitude_range` (vector2, m/s): [min, max] |v| at reset (default: [0.0, 5.0])
 - `vehicle_config_path` (string): Path to `default_vehicle.yaml`

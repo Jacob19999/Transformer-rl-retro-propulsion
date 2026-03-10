@@ -2,6 +2,7 @@
 
 **Feature**: Isaac Sim Vectorized Drone Simulation Environment
 **Branch**: `001-isaac-sim-env` | **Date**: 2026-03-10
+**Target**: Isaac Sim 5.1.0 / IsaacLab 2.3 / Python 3.11
 
 This contract defines the interface that `EDFIsaacEnv` must expose to be compatible with the existing training pipeline (SB3 PPO, `VecNormalize`, diagnostic scripts).
 
