@@ -1,0 +1,25 @@
+# Isaac Sim environment config — 128 parallel envs (training / benchmarking)
+# Usage: python -m simulation.training.scripts.train_isaac_ppo --config simulation/isaac/configs/isaac_env_128.yaml
+
+num_envs: 128
+episode_length_steps: 600          # 5 s at 1/120 s per step
+
+# Physics
+physics_dt: 0.008333               # 1/120 s
+decimation: 1
+num_physics_substeps: 4
+
+# Spawn ranges
+spawn_altitude_range: [5.0, 10.0]
+spawn_velocity_magnitude_range: [0.0, 5.0]
+
+# Target
+target_position: [0.0, 0.0, 0.0]
+
+# Config paths
+vehicle_config_path: simulation/configs/default_vehicle.yaml
+domain_randomization_config_path: simulation/configs/domain_randomization.yaml
+reward_config_path: simulation/configs/reward.yaml
+
+# USD asset
+drone_usd_path: simulation/isaac/usd/drone.usd

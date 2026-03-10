@@ -31,6 +31,28 @@ python -m simulation.training.scripts.tune_pid
 python -m simulation.training.scripts.diag_single_ep
 python -m simulation.training.scripts.diag_inertia
 python -m simulation.training.scripts.diag_yaw
+
+# Isaac Sim / IsaacLab commands (run from Isaac Sim Python environment)
+# Generate drone USD asset from YAML
+python -m simulation.isaac.usd.drone_builder --config simulation/configs/default_vehicle.yaml --output simulation/isaac/usd/drone.usd
+
+# Single-env gravity-fall diagnostic (visual)
+python -m simulation.isaac.scripts.diag_isaac_single --config simulation/isaac/configs/isaac_env_single.yaml
+
+# Yaw response diagnostic (Isaac Sim)
+python -m simulation.isaac.scripts.diag_yaw_isaac --config simulation/isaac/configs/isaac_env_single.yaml
+
+# Fin articulation test
+python -m simulation.isaac.scripts.test_fins --config simulation/isaac/configs/isaac_env_single.yaml
+
+# Throughput benchmark (1, 128, 512, 1024 envs)
+python -m simulation.isaac.scripts.benchmark_envs
+
+# Train PPO on Isaac Sim env (256 envs, RTX 5070 safe)
+python -m simulation.training.scripts.train_isaac_ppo --config simulation/isaac/configs/isaac_env_training.yaml --seed 0
+
+# Run Isaac-specific tests (requires IsaacLab)
+pytest -m isaac simulation/tests/test_isaac_env.py simulation/tests/test_drone_builder.py
 ```
 
 TensorBoard logs and checkpoints are saved to `runs/`.

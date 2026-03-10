@@ -32,9 +32,8 @@ Verify output: the file `simulation/isaac/usd/drone.usd` should be created and s
 For PID tuning and visual validation:
 
 ```bash
-python -m simulation.isaac.envs.edf_isaac_env \
-    --config simulation/isaac/configs/isaac_env_single.yaml \
-    --mode visual
+python -m simulation.isaac.scripts.diag_isaac_single \
+    --config simulation/isaac/configs/isaac_env_single.yaml
 ```
 
 Expected behavior:
@@ -72,7 +71,7 @@ TensorBoard logs saved to `runs/isaac_ppo_<timestamp>/`.
 ## Step 5: Run Tests
 
 ```bash
-pytest simulation/tests/test_isaac_env.py -v
+pytest -m isaac simulation/tests/test_isaac_env.py simulation/tests/test_drone_builder.py -v
 ```
 
 Key tests:
@@ -89,6 +88,7 @@ Key tests:
 |--------|---------|
 | `simulation/isaac/configs/isaac_env_single.yaml` | Single env, visual mode, PID tuning |
 | `simulation/isaac/configs/isaac_env_128.yaml` | 128 parallel envs, RL training |
+| `simulation/isaac/configs/isaac_env_training.yaml` | 256 parallel envs, safe default for RTX 5070 |
 | `simulation/isaac/configs/isaac_env_1024.yaml` | 1024 parallel envs, large-scale training |
 
 ---

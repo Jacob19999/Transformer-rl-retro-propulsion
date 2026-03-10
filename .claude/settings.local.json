@@ -5,7 +5,10 @@
       "Bash(ruff --version)",
       "Bash(flake8 --version)",
       "WebSearch",
-      "Bash(powershell -ExecutionPolicy Bypass -Command \"& ''./.specify/scripts/powershell/setup-plan.ps1'' -Json\")"
+      "Bash(powershell -ExecutionPolicy Bypass -Command \"& ''./.specify/scripts/powershell/setup-plan.ps1'' -Json\")",
+      "Bash(powershell -ExecutionPolicy Bypass -Command \"& ''./.specify/scripts/powershell/check-prerequisites.ps1'' -Json\")",
+      "Bash(powershell -ExecutionPolicy Bypass -Command \"& ''./.specify/scripts/powershell/check-prerequisites.ps1'' -Json -RequireTasks -IncludeTasks\")",
+      "Bash(powershell -File \".specify/scripts/powershell/check-prerequisites.ps1\" -Json -RequireTasks -IncludeTasks)"
     ]
   },
   "hooks": {

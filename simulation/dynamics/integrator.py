@@ -66,7 +66,7 @@ class RK4Integrator:
     so the quaternion is at indices 6:10.
     """
 
-    quat_slice: Optional[slice] = slice(6, 10)
+    quat_slice: Optional[slice] = field(default_factory=lambda: slice(6, 10))
     quat_normalize_every_n: int = 10
     step_count: int = field(default=0, init=False)
 

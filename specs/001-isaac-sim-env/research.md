@@ -114,9 +114,11 @@ sim.step()
 
 ## Decision 8: Domain Randomization in Isaac Sim
 
-**Decision**: Apply domain randomization **per-episode at environment reset** using the existing `domain_randomization.yaml` parameter ranges, implemented as Python state injection into PhysX via IsaacLab's `set_root_state_tensor()`.
+**Decision**: Apply domain randomization **per-episode at environment reset** using the existing `domain_randomization.yaml` parameter ranges, implemented as Python state injection into PhysX via IsaacLab 2.x's `write_root_pose_to_sim()` / `write_root_velocity_to_sim()`.
 
-**Rationale**: The constitution (Principle V) mandates per-episode DR at env reset. In Isaac Sim, we can directly set root pose, velocity, and mass overrides at reset time. Initial conditions (altitude 5-10m, velocity 0-5 m/s) are randomized by sampling and calling `set_root_state_tensor()`.
+**Rationale**: The constitution (Principle V) mandates per-episode DR at env reset. In Isaac Sim, we can directly set root pose, velocity, and mass overrides at reset time. Initial conditions (altitude 5-10m, velocity 0-5 m/s) are randomized by sampling and calling `robot.write_root_pose_to_sim(root_pose, env_ids=env_ids)` and `robot.write_root_velocity_to_sim(root_vel, env_ids=env_ids)`.
+
+**Note**: `set_root_state_tensor()` was the IsaacLab 1.x / OmniIsaacGymEnvs API and is removed in 2.x. All implementation code uses the current `write_root_pose_to_sim()` / `write_root_velocity_to_sim()` API.
 
 ---
 
