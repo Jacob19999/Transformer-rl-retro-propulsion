@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell -ExecutionPolicy Bypass -Command \"& ''./.specify/scripts/powershell/update-agent-context.ps1'' -AgentType claude\")",
+      "Bash(ruff --version)",
+      "Bash(flake8 --version)",
+      "WebSearch"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"import sys,json,subprocess; d=json.load(sys.stdin); f=d.get('tool_input',{}).get('file_path',''); r=subprocess.run(['ruff','check',f],capture_output=True,text=True) if f.endswith('.py') else None; print(r.stdout+r.stderr,end='') if r and (r.stdout or r.stderr) else None\""
+          }
+        ]
+      }
+    ]
+  }
+}
