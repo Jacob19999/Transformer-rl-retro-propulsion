@@ -30,19 +30,21 @@ import torch
 # IsaacLab 2.3 imports
 # ---------------------------------------------------------------------------
 import isaaclab.sim as sim_utils
+from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets import Articulation, ArticulationCfg, RigidObject, RigidObjectCfg
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.sim.spawners.materials import RigidBodyMaterialCfg
 from isaaclab.terrains import TerrainImporterCfg
-from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
+from isaaclab.terrains import TerrainGeneratorCfg
+from isaaclab.terrains.trimesh.mesh_terrains_cfg import MeshPlaneTerrainCfg
 from isaaclab.utils import configclass
 
 # ---------------------------------------------------------------------------
 # Project imports
 # ---------------------------------------------------------------------------
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
 from simulation.config_loader import load_config        # noqa: E402
@@ -92,7 +94,15 @@ class EdfSceneCfg(InteractiveSceneCfg):
 
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
-        terrain_type="plane",
+        terrain_type="generator",
+        terrain_generator=TerrainGeneratorCfg(
+            seed=0,
+            size=(100.0, 100.0),
+            num_rows=1,
+            num_cols=1,
+            horizontal_scale=1.0,
+            sub_terrains={"flat": MeshPlaneTerrainCfg()},
+        ),
         physics_material=RigidBodyMaterialCfg(
             static_friction=0.5,
             dynamic_friction=0.5,
@@ -113,10 +123,17 @@ class EdfSceneCfg(InteractiveSceneCfg):
             ),
         ),
         init_state=ArticulationCfg.InitialStateCfg(
-            pos=(0.0, 7.5, 0.0),  # Y-up: start 7.5 m above ground
+            pos=(0.0, 0.0, 7.5),  # Z-up: start 7.5 m above ground
             joint_pos={".*": 0.0},
             joint_vel={".*": 0.0},
         ),
+        actuators={
+            "fins": ImplicitActuatorCfg(
+                joint_names_expr=["Fin_.*_Joint"],
+                stiffness=25.0,
+                damping=0.05,
+            ),
+        },
     )
 
     # Number of envs is set by the parent DirectRLEnvCfg
@@ -141,10 +158,9 @@ class EdfLandingTaskCfg(DirectRLEnvCfg):
         dt=1.0 / 120.0,
         render_interval=1,
         physx=sim_utils.PhysxCfg(
-            num_position_iterations=8,
-            num_velocity_iterations=1,
+            min_position_iteration_count=8,
+            min_velocity_iteration_count=1,
             bounce_threshold_velocity=0.2,
-            max_depenetration_velocity=1.0,
         ),
     )
 
@@ -235,16 +251,10 @@ class EdfLandingTask(DirectRLEnv):
     # T014: Scene setup
     # ------------------------------------------------------------------
     def _setup_scene(self) -> None:
-        """Instantiate the interactive scene."""
-        from isaaclab.scene import InteractiveScene
-        self.scene = InteractiveScene(self.cfg.scene)
+        """Set up references to scene entities after the base class creates the scene."""
+        # self.scene is already created by DirectRLEnv.__init__ before this is called
         self.robot: Articulation = self.scene["robot"]
-
-        # Register scene entities for cloning / replication
         self._terrain = self.scene.terrain
-
-        # Add articulation to sim
-        self.sim.reset()
 
     # ------------------------------------------------------------------
     # T015: Reset per env indices
@@ -261,6 +271,8 @@ class EdfLandingTask(DirectRLEnv):
         self._episode_step[env_ids] = 0
         self._prev_action[env_ids] = 0.0
         self._wind_ema[env_ids] = 0.0
+        # Reset DirectRLEnv episode counter (prevents perpetual truncation)
+        self.episode_length_buf[env_ids] = 0
 
         # Sample random altitude and velocity
         alt = torch.zeros(n, device=self.device).uniform_(
@@ -274,14 +286,14 @@ class EdfLandingTask(DirectRLEnv):
         theta = torch.zeros(n, device=self.device).uniform_(0.0, 2.0 * math.pi)
         phi   = torch.zeros(n, device=self.device).uniform_(0.0, math.pi)
         vx = vel_mag * torch.sin(phi) * torch.cos(theta)
-        vy = vel_mag * torch.cos(phi)
-        vz = vel_mag * torch.sin(phi) * torch.sin(theta)
+        vy = vel_mag * torch.sin(phi) * torch.sin(theta)
+        vz = vel_mag * torch.cos(phi)
         vel = torch.stack([vx, vy, vz], dim=-1)  # (n, 3)
 
-        # Root pose: position at random altitude (Y-up: altitude = Y)
+        # Root pose: position at random altitude (Z-up: altitude = Z)
         # Place in env-local frame (Isaac handles per-env offsets automatically)
         pos = torch.zeros((n, 3), device=self.device)
-        pos[:, 1] = alt  # Y = altitude in Y-up world
+        pos[:, 2] = alt  # Z = altitude in Z-up world
 
         # Identity quaternion [x, y, z, w] scalar-last
         quat = torch.zeros((n, 4), device=self.device)
@@ -303,74 +315,62 @@ class EdfLandingTask(DirectRLEnv):
     # T017: Pre-physics step — force injection
     # ------------------------------------------------------------------
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
-        """Apply EDF thrust + fin aero forces before each PhysX step."""
+        """Update lag state once per policy step (called by DirectRLEnv before decimation loop)."""
         dt = self._dt
 
-        # Clip actions to [-1, 1]
-        actions = actions.clamp(-1.0, 1.0)
-        self._prev_action = actions.clone()
+        # Clip and store actions for use in _apply_action
+        self.actions = actions.clamp(-1.0, 1.0)
+        self._prev_action = self.actions.clone()
 
         # Unpack: [thrust_cmd, d1, d2, d3, d4]
-        thrust_cmd_norm = actions[:, 0]          # [-1, 1] → [0, T_MAX]
-        fin_cmd_norm    = actions[:, 1:5]        # [-1, 1] → [-DELTA_MAX, DELTA_MAX]
+        thrust_cmd_norm = self.actions[:, 0]
+        fin_cmd_norm    = self.actions[:, 1:5]
 
-        # Map thrust: normalize so [-1,0] → 0, [0,1] → T_MAX
-        T_cmd = (thrust_cmd_norm.clamp(0.0, 1.0)) * _T_MAX
+        # Map thrust: [-1,0] → 0, [0,1] → T_MAX
+        T_cmd     = thrust_cmd_norm.clamp(0.0, 1.0) * _T_MAX
         delta_cmd = fin_cmd_norm * _DELTA_MAX
 
-        # First-order lag update
+        # First-order lag update (once per policy step)
         self.thrust_actual += (dt / _TAU_MOTOR) * (T_cmd - self.thrust_actual)
         self.fin_deflections_actual += (dt / _TAU_SERVO) * (
             delta_cmd - self.fin_deflections_actual
         )
-        # Clamp fins to physical limit
         self.fin_deflections_actual.clamp_(-_DELTA_MAX, _DELTA_MAX)
 
-        # ----------------------------------------------------------------
-        # EDF thrust force in body frame (FRD: +Z is thrust direction)
-        # Y-up mapping: body +Z → world +Y (after 90° X-rotation at drone root)
-        # In Isaac body frame after rotation, thrust still acts in local +Y?
-        # We apply forces in body-local frame; IsaacLab handles world transform.
-        # Body FRD +Z is aligned → use local (0, 0, 1) in FRD
-        # ----------------------------------------------------------------
+        # Increment episode step counter
+        self._episode_step += 1
+
+    def _apply_action(self) -> None:
+        """Apply forces/torques each decimation substep using current lag state."""
         num_envs = self.num_envs
-        # Force tensor shape: (num_envs, num_bodies, 3)
         forces  = torch.zeros((num_envs, 1, 3), device=self.device)
         torques = torch.zeros((num_envs, 1, 3), device=self.device)
 
-        # Thrust along body +Z (FRD)
+        # ----------------------------------------------------------------
+        # EDF thrust — world +Z (up in Z-up world), is_global=True
+        # ----------------------------------------------------------------
         forces[:, 0, 2] = self.thrust_actual
 
         # ----------------------------------------------------------------
         # Fin aerodynamic forces (NACA0012 in exhaust stream)
         # ----------------------------------------------------------------
-        # Exhaust velocity scales with thrust
-        omega_ratio = (self.thrust_actual / _T_MAX).clamp(0.0, 1.0).sqrt()
-        V_ex = omega_ratio * _V_EXHAUST  # (num_envs,)
-
-        # Lift per fin: L_i = 0.5 * rho_0 * V_ex² * A * Cl_alpha * delta_i
-        # Use sea-level rho = 1.225 kg/m³
-        rho = 1.225
-        dyn_pressure = 0.5 * rho * V_ex.pow(2)  # (num_envs,)
+        omega_ratio  = (self.thrust_actual / _T_MAX).clamp(0.0, 1.0).sqrt()
+        V_ex         = omega_ratio * _V_EXHAUST
+        dyn_pressure = 0.5 * 1.225 * V_ex.pow(2)  # sea-level rho
 
         for i in range(4):
-            delta_i = self.fin_deflections_actual[:, i]      # (num_envs,)
-            L_i = dyn_pressure * _FIN_AREA * _CL_ALPHA * delta_i  # (num_envs,)
-            lift_dir = self._fin_lift[i]                     # (3,)
-            # Force contribution
+            delta_i  = self.fin_deflections_actual[:, i]
+            L_i      = dyn_pressure * _FIN_AREA * _CL_ALPHA * delta_i
+            lift_dir = self._fin_lift[i]
             forces[:, 0, :] += L_i.unsqueeze(-1) * lift_dir.unsqueeze(0)
-            # Torque = r × F
-            r = self._fin_pos[i]  # (3,)
-            F_i = L_i.unsqueeze(-1) * lift_dir.unsqueeze(0)  # (num_envs, 3)
-            tau_i = torch.linalg.cross(r.unsqueeze(0).expand(num_envs, -1), F_i)
-            torques[:, 0, :] += tau_i
+            r   = self._fin_pos[i]
+            F_i = L_i.unsqueeze(-1) * lift_dir.unsqueeze(0)
+            torques[:, 0, :] += torch.linalg.cross(
+                r.unsqueeze(0).expand(num_envs, -1), F_i
+            )
 
-        # Apply to simulation
-        self.robot.set_external_force_and_torque(forces, torques, body_ids=[0])
+        self.robot.set_external_force_and_torque(forces, torques, body_ids=[0], is_global=True)
         self.robot.write_data_to_sim()
-
-        # Increment episode step
-        self._episode_step += 1
 
     # ------------------------------------------------------------------
     # T018: Observations — 20-dim vector
@@ -385,8 +385,8 @@ class EdfLandingTask(DirectRLEnv):
         vel_b  = data.root_lin_vel_b  # (num_envs, 3): body-frame linear vel
         omega_b = data.root_ang_vel_b  # (num_envs, 3): body-frame angular vel
 
-        # --- Altitude above ground (Y-up: Y = altitude) ---
-        h_agl = pos_w[:, 1].clamp(min=0.0)  # (num_envs,)
+        # --- Altitude above ground (Z-up: Z = altitude) ---
+        h_agl = pos_w[:, 2].clamp(min=0.0)  # (num_envs,)
 
         # --- Position error in world frame (to target) ---
         target_w = self._target_pos_w  # (num_envs, 3)
@@ -397,9 +397,9 @@ class EdfLandingTask(DirectRLEnv):
         err_b = _rotate_world_to_body(err_w, quat_w)  # (num_envs, 3)
 
         # --- Gravity direction in body frame ---
-        # World gravity is -Y in Y-up frame
+        # World gravity is -Z in Z-up frame
         g_world = torch.zeros((self.num_envs, 3), device=self.device)
-        g_world[:, 1] = -1.0  # unit vector pointing down in Y-up
+        g_world[:, 2] = -1.0  # unit vector pointing down in Z-up
         g_b = _rotate_world_to_body(g_world, quat_w)  # (num_envs, 3)
 
         # --- Thrust-to-weight ratio ---
@@ -442,7 +442,7 @@ class EdfLandingTask(DirectRLEnv):
         omega_b = data.root_ang_vel_b
         quat_w  = data.root_quat_w
 
-        h_agl = pos_w[:, 1].clamp(min=0.0)
+        h_agl = pos_w[:, 2].clamp(min=0.0)
         speed = vel_b.norm(dim=-1)
 
         # Distance to target
@@ -457,7 +457,7 @@ class EdfLandingTask(DirectRLEnv):
 
         # Orientation penalty: deviation of gravity from body -Z (FRD down)
         g_world = torch.zeros((self.num_envs, 3), device=self.device)
-        g_world[:, 1] = -1.0
+        g_world[:, 2] = -1.0
         g_b = _rotate_world_to_body(g_world, quat_w)
         # ideal g_body = [0, 0, 1] in FRD (gravity points +Z down)
         cos_theta = g_b[:, 2].clamp(-1.0, 1.0)
@@ -480,13 +480,13 @@ class EdfLandingTask(DirectRLEnv):
         pos_w = data.root_pos_w
         vel_b = data.root_lin_vel_b
 
-        h_agl  = pos_w[:, 1]
+        h_agl  = pos_w[:, 2]
         speed  = vel_b.norm(dim=-1)
 
-        # Lateral distance from target
+        # Lateral distance from target (Z-up: horizontal plane = X, Y)
         target = self._target_pos_w
         lateral_dist = ((pos_w[:, 0] - target[:, 0]).pow(2)
-                        + (pos_w[:, 2] - target[:, 2]).pow(2)).sqrt()
+                        + (pos_w[:, 1] - target[:, 1]).pow(2)).sqrt()
 
         # Crash: below ground with high speed
         crashed = (h_agl < 0.05) & (speed > self.cfg.crash_velocity_threshold)

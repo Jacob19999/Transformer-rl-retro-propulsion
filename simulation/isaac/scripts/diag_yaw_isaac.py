@@ -17,8 +17,13 @@ from pathlib import Path
 
 import numpy as np
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
+
+# SimulationApp MUST be created before any isaaclab.sim / carb imports
+from isaacsim import SimulationApp  # noqa: E402
+
+_SIM_APP: SimulationApp | None = None
 
 _YAW_FIN_ACTION = np.array([0.3, 0.5, -0.5, 0.5, -0.5], dtype=np.float32)
 # Fins 1,2 at +0.5/-0.5 and fins 3,4 at +0.5/-0.5 create a differential
@@ -37,6 +42,9 @@ def main() -> None:
     config_path = Path(args.config)
     if not config_path.is_absolute():
         config_path = REPO_ROOT / config_path
+
+    global _SIM_APP
+    _SIM_APP = SimulationApp({"headless": False})
 
     from simulation.isaac.envs.edf_isaac_env import EDFIsaacEnv
 
@@ -63,7 +71,10 @@ def main() -> None:
             print(f"[diag_yaw_isaac] Episode ended at step {step}.")
             break
 
+    input("\n[diag_yaw_isaac] Press Enter to close...")
     env.close()
+    if _SIM_APP is not None:
+        _SIM_APP.close()
 
     max_yaw_rate = max(abs(r) for r in yaw_rates)
     mean_yaw_rate = np.mean([abs(r) for r in yaw_rates])

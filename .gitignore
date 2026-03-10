@@ -15,3 +15,6 @@ venv/
 # Isaac Sim / Omniverse caches (large, machine-specific)
 **/omniverse_cache*/
 **/isaacsim*/extscache*/
+
+# Isaac Lab source clone (keep as external dependency)
+IsaacLab/

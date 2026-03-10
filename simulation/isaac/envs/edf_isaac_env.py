@@ -25,7 +25,7 @@ import torch
 import gymnasium as gym
 from gymnasium import spaces
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
 from simulation.config_loader import load_config  # noqa: E402

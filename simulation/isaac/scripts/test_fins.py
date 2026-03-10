@@ -21,8 +21,13 @@ from pathlib import Path
 
 import numpy as np
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
+
+# SimulationApp MUST be created before any isaaclab.sim / carb imports
+from isaacsim import SimulationApp  # noqa: E402
+
+_SIM_APP: SimulationApp | None = None
 
 _DELTA_MAX_DEG = 15.0
 _DELTA_MAX_RAD = math.radians(_DELTA_MAX_DEG)
@@ -42,10 +47,23 @@ def main() -> None:
     if not config_path.is_absolute():
         config_path = REPO_ROOT / config_path
 
+    global _SIM_APP
+    _SIM_APP = SimulationApp({"headless": False})
+
     from simulation.isaac.envs.edf_isaac_env import EDFIsaacEnv
     import torch
 
     env = EDFIsaacEnv(config_path=config_path, seed=0)
+
+    # Disable gravity so the drone floats in place during fin settle.
+    from pxr import UsdPhysics
+    stage = env._task.sim.stage
+    for prim in stage.Traverse():
+        if prim.IsA(UsdPhysics.Scene):
+            UsdPhysics.Scene(prim).GetGravityMagnitudeAttr().Set(0.0)
+            print("[test_fins] Gravity disabled for fin settle test.")
+            break
+
     print("[test_fins] Env ready. Testing fin deflection limits.\n")
 
     fin_names = ["Fin_1 (right)", "Fin_2 (left)", "Fin_3 (forward)", "Fin_4 (aft)"]
@@ -79,13 +97,16 @@ def main() -> None:
                 all_pass = False
 
             print(
-                f"  {fin_names[fin_idx]} cmd={label:+s}  "
+                f"  {fin_names[fin_idx]} cmd={label}  "
                 f"lag_state={fin_actual_deg:+.2f}°  "
                 f"expected={expected_deg:+.2f}°  "
                 f"err={err_pct:.2f}%{joint_str}  [{status}]"
             )
 
+    input("\n[test_fins] Press Enter to close...")
     env.close()
+    if _SIM_APP is not None:
+        _SIM_APP.close()
 
     print()
     if all_pass:

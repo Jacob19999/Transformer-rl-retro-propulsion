@@ -6,14 +6,14 @@ Implements T005-T010:
 - Computes composite mass / CoM / inertia via MassProperties
 - Emits body geometry (cylinders, boxes, spheres) under /Drone/Body
 - Emits 4 fin geometry cubes + RevoluteJoints + DriveAPIs under /Drone/Fin_N
-- Applies -90° X-rotation at /Drone root to align FRD body with Isaac Y-up
+- Applies +90° X-rotation at /Drone root to align FRD body with Isaac Y-up
 - CLI: python -m simulation.isaac.usd.drone_builder [--config ...] [--output ...]
 
 Coordinate convention:
   All child geometry is specified in FRD body frame coordinates.
-  The /Drone root has a -90° X rotation that maps:
+  The /Drone root has a +90° X rotation that maps:
     FRD +X (forward)  → world +X
-    FRD +Y (right)    → world +Z
+    FRD +Y (right)    → world -Z
     FRD +Z (down)     → world -Y  (correct: down in Y-up)
   No per-child coordinate conversion is needed.
 
@@ -85,24 +85,25 @@ def _new_stage(output_path: str) -> Usd.Stage:
 # Root drone prim
 # ---------------------------------------------------------------------------
 def _create_drone_root(stage: Usd.Stage, mass_props) -> UsdGeom.Xform:
-    """Create /Drone root with RigidBodyAPI + MassAPI + -90° X-rotation.
+    """Create /Drone root with RigidBodyAPI + MassAPI + +180° X-rotation.
 
-    The -90° X rotation maps FRD body frame to Isaac Y-up world:
-      Rot_X(-90°): (x,y,z) → (x, z, -y)
-        FRD +X (fwd)   → world +X
-        FRD +Y (right)  → world +Z
-        FRD +Z (down)   → world -Y (down in Y-up) ✓
+    The +180° X rotation maps FRD body frame to Isaac Z-up world:
+      Rot_X(+180°): (x,y,z) → (x, -y, -z)
+        FRD +X (fwd)    → world +X
+        FRD +Y (right)  → world -Y
+        FRD +Z (down)   → world -Z (down in Z-up) ✓
     Child geometry is in FRD coordinates; this root rotation handles everything.
     """
     drone_prim_path = "/Drone"
     drone_xform = UsdGeom.Xform.Define(stage, drone_prim_path)
     prim = drone_xform.GetPrim()
 
-    # -90° rotation about X to align FRD body with Y-up world frame
+    # +180° rotation about X to align FRD body with Z-up world frame
     xform_api = UsdGeom.XformCommonAPI(drone_xform)
-    xform_api.SetRotate(Gf.Vec3f(-90.0, 0.0, 0.0), UsdGeom.XformCommonAPI.RotationOrderXYZ)
+    xform_api.SetRotate(Gf.Vec3f(180.0, 0.0, 0.0), UsdGeom.XformCommonAPI.RotationOrderXYZ)
 
     # Physics APIs
+    UsdPhysics.ArticulationRootAPI.Apply(prim)
     UsdPhysics.RigidBodyAPI.Apply(prim)
     mass_api = UsdPhysics.MassAPI.Apply(prim)
     mass_api.GetMassAttr().Set(mass_props.total_mass)
@@ -189,17 +190,28 @@ def _emit_fin_geometry(stage: Usd.Stage) -> None:
         # Position fin Xform at hinge point in FRD body frame
         UsdGeom.XformCommonAPI(fin_xform).SetTranslate(Gf.Vec3d(*fin["hinge_pos"]))
 
-        # MassAPI on the fin Xform
+        # RigidBodyAPI + MassAPI on the fin Xform (makes each fin a separate articulation link)
+        UsdPhysics.RigidBodyAPI.Apply(fin_xform.GetPrim())
         fin_mass_api = UsdPhysics.MassAPI.Apply(fin_xform.GetPrim())
         fin_mass_api.GetMassAttr().Set(_FIN_MASS)
 
+        # resetXformStack required for child rigid bodies nested under a parent rigid body
+        UsdGeom.Xformable(fin_xform.GetPrim()).SetResetXformStack(True)
+
         # Geometry child (unit cube scaled to half-extents)
+        # Chord along Z (exhaust flow direction in FRD body frame).
+        # Span extends radially; thickness is the thin dimension.
+        #   Axis "X" fins (Fin_1/2): plate in YZ plane → thin in X
+        #   Axis "Y" fins (Fin_3/4): plate in XZ plane → thin in Y
         geom_path = f"{fin_path}/Geom"
         geom_cube = UsdGeom.Cube.Define(stage, geom_path)
         geom_xform_api = UsdGeom.XformCommonAPI(geom_cube)
-        # offset from hinge (leading edge) by chord/2 along local Z in fin frame
+        # offset from hinge (leading edge) by chord/2 along Z in FRD body frame
         geom_xform_api.SetTranslate(Gf.Vec3d(0.0, 0.0, _FIN_CHORD))
-        geom_xform_api.SetScale(Gf.Vec3f(_FIN_CHORD, _FIN_SPAN, _FIN_THICK))
+        if fin["axis"] == "X":
+            geom_xform_api.SetScale(Gf.Vec3f(_FIN_THICK, _FIN_SPAN, _FIN_CHORD))
+        else:  # axis == "Y"
+            geom_xform_api.SetScale(Gf.Vec3f(_FIN_SPAN, _FIN_THICK, _FIN_CHORD))
 
         UsdPhysics.CollisionAPI.Apply(geom_cube.GetPrim())
 
@@ -213,7 +225,7 @@ def _emit_fin_joints(stage: Usd.Stage) -> None:
 
     for fin in _FINS:
         fin_path = f"/Drone/{fin['name']}"
-        joint_path = f"{fin_path}/RevoluteJoint"
+        joint_path = f"{fin_path}/{fin['name']}_Joint"
 
         joint = UsdPhysics.RevoluteJoint.Define(stage, joint_path)
 
@@ -274,6 +286,9 @@ def build_drone_usd(config_path: str | Path, output_path: str | Path) -> None:
 
     # Fin joints + drives (T008)
     _emit_fin_joints(stage)
+
+    # Set default prim so IsaacLab can resolve @drone.usd@<defaultPrim>
+    stage.SetDefaultPrim(stage.GetPrimAtPath("/Drone"))
 
     stage.GetRootLayer().Save()
     print(f"[drone_builder] Wrote {output_path} "
