@@ -84,7 +84,7 @@ def validate_drone_usd(stage) -> list[str]:  # stage: Usd.Stage
     """
     issues: list[str] = []
 
-    # Stage metadata (best-effort; don’t fail if missing).
+    # Stage metadata (best-effort; don't fail if missing).
     up_axis = UsdGeom.GetStageUpAxis(stage)
     if up_axis and up_axis != UsdGeom.Tokens.z:
         issues.append(f"Stage upAxis is '{up_axis}', expected 'z'.")
@@ -118,19 +118,24 @@ def validate_drone_usd(stage) -> list[str]:  # stage: Usd.Stage
             if not UsdPhysics.RigidBodyAPI(fin):
                 issues.append(f"'/Drone/{fin_name}' is missing UsdPhysics.RigidBodyAPI.")
 
-    # Joints: expect /Drone/Fin_N/RevoluteJoint (manual scene convention).
+    # Joints: check multiple naming conventions used across authoring tools.
     for fin_name in ("Fin_1", "Fin_2", "Fin_3", "Fin_4"):
-        joint_path = f"/Drone/{fin_name}/RevoluteJoint"
-        joint_prim = stage.GetPrimAtPath(joint_path)
-        if not joint_prim or not joint_prim.IsValid():
-            # Fallback: check legacy /Drone/Fin_N_Joint
-            legacy_path = f"/Drone/{fin_name}_Joint"
-            legacy_prim = stage.GetPrimAtPath(legacy_path)
-            if not legacy_prim or not legacy_prim.IsValid():
-                issues.append(
-                    f"No RevoluteJoint found for {fin_name}. "
-                    f"Expected ‘{joint_path}’ or ‘{legacy_path}’."
-                )
+        candidates = [
+            f"/Drone/{fin_name}/RevoluteJoint",    # postprocess_usd.py convention
+            f"/Drone/{fin_name}/{fin_name}_Joint",  # Isaac Sim hand-authored convention
+            f"/Drone/{fin_name}_Joint",             # legacy flat convention
+        ]
+        found = False
+        for c in candidates:
+            prim = stage.GetPrimAtPath(c)
+            if prim and prim.IsValid():
+                found = True
+                break
+        if not found:
+            issues.append(
+                f"No RevoluteJoint found for {fin_name}. "
+                f"Checked: {', '.join(candidates)}"
+            )
 
     return issues
 
@@ -149,7 +154,12 @@ def print_stage_info(stage) -> None:  # stage: Usd.Stage
 
     # Print joint info
     for fin_name in ("Fin_1", "Fin_2", "Fin_3", "Fin_4"):
-        for jp in (f"/Drone/{fin_name}/RevoluteJoint", f"/Drone/{fin_name}_Joint"):
+        candidates = [
+            f"/Drone/{fin_name}/RevoluteJoint",
+            f"/Drone/{fin_name}/{fin_name}_Joint",
+            f"/Drone/{fin_name}_Joint",
+        ]
+        for jp in candidates:
             prim = stage.GetPrimAtPath(jp)
             if prim and prim.IsValid():
                 print(f"[drone_usd] {jp} type={prim.GetTypeName()}")
