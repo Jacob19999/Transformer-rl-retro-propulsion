@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find IsaacLab -type f -name *.usd)",
+      "Bash(find IsaacLab -type f -name *.usda)",
+      "Bash(xargs grep:*)",
+      "Bash(find ./specs -type f -name *usd* -o -name *asset*)",
+      "Bash(find IsaacLab/source/isaaclab_contrib -type f -name \"*.py\" -exec grep -l \"articulation\\\\|Articulation\" {})",
+      "Bash(find c:/Users/tngzj/OneDrive/Desktop/Transformer-rl-retro-propulsion/IsaacLab/source/isaaclab_tasks -name *cartpole* -o -name *cart_pole*)",
+      "Bash(python -c \":*)",
+      "Bash(python -m pytest simulation/tests/test_mass_properties.py -v --tb=short)"
+    ]
+  }
+}

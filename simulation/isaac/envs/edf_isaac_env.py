@@ -163,11 +163,10 @@ class EDFIsaacEnv(gym.Env):
     def step(
         self, action: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray | float, np.ndarray | bool, np.ndarray | bool, dict]:
-        # Convert action to torch tensor
-        if action.ndim == 1:
-            action_t = torch.from_numpy(action).float().unsqueeze(0).to(self._task.device)
-        else:
-            action_t = torch.from_numpy(action).float().to(self._task.device)
+        # Convert action to torch tensor — always (num_envs, action_dim)
+        action_t = torch.from_numpy(action).float().to(self._task.device)
+        if action_t.ndim == 1:
+            action_t = action_t.unsqueeze(0).expand(self._num_envs, -1)
 
         obs_dict, reward_t, terminated_t, truncated_t, info_dict = self._task.step(action_t)
 

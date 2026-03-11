@@ -1,23 +1,22 @@
 """
-drone_builder.py — Generate drone.usd from default_vehicle.yaml.
+drone_builder.py — Validate and inspect an already-authored drone USD.
 
-Implements T005-T010:
-- Loads default_vehicle.yaml via existing config_loader.py
-- Computes composite mass / CoM / inertia via MassProperties
-- Emits body geometry (cylinders, boxes, spheres) under /Drone/Body
-- Emits 4 fin geometry cubes + RevoluteJoints + DriveAPIs under /Drone/Fin_N
-- Applies +90° X-rotation at /Drone root to align FRD body with Isaac Y-up
-- CLI: python -m simulation.isaac.usd.drone_builder [--config ...] [--output ...]
+This repo originally used this module to *generate* a drone USD from YAML, including:
+- emitting geometry primitives
+- applying physics schemas (RigidBody, Mass, Collision)
+- creating fin revolute joints + drives
 
-Coordinate convention:
-  All child geometry is specified in FRD body frame coordinates.
-  The /Drone root has a +90° X rotation that maps:
-    FRD +X (forward)  → world +X
-    FRD +Y (right)    → world -Z
-    FRD +Z (down)     → world -Y  (correct: down in Y-up)
-  No per-child coordinate conversion is needed.
+That approach is brittle: programmatic authoring can diverge from what you set up
+manually in Isaac Sim (or Blender), and can introduce hard-to-debug USD issues.
 
-USD schema contract: specs/001-isaac-sim-env/contracts/usd-asset-schema.md
+Current intent:
+- Treat `simulation/isaac/usd/drone.usd` as the single source of truth.
+- Provide a small, safe CLI to validate the USD “shape” expected by the codebase.
+- Do not author or modify the USD.
+
+CLI examples:
+  python -m simulation.isaac.usd.drone_builder validate --usd simulation/isaac/usd/drone.usd
+  python -m simulation.isaac.usd.drone_builder info --usd simulation/isaac/usd/drone.usd
 """
 
 from __future__ import annotations
@@ -25,305 +24,181 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Iterable
 
 # ---------------------------------------------------------------------------
-# USD imports — pxr ships with Isaac Sim's Python environment
+# pxr requires the Carbonite/Omniverse runtime (loaded by SimulationApp).
+# We defer the import until _main() so module-level tests can import
+# the helper functions without triggering a full Isaac Sim launch.
 # ---------------------------------------------------------------------------
-try:
-    from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
-except ImportError as e:
-    raise ImportError(
-        "USD Python bindings (pxr) not found. "
-        "Run this script from within the Isaac Sim Python environment."
-    ) from e
+Usd = None          # populated by _bootstrap_pxr()
+UsdGeom = None
+UsdPhysics = None
 
-# ---------------------------------------------------------------------------
-# Project imports
-# ---------------------------------------------------------------------------
+
+def _bootstrap_pxr() -> None:
+    """Start SimulationApp headlessly and import pxr bindings."""
+    global Usd, UsdGeom, UsdPhysics
+    if Usd is not None:
+        return  # already bootstrapped
+    from isaacsim import SimulationApp
+    # Store on module so it is not garbage-collected (would unload Carbonite).
+    global _SIM_APP  # noqa: PLW0603
+    _SIM_APP = SimulationApp({"headless": True, "hide_ui": True})
+    from pxr import Usd as _Usd, UsdGeom as _UsdGeom, UsdPhysics as _UsdPhysics
+    Usd, UsdGeom, UsdPhysics = _Usd, _UsdGeom, _UsdPhysics
+
+
+_SIM_APP = None  # keeps SimulationApp alive for the process lifetime
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
-from simulation.config_loader import load_config  # noqa: E402
-from simulation.dynamics.mass_properties import compute_mass_properties  # noqa: E402
-
-# ---------------------------------------------------------------------------
-# Constants (from usd-asset-schema.md)
-# ---------------------------------------------------------------------------
-_FIN_CHORD = 0.0325          # half-extent along local X (chord/2)
-_FIN_SPAN  = 0.0275          # half-extent along local Y (span/2)
-_FIN_THICK = 0.0039          # half-extent along local Z (thickness/2)
-_FIN_MASS  = 0.003           # kg per fin
-
-_JOINT_LOWER = -15.0         # degrees
-_JOINT_UPPER =  15.0         # degrees
-_DRIVE_STIFFNESS = 25.0
-_DRIVE_DAMPING   = 0.05
-
-# Fin hinge positions and axes in FRD body frame (from usd-asset-schema.md)
-_FINS = [
-    {"name": "Fin_1", "hinge_pos": (0.0,  0.055, 0.14), "axis": "X"},
-    {"name": "Fin_2", "hinge_pos": (0.0, -0.055, 0.14), "axis": "X"},
-    {"name": "Fin_3", "hinge_pos": (0.055, 0.0,  0.14), "axis": "Y"},
-    {"name": "Fin_4", "hinge_pos": (-0.055, 0.0, 0.14), "axis": "Y"},
-]
-
-# Phase A testing: only emit these primitives (EDF duct + fins)
-_PHASE_A_PRIMITIVES = {"edf_duct"}
-
-
-# ---------------------------------------------------------------------------
-# Stage setup
-# ---------------------------------------------------------------------------
-def _new_stage(output_path: str) -> Usd.Stage:
-    stage = Usd.Stage.CreateNew(output_path)
-    UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.y)
-    UsdGeom.SetStageMetersPerUnit(stage, 1.0)
+def open_usd_stage(usd_path: str | Path):  # -> Usd.Stage
+    _bootstrap_pxr()
+    usd_path = Path(usd_path)
+    if not usd_path.is_absolute():
+        usd_path = REPO_ROOT / usd_path
+    if not usd_path.exists():
+        raise FileNotFoundError(f"USD not found: {usd_path}")
+    stage = Usd.Stage.Open(str(usd_path))
+    if stage is None:
+        raise RuntimeError(f"Failed to open USD stage: {usd_path}")
     return stage
 
 
-# ---------------------------------------------------------------------------
-# Root drone prim
-# ---------------------------------------------------------------------------
-def _create_drone_root(stage: Usd.Stage, mass_props) -> UsdGeom.Xform:
-    """Create /Drone root with RigidBodyAPI + MassAPI + +180° X-rotation.
+def _iter_expected_paths() -> Iterable[str]:
+    yield "/Drone"
+    yield "/Drone/Body"
+    yield "/Drone/Fin_1"
+    yield "/Drone/Fin_2"
+    yield "/Drone/Fin_3"
+    yield "/Drone/Fin_4"
 
-    The +180° X rotation maps FRD body frame to Isaac Z-up world:
-      Rot_X(+180°): (x,y,z) → (x, -y, -z)
-        FRD +X (fwd)    → world +X
-        FRD +Y (right)  → world -Y
-        FRD +Z (down)   → world -Z (down in Z-up) ✓
-    Child geometry is in FRD coordinates; this root rotation handles everything.
+
+def validate_drone_usd(stage) -> list[str]:  # stage: Usd.Stage
+    """Validate the minimal prim layout and physics schemas we depend on.
+
+    Returns:
+        List of human-readable issues. Empty list means "looks good".
     """
-    drone_prim_path = "/Drone"
-    drone_xform = UsdGeom.Xform.Define(stage, drone_prim_path)
-    prim = drone_xform.GetPrim()
+    issues: list[str] = []
 
-    # +180° rotation about X to align FRD body with Z-up world frame
-    xform_api = UsdGeom.XformCommonAPI(drone_xform)
-    xform_api.SetRotate(Gf.Vec3f(180.0, 0.0, 0.0), UsdGeom.XformCommonAPI.RotationOrderXYZ)
+    # Stage metadata (best-effort; don’t fail if missing).
+    up_axis = UsdGeom.GetStageUpAxis(stage)
+    if up_axis and up_axis != UsdGeom.Tokens.z:
+        issues.append(f"Stage upAxis is '{up_axis}', expected 'z'.")
 
-    # Physics APIs
-    UsdPhysics.ArticulationRootAPI.Apply(prim)
-    UsdPhysics.RigidBodyAPI.Apply(prim)
-    mass_api = UsdPhysics.MassAPI.Apply(prim)
-    mass_api.GetMassAttr().Set(mass_props.total_mass)
+    default_prim = stage.GetDefaultPrim()
+    if not default_prim or not default_prim.IsValid():
+        issues.append("Stage defaultPrim is not set.")
+    elif default_prim.GetPath() != "/Drone":
+        issues.append(f"defaultPrim is '{default_prim.GetPath()}', expected '/Drone'.")
 
-    # CoM stays in FRD body frame (root rotation handles world mapping)
-    com_frd = mass_props.center_of_mass
-    mass_api.GetCenterOfMassAttr().Set(Gf.Vec3f(*[float(c) for c in com_frd]))
+    # Expected prims exist.
+    for p in _iter_expected_paths():
+        prim = stage.GetPrimAtPath(p)
+        if not prim or not prim.IsValid():
+            issues.append(f"Missing prim at '{p}'.")
 
-    # Diagonal inertia (principal axes approximation; off-diagonals ignored here)
-    I = mass_props.inertia_tensor
-    diag = (float(I[0, 0]), float(I[1, 1]), float(I[2, 2]))
-    mass_api.GetDiagonalInertiaAttr().Set(Gf.Vec3f(*diag))
+    # Physics schemas (soft requirements; warn instead of hard-fail).
+    drone = stage.GetPrimAtPath("/Drone")
+    if drone and drone.IsValid():
+        if not UsdPhysics.ArticulationRootAPI(drone):
+            issues.append("'/Drone' is missing UsdPhysics.ArticulationRootAPI.")
 
-    return drone_xform
+    body = stage.GetPrimAtPath("/Drone/Body")
+    if body and body.IsValid():
+        if not UsdPhysics.RigidBodyAPI(body):
+            issues.append("'/Drone/Body' is missing UsdPhysics.RigidBodyAPI.")
+
+    for fin_name in ("Fin_1", "Fin_2", "Fin_3", "Fin_4"):
+        fin = stage.GetPrimAtPath(f"/Drone/{fin_name}")
+        if fin and fin.IsValid():
+            if not UsdPhysics.RigidBodyAPI(fin):
+                issues.append(f"'/Drone/{fin_name}' is missing UsdPhysics.RigidBodyAPI.")
+
+    # Joints: expect /Drone/Fin_N/RevoluteJoint (manual scene convention).
+    for fin_name in ("Fin_1", "Fin_2", "Fin_3", "Fin_4"):
+        joint_path = f"/Drone/{fin_name}/RevoluteJoint"
+        joint_prim = stage.GetPrimAtPath(joint_path)
+        if not joint_prim or not joint_prim.IsValid():
+            # Fallback: check legacy /Drone/Fin_N_Joint
+            legacy_path = f"/Drone/{fin_name}_Joint"
+            legacy_prim = stage.GetPrimAtPath(legacy_path)
+            if not legacy_prim or not legacy_prim.IsValid():
+                issues.append(
+                    f"No RevoluteJoint found for {fin_name}. "
+                    f"Expected ‘{joint_path}’ or ‘{legacy_path}’."
+                )
+
+    return issues
 
 
-# ---------------------------------------------------------------------------
-# Body geometry emitter (T006)
-# ---------------------------------------------------------------------------
-def _emit_body_geometry(stage: Usd.Stage, primitives: list[dict]) -> None:
-    """Emit USD geometry prims for each YAML primitive under /Drone/Body.
+def print_stage_info(stage) -> None:  # stage: Usd.Stage
+    up_axis = UsdGeom.GetStageUpAxis(stage)
+    meters_per_unit = UsdGeom.GetStageMetersPerUnit(stage)
+    default_prim = stage.GetDefaultPrim()
+    print(f"[drone_usd] upAxis={up_axis} metersPerUnit={meters_per_unit}")
+    print(f"[drone_usd] defaultPrim={default_prim.GetPath() if default_prim else None}")
 
-    All positions and dimensions are in FRD body frame. The /Drone root
-    rotation handles the FRD → Y-up world conversion.
-    """
-    body_path = "/Drone/Body"
-    body_xform = UsdGeom.Xform.Define(stage, body_path)
+    for p in _iter_expected_paths():
+        prim = stage.GetPrimAtPath(p)
+        t = prim.GetTypeName() if prim and prim.IsValid() else None
+        print(f"[drone_usd] {p} type={t}")
 
-    for i, prim_cfg in enumerate(primitives):
-        name = prim_cfg.get("name", f"prim_{i}").replace(" ", "_")
-
-        # Phase A filter: only emit EDF duct
-        if name not in _PHASE_A_PRIMITIVES:
-            continue
-
-        shape = prim_cfg.get("shape", "").lower()
-        child_path = f"{body_path}/{name}"
-
-        # Position in FRD body frame (root rotation handles world mapping)
-        pos = prim_cfg.get("position", [0.0, 0.0, 0.0])
-
-        geom_prim = None
-
-        if shape == "cylinder":
-            cyl = UsdGeom.Cylinder.Define(stage, child_path)
-            cyl.GetRadiusAttr().Set(float(prim_cfg["radius"]))
-            cyl.GetHeightAttr().Set(float(prim_cfg["height"]))
-            # Cylinder axis along Z to match FRD thrust axis
-            cyl.GetAxisAttr().Set("Z")
-            UsdGeom.XformCommonAPI(cyl).SetTranslate(Gf.Vec3d(*pos))
-            geom_prim = cyl.GetPrim()
-
-        elif shape == "box":
-            dims = prim_cfg["dimensions"]  # [x, y, z] in FRD
-            cube = UsdGeom.Cube.Define(stage, child_path)
-            cube_xform = UsdGeom.XformCommonAPI(cube)
-            cube_xform.SetTranslate(Gf.Vec3d(*pos))
-            # Scale directly in FRD: x, y, z — no axis swapping
-            cube_xform.SetScale(Gf.Vec3f(float(dims[0]), float(dims[1]), float(dims[2])))
-            geom_prim = cube.GetPrim()
-
-        elif shape == "sphere":
-            sph = UsdGeom.Sphere.Define(stage, child_path)
-            sph.GetRadiusAttr().Set(float(prim_cfg["radius"]))
-            UsdGeom.XformCommonAPI(sph).SetTranslate(Gf.Vec3d(*pos))
-            geom_prim = sph.GetPrim()
-
+    # Print joint info
+    for fin_name in ("Fin_1", "Fin_2", "Fin_3", "Fin_4"):
+        for jp in (f"/Drone/{fin_name}/RevoluteJoint", f"/Drone/{fin_name}_Joint"):
+            prim = stage.GetPrimAtPath(jp)
+            if prim and prim.IsValid():
+                print(f"[drone_usd] {jp} type={prim.GetTypeName()}")
+                break
         else:
-            continue  # Unknown shape; skip
+            print(f"[drone_usd] /Drone/{fin_name} — no joint found")
 
-        if geom_prim is not None:
-            UsdPhysics.CollisionAPI.Apply(geom_prim)
-
-
-# ---------------------------------------------------------------------------
-# Fin geometry emitter (T007)
-# ---------------------------------------------------------------------------
-def _emit_fin_geometry(stage: Usd.Stage) -> None:
-    """Emit fin Xform + Geom (UsdGeom.Cube) with MassAPI per fin."""
-    for fin in _FINS:
-        fin_path = f"/Drone/{fin['name']}"
-        fin_xform = UsdGeom.Xform.Define(stage, fin_path)
-
-        # Position fin Xform at hinge point in FRD body frame
-        UsdGeom.XformCommonAPI(fin_xform).SetTranslate(Gf.Vec3d(*fin["hinge_pos"]))
-
-        # RigidBodyAPI + MassAPI on the fin Xform (makes each fin a separate articulation link)
-        UsdPhysics.RigidBodyAPI.Apply(fin_xform.GetPrim())
-        fin_mass_api = UsdPhysics.MassAPI.Apply(fin_xform.GetPrim())
-        fin_mass_api.GetMassAttr().Set(_FIN_MASS)
-
-        # resetXformStack required for child rigid bodies nested under a parent rigid body
-        UsdGeom.Xformable(fin_xform.GetPrim()).SetResetXformStack(True)
-
-        # Geometry child (unit cube scaled to half-extents)
-        # Chord along Z (exhaust flow direction in FRD body frame).
-        # Span extends radially; thickness is the thin dimension.
-        #   Axis "X" fins (Fin_1/2): plate in YZ plane → thin in X
-        #   Axis "Y" fins (Fin_3/4): plate in XZ plane → thin in Y
-        geom_path = f"{fin_path}/Geom"
-        geom_cube = UsdGeom.Cube.Define(stage, geom_path)
-        geom_xform_api = UsdGeom.XformCommonAPI(geom_cube)
-        # offset from hinge (leading edge) by chord/2 along Z in FRD body frame
-        geom_xform_api.SetTranslate(Gf.Vec3d(0.0, 0.0, _FIN_CHORD))
-        if fin["axis"] == "X":
-            geom_xform_api.SetScale(Gf.Vec3f(_FIN_THICK, _FIN_SPAN, _FIN_CHORD))
-        else:  # axis == "Y"
-            geom_xform_api.SetScale(Gf.Vec3f(_FIN_SPAN, _FIN_THICK, _FIN_CHORD))
-
-        UsdPhysics.CollisionAPI.Apply(geom_cube.GetPrim())
-
-
-# ---------------------------------------------------------------------------
-# Joint + drive emitter (T008)
-# ---------------------------------------------------------------------------
-def _emit_fin_joints(stage: Usd.Stage) -> None:
-    """Emit RevoluteJoint + DriveAPI for each fin."""
-    drone_prim = stage.GetPrimAtPath("/Drone")
-
-    for fin in _FINS:
-        fin_path = f"/Drone/{fin['name']}"
-        joint_path = f"{fin_path}/{fin['name']}_Joint"
-
-        joint = UsdPhysics.RevoluteJoint.Define(stage, joint_path)
-
-        # Axis in FRD body frame (root rotation handles world mapping)
-        joint.GetAxisAttr().Set(fin["axis"])
-
-        joint.GetLowerLimitAttr().Set(_JOINT_LOWER)
-        joint.GetUpperLimitAttr().Set(_JOINT_UPPER)
-
-        # body0 = /Drone root; body1 = fin Xform
-        joint.GetBody0Rel().SetTargets([Sdf.Path("/Drone")])
-        joint.GetBody1Rel().SetTargets([Sdf.Path(fin_path)])
-
-        # Local frame on body0 at hinge position (FRD body frame)
-        joint.GetLocalPos0Attr().Set(Gf.Vec3f(*fin["hinge_pos"]))
-        joint.GetLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
-
-        # DriveAPI
-        drive_api = UsdPhysics.DriveAPI.Apply(joint.GetPrim(), "angular")
-        drive_api.GetStiffnessAttr().Set(_DRIVE_STIFFNESS)
-        drive_api.GetDampingAttr().Set(_DRIVE_DAMPING)
-        drive_api.GetTargetPositionAttr().Set(0.0)
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-def build_drone_usd(config_path: str | Path, output_path: str | Path) -> None:
-    """Generate drone.usd from YAML config.
-
-    Args:
-        config_path: Path to default_vehicle.yaml (or any vehicle config).
-        output_path: Destination .usd file path.
-    """
-    config_path = Path(config_path)
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Load vehicle config
-    cfg = load_config(config_path)
-    vehicle_cfg = cfg.get("vehicle", cfg)  # support both nested and flat
-    primitives = vehicle_cfg["primitives"]
-
-    # Compute composite mass properties
-    mass_props = compute_mass_properties(primitives)
-
-    # Create stage
-    stage = _new_stage(str(output_path))
-
-    # Root drone prim (T005, T009)
-    _create_drone_root(stage, mass_props)
-
-    # Body geometry (T006)
-    _emit_body_geometry(stage, primitives)
-
-    # Fin geometry (T007)
-    _emit_fin_geometry(stage)
-
-    # Fin joints + drives (T008)
-    _emit_fin_joints(stage)
-
-    # Set default prim so IsaacLab can resolve @drone.usd@<defaultPrim>
-    stage.SetDefaultPrim(stage.GetPrimAtPath("/Drone"))
-
-    stage.GetRootLayer().Save()
-    print(f"[drone_builder] Wrote {output_path} "
-          f"(mass={mass_props.total_mass:.3f} kg, "
-          f"CoM={mass_props.center_of_mass.tolist()})")
+    # Legs (may be under Body or directly under Drone)
+    for lp in ("/Drone/Body/Legs", "/Drone/Legs"):
+        prim = stage.GetPrimAtPath(lp)
+        if prim and prim.IsValid():
+            print(f"[drone_usd] {lp} type={prim.GetTypeName()}")
+            break
 
 
 # ---------------------------------------------------------------------------
 # CLI (T010)
 # ---------------------------------------------------------------------------
 def _main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Generate drone.usd from default_vehicle.yaml"
-    )
-    parser.add_argument(
-        "--config",
-        default="simulation/configs/default_vehicle.yaml",
-        help="Path to vehicle YAML config (default: simulation/configs/default_vehicle.yaml)",
-    )
-    parser.add_argument(
-        "--output",
-        default="simulation/isaac/usd/drone.usd",
-        help="Output USD file path (default: simulation/isaac/usd/drone.usd)",
-    )
+    parser = argparse.ArgumentParser(description="Validate and inspect drone USD")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    def _add_usd_arg(p: argparse.ArgumentParser) -> None:
+        p.add_argument(
+            "--usd",
+            default="simulation/isaac/usd/drone.usdc",
+            help="Path to drone USD (default: simulation/isaac/usd/drone.usdc)",
+        )
+
+    p_validate = sub.add_parser("validate", help="Validate expected prim layout / schemas")
+    _add_usd_arg(p_validate)
+
+    p_info = sub.add_parser("info", help="Print basic stage + prim info")
+    _add_usd_arg(p_info)
+
     args = parser.parse_args()
+    stage = open_usd_stage(args.usd)
 
-    config_path = Path(args.config)
-    if not config_path.is_absolute():
-        config_path = REPO_ROOT / config_path
+    if args.cmd == "info":
+        print_stage_info(stage)
+        return
 
-    output_path = Path(args.output)
-    if not output_path.is_absolute():
-        output_path = REPO_ROOT / output_path
-
-    build_drone_usd(config_path, output_path)
+    issues = validate_drone_usd(stage)
+    if issues:
+        print("[drone_usd] VALIDATION FAILED")
+        for msg in issues:
+            print(f"- {msg}")
+        raise SystemExit(2)
+    print("[drone_usd] OK")
 
 
 if __name__ == "__main__":

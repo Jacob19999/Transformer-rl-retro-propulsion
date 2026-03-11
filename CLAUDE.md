@@ -33,8 +33,15 @@ python -m simulation.training.scripts.diag_inertia
 python -m simulation.training.scripts.diag_yaw
 
 # Isaac Sim / IsaacLab commands (run from Isaac Sim Python environment)
-# Generate drone USD asset from YAML
+# Generate drone USD asset from YAML (programmatic geometry, no Blender needed)
 python -m simulation.isaac.usd.drone_builder --config simulation/configs/default_vehicle.yaml --output simulation/isaac/usd/drone.usd
+
+# Blender → IsaacLab workflow (see simulation/isaac/usd/BLENDER_EXPORT_GUIDE.md)
+# 1. Model in Blender with required part names, export as drone_blender.usd
+# 2. Validate prim naming (no output written)
+python -m simulation.isaac.usd.postprocess_usd --input simulation/isaac/usd/drone_blender.usd --validate-only
+# 3. Add physics APIs and write final drone.usd
+python -m simulation.isaac.usd.postprocess_usd --input simulation/isaac/usd/drone_blender.usd --output simulation/isaac/usd/drone.usd --config simulation/configs/default_vehicle.yaml
 
 # Single-env gravity-fall diagnostic (visual)
 python -m simulation.isaac.scripts.diag_isaac_single --config simulation/isaac/configs/isaac_env_single.yaml
@@ -44,6 +51,10 @@ python -m simulation.isaac.scripts.diag_yaw_isaac --config simulation/isaac/conf
 
 # Fin articulation test
 python -m simulation.isaac.scripts.test_fins --config simulation/isaac/configs/isaac_env_single.yaml
+
+# Fin wiggle visual diagnostic (100 episodes, single drone on ground, each fin swept then all-min/all-max)
+python -m simulation.isaac.scripts.diag_fin_wiggle
+python -m simulation.isaac.scripts.diag_fin_wiggle --config simulation/isaac/configs/isaac_env_single.yaml --episodes 100 --sweeps 3
 
 # Throughput benchmark (1, 128, 512, 1024 envs)
 python -m simulation.isaac.scripts.benchmark_envs

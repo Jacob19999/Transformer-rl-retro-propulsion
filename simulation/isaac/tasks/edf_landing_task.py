@@ -30,16 +30,21 @@ import torch
 # IsaacLab 2.3 imports
 # ---------------------------------------------------------------------------
 import isaaclab.sim as sim_utils
-from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets import Articulation, ArticulationCfg, RigidObject, RigidObjectCfg
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
+from isaaclab.assets import AssetBaseCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.sim.spawners.materials import RigidBodyMaterialCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.terrains import TerrainGeneratorCfg
 from isaaclab.terrains.trimesh.mesh_terrains_cfg import MeshPlaneTerrainCfg
 from isaaclab.utils import configclass
+try:
+    from isaaclab.actuators import ImplicitActuatorCfg
+except Exception:  # pragma: no cover
+    # IsaacLab occasionally relocates cfg classes across versions.
+    from isaaclab.actuators.actuator_cfg import ImplicitActuatorCfg
 
 # ---------------------------------------------------------------------------
 # Project imports
@@ -49,6 +54,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from simulation.config_loader import load_config        # noqa: E402
 from simulation.training.reward import RewardConfig, RewardFunction  # noqa: E402
+from simulation.isaac.usd.parts_registry import load_explicit_mass_props, load_fin_specs  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Physical constants from vehicle YAML (loaded once at import)
@@ -65,24 +71,6 @@ _V_EXHAUST   = 70.0       # m/s nominal
 _CL_ALPHA    = 6.283      # /rad, NACA0012 thin-airfoil
 _FIN_AREA    = 0.003575   # m² per fin, chord × span
 _GRAVITY     = 9.81       # m/s²
-
-# Fin hinge positions in FRD body frame (m) — for fin force torque arms
-_FIN_POS = torch.tensor(
-    [[0.0,  0.055, 0.14],
-     [0.0, -0.055, 0.14],
-     [0.055, 0.0,  0.14],
-     [-0.055, 0.0, 0.14]],
-    dtype=torch.float32,
-)  # (4, 3)
-
-# Fin lift directions in body frame
-_FIN_LIFT_DIR = torch.tensor(
-    [[1.0, 0.0, 0.0],
-     [1.0, 0.0, 0.0],
-     [0.0, 1.0, 0.0],
-     [0.0, 1.0, 0.0]],
-    dtype=torch.float32,
-)  # (4, 3)
 
 
 # ---------------------------------------------------------------------------
@@ -124,16 +112,40 @@ class EdfSceneCfg(InteractiveSceneCfg):
         ),
         init_state=ArticulationCfg.InitialStateCfg(
             pos=(0.0, 0.0, 7.5),  # Z-up: start 7.5 m above ground
-            joint_pos={".*": 0.0},
-            joint_vel={".*": 0.0},
+            joint_pos={},
+            joint_vel={},
         ),
         actuators={
+            # Drive the four fin revolute joints via implicit PD (targets set in task).
+            # Manual scene: joints live at /Drone/Fin_N/RevoluteJoint
             "fins": ImplicitActuatorCfg(
-                joint_names_expr=["Fin_.*_Joint"],
-                stiffness=25.0,
-                damping=0.05,
+                joint_names_expr=["RevoluteJoint"],
+                stiffness=20.0,
+                damping=1.0,
+                effort_limit_sim=2.0,
             ),
         },
+    )
+
+    # Grey studio lighting — neutral dome + soft key light
+    sky_light: AssetBaseCfg = AssetBaseCfg(
+        prim_path="/World/skyLight",
+        spawn=sim_utils.DomeLightCfg(
+            intensity=800.0,
+            color=(0.75, 0.75, 0.75),
+        ),
+    )
+
+    key_light: AssetBaseCfg = AssetBaseCfg(
+        prim_path="/World/keyLight",
+        spawn=sim_utils.DistantLightCfg(
+            intensity=2000.0,
+            color=(0.9, 0.9, 0.9),
+            angle=0.53,
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(
+            rot=(0.612, 0.354, 0.354, 0.612),  # ~45° elevation from front-right
+        ),
     )
 
     # Number of envs is set by the parent DirectRLEnvCfg
@@ -227,15 +239,23 @@ class EdfLandingTask(DirectRLEnv):
         # Max steps per episode
         self._max_steps = int(cfg.episode_length_s / cfg.sim.dt)
 
-        # Move fin geometry tensors to device
-        self._fin_pos = _FIN_POS.to(self.device)        # (4, 3)
-        self._fin_lift = _FIN_LIFT_DIR.to(self.device)  # (4, 3)
-
-        # Vehicle mass (for twr obs)
-        vehicle_cfg = load_config(cfg.vehicle_config_path)
+        # Load vehicle config (fin geometry + mass properties from YAML)
+        vehicle_cfg  = load_config(cfg.vehicle_config_path)
         vehicle_data = vehicle_cfg.get("vehicle", vehicle_cfg)
-        from simulation.dynamics.mass_properties import compute_mass_properties
-        mp = compute_mass_properties(vehicle_data["primitives"])
+
+        # Fin hinge positions and lift directions from YAML (single source of truth)
+        fin_specs = load_fin_specs(vehicle_data)
+        self._fin_pos = torch.tensor(
+            [list(s.hinge_pos_frd) for s in fin_specs],
+            dtype=torch.float32, device=self.device,
+        )  # (4, 3)
+        self._fin_lift = torch.tensor(
+            [list(s.lift_direction) for s in fin_specs],
+            dtype=torch.float32, device=self.device,
+        )  # (4, 3)
+
+        # Vehicle mass (for twr obs) — from explicit config, no primitive aggregation
+        mp = load_explicit_mass_props(vehicle_data)
         self._mass = float(mp.total_mass)
         self._weight = self._mass * _GRAVITY
 
@@ -255,6 +275,8 @@ class EdfLandingTask(DirectRLEnv):
         # self.scene is already created by DirectRLEnv.__init__ before this is called
         self.robot: Articulation = self.scene["robot"]
         self._terrain = self.scene.terrain
+        # Cache fin joint ids lazily (robot.data buffers not ready during __init__).
+        self._fin_joint_ids: list[int] = []
 
     # ------------------------------------------------------------------
     # T015: Reset per env indices
@@ -265,14 +287,15 @@ class EdfLandingTask(DirectRLEnv):
         if n == 0:
             return
 
+        # Base class reset: scene.reset (actuators, wrenches) + episode_length_buf
+        super()._reset_idx(env_ids)
+
         # Reset lag state
         self.thrust_actual[env_ids] = 0.0
         self.fin_deflections_actual[env_ids] = 0.0
         self._episode_step[env_ids] = 0
         self._prev_action[env_ids] = 0.0
         self._wind_ema[env_ids] = 0.0
-        # Reset DirectRLEnv episode counter (prevents perpetual truncation)
-        self.episode_length_buf[env_ids] = 0
 
         # Sample random altitude and velocity
         alt = torch.zeros(n, device=self.device).uniform_(
@@ -291,25 +314,27 @@ class EdfLandingTask(DirectRLEnv):
         vel = torch.stack([vx, vy, vz], dim=-1)  # (n, 3)
 
         # Root pose: position at random altitude (Z-up: altitude = Z)
-        # Place in env-local frame (Isaac handles per-env offsets automatically)
         pos = torch.zeros((n, 3), device=self.device)
         pos[:, 2] = alt  # Z = altitude in Z-up world
 
-        # Identity quaternion [x, y, z, w] scalar-last
+        # Identity quaternion in wxyz format (IsaacLab convention: w, x, y, z)
         quat = torch.zeros((n, 4), device=self.device)
-        quat[:, 3] = 1.0  # w=1 → identity
+        quat[:, 0] = 1.0  # w=1 → identity (wxyz: [1, 0, 0, 0])
 
-        # Write root pose and velocity
+        # Add env origins for multi-env support
         root_pose = torch.cat([pos, quat], dim=-1)  # (n, 7)
-        root_vel  = torch.cat([vel, torch.zeros((n, 3), device=self.device)], dim=-1)  # (n, 6)
+        root_pose[:, :3] += self.scene.env_origins[env_ids]
+
+        root_vel = torch.cat([vel, torch.zeros((n, 3), device=self.device)], dim=-1)
 
         self.robot.write_root_pose_to_sim(root_pose, env_ids=env_ids)
         self.robot.write_root_velocity_to_sim(root_vel, env_ids=env_ids)
 
-        # Reset joints to neutral
-        joint_pos = torch.zeros((n, self.robot.num_joints), device=self.device)
-        joint_vel = torch.zeros_like(joint_pos)
-        self.robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
+        # Reset joints to neutral (guard for zero-joint articulation)
+        if self.robot.num_joints > 0:
+            joint_pos = torch.zeros((n, self.robot.num_joints), device=self.device)
+            joint_vel = torch.zeros_like(joint_pos)
+            self.robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
 
     # ------------------------------------------------------------------
     # T017: Pre-physics step — force injection
@@ -319,8 +344,9 @@ class EdfLandingTask(DirectRLEnv):
         dt = self._dt
 
         # Clip and store actions for use in _apply_action
-        self.actions = actions.clamp(-1.0, 1.0)
-        self._prev_action = self.actions.clone()
+        # Expand to (num_envs, 5) in case a (1, 5) action is broadcast from the wrapper
+        self.actions = actions.expand(self.num_envs, -1).clamp(-1.0, 1.0)
+        self._prev_action.copy_(self.actions)
 
         # Unpack: [thrust_cmd, d1, d2, d3, d4]
         thrust_cmd_norm = self.actions[:, 0]
@@ -345,6 +371,36 @@ class EdfLandingTask(DirectRLEnv):
         num_envs = self.num_envs
         forces  = torch.zeros((num_envs, 1, 3), device=self.device)
         torques = torch.zeros((num_envs, 1, 3), device=self.device)
+
+        # ----------------------------------------------------------------
+        # Fin joints — set Drive/actuator position targets (degrees)
+        # ----------------------------------------------------------------
+        if not self._fin_joint_ids:
+            # Manual scene: joints are /Drone/Fin_N/RevoluteJoint.
+            # PhysX joint names appear as "RevoluteJoint" (possibly de-duplicated
+            # with index suffixes).  Try exact names first, then regex fallback.
+            try:
+                joint_ids, joint_names = self.robot.find_joints(
+                    "RevoluteJoint", preserve_order=False
+                )
+            except Exception:
+                joint_ids, joint_names = [], []
+            if len(joint_ids) == 4:
+                self._fin_joint_ids = [int(i) for i in joint_ids]
+            else:
+                # Fallback: legacy naming (Fin_1_Joint .. Fin_4_Joint)
+                try:
+                    joint_ids, joint_names = self.robot.find_joints(
+                        [f"Fin_{i}_Joint" for i in range(1, 5)],
+                        preserve_order=True,
+                    )
+                    if len(joint_ids) == 4:
+                        self._fin_joint_ids = [int(i) for i in joint_ids]
+                except Exception:
+                    pass
+        if self._fin_joint_ids:
+            fin_target_deg = self.fin_deflections_actual * (180.0 / math.pi)
+            self.robot.set_joint_position_target(fin_target_deg, joint_ids=self._fin_joint_ids)
 
         # ----------------------------------------------------------------
         # EDF thrust — world +Z (up in Z-up world), is_global=True
@@ -503,13 +559,6 @@ class EdfLandingTask(DirectRLEnv):
 
         return terminated, truncated
 
-    # ------------------------------------------------------------------
-    # DirectRLEnv override: apply actions before physics
-    # ------------------------------------------------------------------
-    def _apply_action(self) -> None:
-        """Called by DirectRLEnv before sim.step(). Delegates to _pre_physics_step."""
-        # actions are stored in self.actions by the parent class
-        self._pre_physics_step(self.actions)
 
 
 # ---------------------------------------------------------------------------

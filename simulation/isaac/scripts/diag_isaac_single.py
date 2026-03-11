@@ -76,7 +76,7 @@ def main() -> None:
     for ep in range(args.episodes):
         obs, _ = env.reset(seed=ep)
         print(f"\n[diag_isaac_single] Episode {ep + 1}/{args.episodes}  "
-              f"initial h_agl={obs[16]:.2f} m")
+              f"initial h_agl={float(obs[16]):.2f} m")
 
         for step in range(args.steps):
             obs, rew, terminated, truncated, _ = env.step(zero_action)
@@ -89,12 +89,12 @@ def main() -> None:
             if step % 60 == 0 or step == args.steps - 1:
                 print(
                     f"  step={step:4d}  h_agl={h_agl:.3f} m  "
-                    f"reward={rew:.3f}  done={terminated or truncated}"
+                    f"reward={float(rew):.3f}  done={bool(terminated) or bool(truncated)}"
                 )
 
             if terminated or truncated:
                 print(f"  Episode ended at step {step} "
-                      f"(terminated={terminated}, truncated={truncated})")
+                      f"(terminated={bool(terminated)}, truncated={bool(truncated)})")
                 break
 
         if contacted_ground:

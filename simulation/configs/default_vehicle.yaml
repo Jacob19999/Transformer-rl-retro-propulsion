@@ -308,7 +308,25 @@ vehicle:
         drag_direction: [0, 0, 1]
         angular_offset_deg: 270
 
-  # ─── Computed Properties (auto-populated at init) ────────────────
+  # ─── Explicit Mass Properties ────────────────────────────────────
+  # Primary source for Isaac Sim / IsaacLab.
+  # USD MassAPI uses these directly — no primitive aggregation needed.
+  # The custom Python sim (vehicle.py) also reads these when
+  # use_explicit: true, otherwise falls back to primitives.
+  #
+  # Values below were computed from primitives (baseline).
+  # Update when the physical drone is weighed / CAD is finalized.
+  mass_properties:
+    use_explicit: true         # true = use values below; false = compute from primitives
+    source: "primitives"       # "primitives" | "cad" | "measured" — provenance tag
+    total_mass: 3.13           # kg
+    center_of_mass: [0.0045, 0.0008, 0.0046]   # [x, y, z] m, FRD body frame
+    inertia_tensor:                              # kg·m², about CoM, body frame axes
+      - [0.01358, -0.00006,  0.00034]
+      - [-0.00006, 0.01549,  0.00006]
+      - [0.00034,  0.00006,  0.00480]
+
+  # ─── Computed Properties (auto-populated at init when not using explicit) ──
   _computed:
     total_mass: null           # kg, Σ m_i
     center_of_mass: null       # [x, y, z] m, mass-weighted centroid (body frame)
@@ -321,6 +339,7 @@ vehicle:
     projected_area_z: null     # m², Σ drag_facing.z_i (top/bottom profile)
 
   # ─── Mass Override (from CAD or measured) ────────────────────────
+  # Legacy path — prefer mass_properties above. Kept for backward compat.
   cad_override:
     use_cad_override: false
     source: null               # "inventor" | "solidworks" | "measured" | null
