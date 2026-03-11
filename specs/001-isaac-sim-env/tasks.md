@@ -20,19 +20,28 @@
 
 ## Phase 2: Foundational (Blocking Prerequisites)
 
-**Purpose**: USD asset builder and config loader bridge — MUST complete before any IsaacLab env work can begin.
+**Purpose**: USD asset pipeline and validation tooling — MUST complete before any IsaacLab env work can begin.
 
-**⚠️ CRITICAL**: Phases 3–7 all depend on a valid `drone.usd` being producible from YAML.
+**⚠️ CRITICAL**: Phases 3–7 all depend on a valid `drone.usdc` with correct physics APIs.
 
-- [X] T005 Implement `simulation/isaac/usd/drone_builder.py` — main entry point: loads `default_vehicle.yaml` via existing `config_loader.py`, orchestrates body + fin USD construction, writes `simulation/isaac/usd/drone.usd`
-- [X] T006 Implement body geometry emitter inside `drone_builder.py`: iterate YAML `primitives`, emit `UsdGeom.Cylinder` / `UsdGeom.Cube` / `UsdGeom.Sphere` children under `/Drone/Body`; apply `UsdPhysics.CollisionAPI` to each; apply `UsdPhysics.RigidBodyAPI` + `UsdPhysics.MassAPI` (composite mass, CoM, diagonalInertia) to `/Drone` root per `usd-asset-schema.md`
-- [X] T007 Implement fin geometry emitter inside `drone_builder.py`: for each of 4 fins in `fins.fins_config`, create `/Drone/Fin_N` Xform + `/Drone/Fin_N/Geom` as `UsdGeom.Cube` scaled to `(0.0325, 0.0275, 0.0039)` half-extents, translated `+0.0325` along local chord axis from hinge; add `UsdPhysics.MassAPI(mass=0.003)` per `usd-asset-schema.md`
-- [X] T008 Implement joint + drive emitter inside `drone_builder.py`: create `UsdPhysics.RevoluteJoint` on each `/Drone/Fin_N` with correct `physics:axis`, `lowerLimit=-15`, `upperLimit=+15`, `body0=/Drone`, `localPos0=<hinge_pos>`; add `UsdPhysics.DriveAPI` with `stiffness=25.0`, `damping=0.05`, `targetPosition=0.0` per `usd-asset-schema.md`
-- [X] T009 Add coordinate frame transform in `drone_builder.py`: apply 90° rotation about X at `/Drone` root to align FRD body +Z with Isaac Sim Y-up world frame
-- [X] T010 [P] Add CLI entrypoint to `drone_builder.py`: `--config` and `--output` args; validate output USD opens in Isaac Sim without errors
-- [X] T011 [P] Add pytest test `simulation/tests/test_drone_builder.py::test_usd_round_trip`: load generated USD via `pxr`, verify body mass within 1% of YAML aggregate, verify 4 revolute joints present with ±15° limits, verify fin cube half-extents within 1% of (0.0325, 0.0275, 0.0039)
+**Architecture change**: The original plan called for programmatic geometry generation from YAML primitives via `drone_builder.py`. This was replaced with a hand-authored / Blender-exported USD workflow:
+- **Geometry** comes from hand-authoring in Isaac Sim or Blender export (visual fidelity, avoids brittle programmatic USD authoring)
+- **Physics APIs** (ArticulationRoot, RigidBody, Mass, RevoluteJoint, DriveAPI) are added by `postprocess_usd.py` using parameters from `default_vehicle.yaml`
+- **Validation** is handled by `drone_builder.py` (repurposed as a read-only validator/inspector)
+- **Prim naming contract** is enforced by `parts_registry.py` (single source of truth for prim paths, FRD↔Z-up conversion)
 
-**Checkpoint**: `drone.usd` generated, round-trip test passes — IsaacLab env work can now begin
+- [X] T005 ~~Implement `drone_builder.py` as USD generator~~ → Repurposed as `simulation/isaac/usd/drone_builder.py` — read-only USD validator/inspector. Provides `validate` (checks prim layout, physics schemas, joint presence) and `info` (prints stage metadata) CLI subcommands. Does not author or modify USD.
+- [X] T006 ~~Body geometry emitter~~ → Hand-authored drone body in Isaac Sim; geometry lives in `simulation/isaac/usd/drone.usdc`. Physics APIs (ArticulationRootAPI on `/Drone`, RigidBodyAPI + MassAPI on `/Drone/Body`) added by `postprocess_usd.py::_add_root_physics()` using explicit mass properties from `default_vehicle.yaml`
+- [X] T007 ~~Fin geometry emitter~~ → Fin geometry hand-authored in Isaac Sim as `/Drone/Fin_1` through `/Drone/Fin_4` Xforms in `drone.usdc`. RigidBodyAPI + MassAPI applied by `postprocess_usd.py::_add_fin_physics()`
+- [X] T008 ~~Joint + drive emitter in drone_builder~~ → RevoluteJoint + DriveAPI creation moved to `postprocess_usd.py::_create_fin_joints()`: hinge positions from YAML via `parts_registry.load_fin_specs()`, FRD→Z-up converted; joint limits from `fins.max_deflection`; DriveAPI with stiffness=20.0, damping=1.0
+- [X] T009 ~~Coordinate frame transform in drone_builder~~ → Z-up stage metadata enforced by `postprocess_usd.py::_ensure_stage_metadata()`. Blender exports in Z-up directly (per BLENDER_EXPORT_GUIDE.md). FRD↔Z-up coordinate conversion for physics params handled by `parts_registry.frd_to_zup()`
+- [X] T010 [P] Add CLI entrypoints: `drone_builder.py` provides `validate --usd` and `info --usd` subcommands; `postprocess_usd.py` provides `--input`, `--output`, `--config`, `--validate-only` for Blender→physics pipeline
+- [X] T011 [P] Add pytest test `simulation/tests/test_drone_builder.py`: validate prim layout (/Drone, /Drone/Body, /Drone/Fin_1–4), physics schemas (ArticulationRootAPI, RigidBodyAPI), and joint presence in the pre-built `drone.usdc`
+- [X] T011a Implement `simulation/isaac/usd/parts_registry.py` — single source of truth for prim path constants (DRONE_ROOT, BODY_PRIM, LEGS_PRIM, fin paths), FinSpec/ExplicitMassProps dataclasses, `frd_to_zup()` coordinate conversion, YAML config loaders for fin geometry and mass properties
+- [X] T011b Implement `simulation/isaac/usd/postprocess_usd.py` — Blender→IsaacLab physics post-processor: opens Blender-exported USD, validates prim names, adds ArticulationRootAPI/RigidBodyAPI/MassAPI/RevoluteJoint/DriveAPI from YAML config, bakes non-uniform Blender scales into mesh points, fixes legs via FixedJoint to base link
+- [X] T011c Author `simulation/isaac/usd/BLENDER_EXPORT_GUIDE.md` — documents Blender naming hierarchy, coordinate system (Z-up), fin origin placement at hinge points, export settings, and postprocess workflow
+
+**Checkpoint**: `drone.usdc` hand-authored with physics APIs, validator passes, postprocess pipeline functional — IsaacLab env work can now begin
 
 ---
 
@@ -98,19 +107,21 @@
 
 ---
 
-## Phase 6: User Story 4 — Configuration-Driven Drone Generation (Priority: P2)
+## Phase 6: User Story 4 — Configuration-Driven Physics Parameters (Priority: P2)
 
-**Goal**: Modifying a YAML parameter regenerates the USD asset with the change reflected within 1% tolerance.
+**Goal**: Physics parameters (mass, CoM, inertia, joint limits) in the USD are driven by YAML config via `postprocess_usd.py`. Modifying a YAML parameter and re-running postprocess reflects the change in the output USD.
 
-**Independent Test**: Modify `edf_duct.radius` in YAML from 0.045 → 0.050, run `drone_builder.py`, open USD, verify duct cylinder radius = 0.050 m within 1%.
+**Independent Test**: Modify `fins.max_deflection` in YAML, run `postprocess_usd.py`, open USD, verify joint limits match. Run `python -m simulation.isaac.usd.drone_builder validate --usd simulation/isaac/usd/drone.usdc`.
+
+**Architecture note**: Geometry is hand-authored (not config-driven). Only physics APIs (mass, inertia, CoM, joint limits, drive params) are derived from YAML. This is intentional — visual geometry requires artistic control that programmatic generation cannot provide.
 
 ### Implementation for User Story 4
 
-- [X] T032 [US4] Add `test_yaml_to_usd_parameter_propagation` to `simulation/tests/test_drone_builder.py`: override `edf_duct.radius` to 0.060 in a temp YAML copy; regenerate USD; read USD via `pxr`; assert `UsdGeom.Cylinder(duct_prim).GetRadiusAttr().Get() == 0.060` within 1%
-- [X] T033 [US4] Add `test_fin_joint_limits_from_yaml` to `simulation/tests/test_drone_builder.py`: set `fins.max_deflection = 0.2618` (15°) in test YAML; regenerate USD; assert all 4 `RevoluteJoint` `lowerLimit == -15.0` and `upperLimit == 15.0` (in degrees)
-- [X] T034 [US4] Add `test_composite_mass_from_yaml` to `simulation/tests/test_drone_builder.py`: sum all primitive masses from YAML (expected ≈ 3.1 kg); assert `UsdPhysics.MassAPI(drone_prim).GetMassAttr().Get()` within 1% of computed sum
+- [X] T032 [US4] ~~test_yaml_to_usd_parameter_propagation (geometry radius)~~ → Geometry is hand-authored, not config-driven. Replaced with validation that `postprocess_usd.py` correctly applies mass properties from YAML: run postprocess with test config, verify `MassAPI` on `/Drone/Body` reflects `default_vehicle.yaml` explicit mass properties
+- [X] T033 [US4] Add `test_fin_joint_limits_from_yaml` to `simulation/tests/test_drone_builder.py`: set `fins.max_deflection` in test YAML; run `postprocess_usd.py`; assert all 4 RevoluteJoint `lowerLimit` and `upperLimit` match `±degrees(max_deflection)` within 1%
+- [X] T034 [US4] Add `test_composite_mass_from_yaml` to `simulation/tests/test_drone_builder.py`: load explicit mass properties from YAML via `parts_registry.load_explicit_mass_props()`; run postprocess; assert `UsdPhysics.MassAPI` on `/Drone/Body` `GetMassAttr().Get()` matches `total_mass` within 1%
 
-**Checkpoint**: Full YAML → USD → physics parameter chain verified — US4 complete
+**Checkpoint**: YAML → postprocess_usd → physics parameter chain verified — US4 complete
 
 ---
 
@@ -160,8 +171,8 @@
 | Parallelizable group               | Tasks                                                 |
 | ---------------------------------- | ----------------------------------------------------- |
 | Config file creation               | T002, T003, T004                                      |
-| USD builder — body + fins + joints | T006, T007, T008 (after T005)                         |
-| USD CLI + round-trip test          | T010, T011 (after T008)                               |
+| USD pipeline — postprocess + registry + guide | T011a, T011b, T011c (after T005)              |
+| USD validation + tests             | T010, T011 (after T011b)                              |
 | US1 env internals                  | T016 (lag tensors), T012+T013 (scene cfg) can overlap |
 | US2 test additions                 | T024, T025, T026, T027                                |
 | US3 parallel tests + benchmark     | T029, T030 (after T028)                               |
@@ -177,7 +188,7 @@
 ### MVP (User Stories 1 + 2 only — Phases 1–4)
 
 1. Phase 1: Setup (T001–T004)
-2. Phase 2: USD builder (T005–T011) — **stop and run `test_drone_builder.py` before proceeding**
+2. Phase 2: USD asset pipeline (T005–T011c) — hand-author drone in Isaac Sim/Blender, run `postprocess_usd.py` to add physics, validate with `drone_builder.py validate`
 3. Phase 3: Single env (T012–T023) — **stop and run `diag_isaac_single.py` visual check**
 4. Phase 4: Fin validation (T024–T027)
 5. **STOP and VALIDATE**: PID tuning can begin on the single env MVP
@@ -198,8 +209,11 @@ Add Phase 5 (parallel), Phase 6 (config round-trip), Phase 7 (training), Phase 8
 
 - `[P]` = parallelizable with other `[P]` tasks at same phase (different files, no shared state)
 - `[USN]` maps task to spec.md user story for traceability
+- ~~Strikethrough~~ on task descriptions indicates the original plan; text after `→` describes what was actually implemented
 - All IsaacLab imports use `isaaclab.`* namespace (not `omni.isaac.lab.*`)
 - External forces applied in **body local frame** via `set_external_force_and_torque` + `write_data_to_sim()`
-- Coordinate frame: FRD body ↔ Y-up Isaac Sim via 90° X-rotation at `/Drone` root
+- Coordinate frame: FRD body ↔ Z-up Isaac Sim; Blender exports Z-up directly; `parts_registry.frd_to_zup()` handles physics param conversion
+- USD asset pipeline: hand-authored geometry (Isaac Sim / Blender) → `postprocess_usd.py` adds physics APIs from YAML → `drone_builder.py validate` checks prim layout
+- Primary asset is `drone.usdc` (binary USD); `drone_blender.usdc` is the raw Blender export (intermediate)
 - Commit after each checkpoint; include seed + git hash in run directory names
 

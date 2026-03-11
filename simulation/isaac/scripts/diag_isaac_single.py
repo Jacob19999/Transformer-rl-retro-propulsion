@@ -68,19 +68,34 @@ def main() -> None:
 
     print(f"[diag_isaac_single] Running {args.episodes} episodes, up to {args.steps} steps each.")
 
+    # Determine number of envs from first reset
+    obs_test, _ = env.reset(seed=0)
+    multi_env = obs_test.ndim > 1
+    num_envs = obs_test.shape[0] if multi_env else 1
+    print(f"[diag_isaac_single] Detected {num_envs} env(s) (multi_env={multi_env})")
+
+    # Helper to extract scalar from possibly-batched value (use env 0)
+    def _scalar(x):
+        x = np.asarray(x)
+        return float(x.flat[0])
+
     zero_action = np.zeros(5, dtype=np.float32)
+    if multi_env:
+        zero_action = np.zeros((num_envs, 5), dtype=np.float32)
     min_h_seen = float("inf")
     contacted_ground = False
     episodes_contacted = 0
 
     for ep in range(args.episodes):
         obs, _ = env.reset(seed=ep)
+        obs0 = obs[0] if multi_env else obs
         print(f"\n[diag_isaac_single] Episode {ep + 1}/{args.episodes}  "
-              f"initial h_agl={float(obs[16]):.2f} m")
+              f"initial h_agl={float(obs0[16]):.2f} m")
 
         for step in range(args.steps):
             obs, rew, terminated, truncated, _ = env.step(zero_action)
-            h_agl = float(obs[16])
+            obs0 = obs[0] if multi_env else obs
+            h_agl = float(obs0[16])
             min_h_seen = min(min_h_seen, h_agl)
 
             if h_agl < 0.1:
@@ -89,12 +104,13 @@ def main() -> None:
             if step % 60 == 0 or step == args.steps - 1:
                 print(
                     f"  step={step:4d}  h_agl={h_agl:.3f} m  "
-                    f"reward={float(rew):.3f}  done={bool(terminated) or bool(truncated)}"
+                    f"reward={_scalar(rew):.3f}  done={bool(_scalar(terminated)) or bool(_scalar(truncated))}"
                 )
 
-            if terminated or truncated:
+            # For multi-env, check env 0 for termination
+            if _scalar(terminated) or _scalar(truncated):
                 print(f"  Episode ended at step {step} "
-                      f"(terminated={bool(terminated)}, truncated={bool(truncated)})")
+                      f"(terminated={bool(_scalar(terminated))}, truncated={bool(_scalar(truncated))})")
                 break
 
         if contacted_ground:
