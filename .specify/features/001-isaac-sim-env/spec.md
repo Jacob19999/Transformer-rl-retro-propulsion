@@ -134,3 +134,4 @@ A researcher uses existing YAML configuration files (which define drone geometry
 - Existing observation pipeline specification (`simulation/training/observation.py`) defining the 20-dimensional observation format.
 - Existing reward function specification (`simulation/training/reward.py`) for eventual training integration.
 - Access to a workstation with a compatible GPU for running the physics simulation with parallel environments.
+
