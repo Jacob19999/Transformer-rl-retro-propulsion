@@ -27,6 +27,36 @@ from typing import Any
 import torch
 
 # ---------------------------------------------------------------------------
+# IsaacLab source-path bootstrap.
+#
+# The pip-installed `isaaclab` package ships its Python source at
+#   <site-packages>/isaaclab/source/isaaclab/
+# but its top-level __init__.py only exposes `isaaclab.app`.
+# We locate the source tree via find_spec (no import side-effects) and
+# prepend it to sys.path so that `import isaaclab.sim` etc. resolve correctly.
+# ---------------------------------------------------------------------------
+def _bootstrap_isaaclab_path() -> None:
+    import importlib.util as _ilu
+    spec = _ilu.find_spec("isaaclab")
+    if spec is None:
+        return
+    pkg_root = Path(spec.origin).parent  # .../site-packages/isaaclab/
+    # isaaclab source + isaaclab_contrib source both live under source/
+    for subdir in ("isaaclab", "isaaclab_contrib"):
+        src = pkg_root / "source" / subdir
+        if src.exists() and str(src) not in sys.path:
+            sys.path.insert(0, str(src))
+    # Clear any partially-imported isaaclab submodules so the source version wins.
+    stale = [k for k in sys.modules
+             if k in ("isaaclab", "isaaclab_contrib")
+             or k.startswith("isaaclab.") or k.startswith("isaaclab_contrib.")]
+    for k in stale:
+        del sys.modules[k]
+
+
+_bootstrap_isaaclab_path()
+
+# ---------------------------------------------------------------------------
 # IsaacLab 2.3 imports
 # ---------------------------------------------------------------------------
 import isaaclab.sim as sim_utils
