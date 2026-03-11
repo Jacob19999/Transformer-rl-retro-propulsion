@@ -60,15 +60,10 @@ _bootstrap_isaaclab_path()
 # IsaacLab 2.3 imports
 # ---------------------------------------------------------------------------
 import isaaclab.sim as sim_utils
-from isaaclab.assets import Articulation, ArticulationCfg, RigidObject, RigidObjectCfg
+from isaaclab.assets import Articulation, ArticulationCfg, AssetBaseCfg
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.assets import AssetBaseCfg
 from isaaclab.sim import SimulationCfg
-from isaaclab.sim.spawners.materials import RigidBodyMaterialCfg
-from isaaclab.terrains import TerrainImporterCfg
-from isaaclab.terrains import TerrainGeneratorCfg
-from isaaclab.terrains.trimesh.mesh_terrains_cfg import MeshPlaneTerrainCfg
 from isaaclab.utils import configclass
 try:
     from isaaclab.actuators import ImplicitActuatorCfg
@@ -108,37 +103,22 @@ _GRAVITY     = 9.81       # m/s²
 # ---------------------------------------------------------------------------
 @configclass
 class EdfSceneCfg(InteractiveSceneCfg):
-    """Declarative scene: flat ground plane + one drone articulation."""
+    """Declarative scene: drone articulation loaded from hand-authored USD.
 
-    terrain = TerrainImporterCfg(
-        prim_path="/World/ground",
-        terrain_type="generator",
-        terrain_generator=TerrainGeneratorCfg(
-            seed=0,
-            size=(100.0, 100.0),
-            num_rows=1,
-            num_cols=1,
-            horizontal_scale=1.0,
-            sub_terrains={"flat": MeshPlaneTerrainCfg()},
-        ),
-        physics_material=RigidBodyMaterialCfg(
-            static_friction=0.5,
-            dynamic_friction=0.5,
-            restitution=0.1,
-        ),
-    )
+    The drone USD (drone.usdc) is authored in Isaac Sim with rigid bodies,
+    joints, materials, and collision already configured.  We do NOT pass
+    rigid_props / articulation_props / collision_props so that the spawner
+    preserves every API schema and material in the original asset.
+
+    No terrain importer — the USD's own GroundPlane (with CollisionPlane)
+    is referenced into the live stage by _import_scene_prims_from_usd().
+    """
 
     robot: ArticulationCfg = ArticulationCfg(
         prim_path="{ENV_REGEX_NS}/Drone",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=str(REPO_ROOT / "simulation" / "isaac" / "usd" / "drone.usd"),
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                disable_gravity=False,
-                max_depenetration_velocity=1.0,
-            ),
-            articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-                enabled_self_collisions=False,
-            ),
+            usd_path=str(REPO_ROOT / "simulation" / "isaac" / "usd" / "drone.usdc"),
+            # No rigid_props / articulation_props / collision_props — preserve USD as-is
         ),
         init_state=ArticulationCfg.InitialStateCfg(
             pos=(0.0, 0.0, 7.5),  # Z-up: start 7.5 m above ground
@@ -147,9 +127,9 @@ class EdfSceneCfg(InteractiveSceneCfg):
         ),
         actuators={
             # Drive the four fin revolute joints via implicit PD (targets set in task).
-            # Manual scene: joints live at /Drone/Fin_N/RevoluteJoint
+            # Manual scene: joints live at /Drone/Fin_N/Fin_N_Joint
             "fins": ImplicitActuatorCfg(
-                joint_names_expr=["RevoluteJoint"],
+                joint_names_expr=["Fin_.*_Joint"],
                 stiffness=20.0,
                 damping=1.0,
                 effort_limit_sim=2.0,
@@ -301,12 +281,83 @@ class EdfLandingTask(DirectRLEnv):
     # T014: Scene setup
     # ------------------------------------------------------------------
     def _setup_scene(self) -> None:
-        """Set up references to scene entities after the base class creates the scene."""
+        """Set up references to scene entities after the base class creates the scene.
+
+        Also copies the GroundPlane and _materials prims from the source USD
+        into the stage so that the authored visual appearance is preserved.
+        """
         # self.scene is already created by DirectRLEnv.__init__ before this is called
         self.robot: Articulation = self.scene["robot"]
-        self._terrain = self.scene.terrain
         # Cache fin joint ids lazily (robot.data buffers not ready during __init__).
         self._fin_joint_ids: list[int] = []
+
+        # Import non-defaultPrim root prims (GroundPlane, _materials) from the
+        # authored USD so visual appearance matches the hand-crafted scene.
+        self._import_scene_prims_from_usd()
+
+    def _import_scene_prims_from_usd(self) -> None:
+        """Import non-defaultPrim root prims and restore material bindings.
+
+        The UsdFileCfg spawner only brings in the defaultPrim (Drone).
+        Root-level siblings like GroundPlane and _materials are skipped.
+        We add them here so the visual scene matches the authored USD.
+
+        Material bindings in the source USD use absolute paths (e.g.
+        /_materials/MyMaterial) which break when the drone is cloned into
+        /World/envs/env_0/Drone.  We re-bind each mesh to the global
+        material scope after importing it.
+        """
+        from pxr import Usd, UsdGeom, UsdShade, Sdf
+
+        usd_path = self.cfg.scene.robot.spawn.usd_path
+        live_stage = self.sim.stage
+
+        # Open the source USD as a read-only layer
+        src_stage = Usd.Stage.Open(usd_path, Usd.Stage.LoadAll)
+        if src_stage is None:
+            return
+
+        src_root = src_stage.GetPseudoRoot()
+        default_prim_name = src_stage.GetDefaultPrim().GetName() if src_stage.HasDefaultPrim() else ""
+
+        # 1. Import root-level siblings (GroundPlane, _materials, etc.)
+        for child in src_root.GetChildren():
+            name = child.GetName()
+            if name == default_prim_name:
+                continue
+            dest_path = Sdf.Path(f"/{name}")
+            if live_stage.GetPrimAtPath(dest_path).IsValid():
+                continue
+            over_prim = live_stage.DefinePrim(dest_path)
+            over_prim.GetReferences().AddReference(usd_path, child.GetPath())
+
+        # 2. Re-bind materials on cloned drone meshes.
+        #    Walk the source defaultPrim, find every mesh with a material binding,
+        #    and apply the same binding on the corresponding live-stage prim.
+        src_default = src_stage.GetDefaultPrim()
+        if not src_default.IsValid():
+            return
+
+        for src_prim in Usd.PrimRange(src_default):
+            binding_api = UsdShade.MaterialBindingAPI(src_prim)
+            bound_mat_path = binding_api.GetDirectBinding().GetMaterialPath()
+            if not bound_mat_path or bound_mat_path == Sdf.Path():
+                continue
+            # The material path is absolute in the source (e.g. /_materials/Fin_Mat)
+            mat_path_str = str(bound_mat_path)
+            # Check material exists in live stage (imported above)
+            live_mat = live_stage.GetPrimAtPath(mat_path_str)
+            if not live_mat.IsValid():
+                continue
+            # Find the corresponding prim in each env clone
+            rel_path = str(src_prim.GetPath()).lstrip("/")  # e.g. "Drone/Fin_1/Cube_006"
+            for env_id in range(self.num_envs):
+                env_prim_path = f"/World/envs/env_{env_id}/{rel_path}"
+                live_prim = live_stage.GetPrimAtPath(env_prim_path)
+                if live_prim.IsValid():
+                    live_binding = UsdShade.MaterialBindingAPI.Apply(live_prim)
+                    mat = UsdShade.Material(live_mat)
+                    live_binding.Bind(mat)
 
     # ------------------------------------------------------------------
     # T015: Reset per env indices
@@ -406,28 +457,41 @@ class EdfLandingTask(DirectRLEnv):
         # Fin joints — set Drive/actuator position targets (degrees)
         # ----------------------------------------------------------------
         if not self._fin_joint_ids:
+            # Debug: print all joints the articulation knows about
+            print(f"[EdfLandingTask] robot.num_joints = {self.robot.num_joints}")
+            print(f"[EdfLandingTask] robot.joint_names = {self.robot.joint_names}")
+
             # Manual scene: joints are /Drone/Fin_N/RevoluteJoint.
             # PhysX joint names appear as "RevoluteJoint" (possibly de-duplicated
             # with index suffixes).  Try exact names first, then regex fallback.
+            # Find fin joints by ordered name: Fin_1_Joint .. Fin_4_Joint
             try:
                 joint_ids, joint_names = self.robot.find_joints(
-                    "RevoluteJoint", preserve_order=False
+                    [f"Fin_{i}_Joint" for i in range(1, 5)],
+                    preserve_order=True,
                 )
-            except Exception:
+                print(f"[EdfLandingTask] find_joints(Fin_N_Joint) → ids={joint_ids}, names={joint_names}")
+            except Exception as e:
+                print(f"[EdfLandingTask] find_joints(Fin_N_Joint) FAILED: {e}")
                 joint_ids, joint_names = [], []
+
             if len(joint_ids) == 4:
                 self._fin_joint_ids = [int(i) for i in joint_ids]
             else:
-                # Fallback: legacy naming (Fin_1_Joint .. Fin_4_Joint)
+                # Fallback: regex to catch any joint
                 try:
                     joint_ids, joint_names = self.robot.find_joints(
-                        [f"Fin_{i}_Joint" for i in range(1, 5)],
-                        preserve_order=True,
+                        ".*", preserve_order=False
                     )
+                    print(f"[EdfLandingTask] find_joints('.*') → ids={joint_ids}, names={joint_names}")
                     if len(joint_ids) == 4:
                         self._fin_joint_ids = [int(i) for i in joint_ids]
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[EdfLandingTask] find_joints('.*') FAILED: {e}")
+
+            if not self._fin_joint_ids:
+                print("[EdfLandingTask] WARNING: Could not find 4 fin joints! Fins will not move.")
+
         if self._fin_joint_ids:
             fin_target_deg = self.fin_deflections_actual * (180.0 / math.pi)
             self.robot.set_joint_position_target(fin_target_deg, joint_ids=self._fin_joint_ids)

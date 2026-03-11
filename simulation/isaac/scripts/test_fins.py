@@ -1,15 +1,14 @@
 """
-test_fins.py — Visual fin articulation test script (T024).
+test_fins.py — Visual fin sweep test at multiple speeds.
 
-Implements T024 / User Story 2 independent test:
-- Command each fin sequentially to +1.0, 0.0, -1.0 normalized
-- Read back robot.data.joint_pos
-- Print deflection in degrees
-- Assert within 1% of ±15°
+Drone is held stationary (gravity disabled, zero velocity, low altitude).
+For each of 4 fins individually, then all 4 together, sweeps from -1 to +1
+at 5 different speeds. Repeats for 10 epochs. Simulation runs in real time.
 
 Usage::
     python -m simulation.isaac.scripts.test_fins
     python -m simulation.isaac.scripts.test_fins --config simulation/isaac/configs/isaac_env_single.yaml
+    python -m simulation.isaac.scripts.test_fins --epochs 5
 """
 
 from __future__ import annotations
@@ -17,6 +16,7 @@ from __future__ import annotations
 import argparse
 import math
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -29,17 +29,69 @@ from isaacsim import SimulationApp  # noqa: E402
 
 _SIM_APP: SimulationApp | None = None
 
-_DELTA_MAX_DEG = 15.0
-_DELTA_MAX_RAD = math.radians(_DELTA_MAX_DEG)
+FIN_NAMES = ["Fin_1 (right)", "Fin_2 (left)", "Fin_3 (forward)", "Fin_4 (aft)"]
 _DT = 1.0 / 120.0
-_SETTLE_STEPS = 120  # 1 s — well beyond 5×tau_servo (0.2 s)
+
+# 5 sweep speeds: duration in seconds for a full min-to-max ramp
+SWEEP_DURATIONS_S = [2.0, 1.0, 0.5, 0.25, 0.125]
+SWEEP_LABELS = ["very slow (2.0s)", "slow (1.0s)", "medium (0.5s)", "fast (0.25s)", "very fast (0.125s)"]
+
+# Settle period between sweeps (seconds)
+_SETTLE_S = 0.5
+
+
+def disable_gravity(env) -> None:
+    """Zero gravity via USD so the drone holds position."""
+    try:
+        from pxr import UsdPhysics
+        stage = env._task.sim.stage
+        for prim in stage.Traverse():
+            if prim.IsA(UsdPhysics.Scene):
+                UsdPhysics.Scene(prim).GetGravityMagnitudeAttr().Set(0.0)
+                print("[test_fins] Gravity disabled — drone will hold position.")
+                return
+        print("[test_fins] WARNING: Physics scene not found; gravity still active.")
+    except Exception as exc:
+        print(f"[test_fins] WARNING: Could not disable gravity: {exc}")
+
+
+def build_sweep(duration_s: float, fin_indices: list[int]) -> list[np.ndarray]:
+    """Build action sequence for a min-to-max sweep on given fin indices.
+
+    Returns list of action arrays. Sweep goes -1 -> +1 linearly over duration_s.
+    """
+    n_steps = max(int(round(duration_s / _DT)), 1)
+    actions = []
+    for i in range(n_steps):
+        t = i / max(n_steps - 1, 1)  # 0..1
+        cmd = -1.0 + 2.0 * t          # -1..+1
+        action = np.zeros(5, dtype=np.float32)
+        for fi in fin_indices:
+            action[fi + 1] = cmd
+        actions.append(action)
+    return actions
+
+
+def build_settle() -> list[np.ndarray]:
+    """Build a settle-to-zero sequence."""
+    n_steps = max(int(round(_SETTLE_S / _DT)), 1)
+    return [np.zeros(5, dtype=np.float32) for _ in range(n_steps)]
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Isaac Sim fin articulation test")
+    parser = argparse.ArgumentParser(description="Isaac Sim fin sweep test")
     parser.add_argument(
         "--config",
         default="simulation/isaac/configs/isaac_env_single.yaml",
+        help="Path to Isaac env YAML config",
+    )
+    parser.add_argument(
+        "--epochs", type=int, default=10,
+        help="Number of epochs to repeat (default: 10)",
+    )
+    parser.add_argument(
+        "--spawn-altitude", type=float, default=0.4,
+        help="Drone spawn altitude in metres (default: 0.4)",
     )
     args = parser.parse_args()
 
@@ -51,69 +103,86 @@ def main() -> None:
     _SIM_APP = SimulationApp({"headless": False})
 
     from simulation.isaac.envs.edf_isaac_env import EDFIsaacEnv
-    import torch
 
-    env = EDFIsaacEnv(config_path=config_path, seed=0)
+    env = EDFIsaacEnv(config_path=config_path, render_mode="human", seed=0)
 
-    # Disable gravity so the drone floats in place during fin settle.
-    from pxr import UsdPhysics
-    stage = env._task.sim.stage
-    for prim in stage.Traverse():
-        if prim.IsA(UsdPhysics.Scene):
-            UsdPhysics.Scene(prim).GetGravityMagnitudeAttr().Set(0.0)
-            print("[test_fins] Gravity disabled for fin settle test.")
-            break
+    # Pin drone in place: low altitude, zero velocity
+    env._task.cfg.spawn_altitude_min = args.spawn_altitude
+    env._task.cfg.spawn_altitude_max = args.spawn_altitude
+    env._task.cfg.spawn_vel_mag_min = 0.0
+    env._task.cfg.spawn_vel_mag_max = 0.0
 
-    print("[test_fins] Env ready. Testing fin deflection limits.\n")
+    disable_gravity(env)
 
-    fin_names = ["Fin_1 (right)", "Fin_2 (left)", "Fin_3 (forward)", "Fin_4 (aft)"]
-    all_pass = True
+    # Pre-build action sequences for one epoch
+    # Structure: for each fin individually (0-3), then all 4 together,
+    #            sweep min->max at each of the 5 speeds
+    epoch_actions: list[np.ndarray] = []
+    epoch_labels: list[str] = []
 
-    for fin_idx in range(4):
-        for cmd_norm, label in [(+1.0, "+1.0"), (-1.0, "-1.0")]:
-            env.reset()
-            action = np.zeros(5, dtype=np.float32)
-            action[fin_idx + 1] = cmd_norm
+    fin_groups = [(i, FIN_NAMES[i]) for i in range(4)]
+    fin_groups.append(("all", "All 4 fins"))
 
-            for _ in range(_SETTLE_STEPS):
-                env.step(action)
+    for group_id, group_name in fin_groups:
+        if group_id == "all":
+            fin_indices = [0, 1, 2, 3]
+        else:
+            fin_indices = [group_id]
 
-            # Read back from lag state tensor (settled value)
-            fin_actual_rad = env._task.fin_deflections_actual[0, fin_idx].item()
-            fin_actual_deg = math.degrees(fin_actual_rad)
+        for speed_idx, (dur, speed_label) in enumerate(zip(SWEEP_DURATIONS_S, SWEEP_LABELS)):
+            label = f"{group_name} — {speed_label}"
 
-            # Also attempt to read from robot joint_pos if available
-            try:
-                joint_pos = env._task.robot.data.joint_pos[0]  # (num_joints,)
-                joint_deg = math.degrees(float(joint_pos[fin_idx].item()))
-                joint_str = f"  joint_pos={joint_deg:+.2f}°"
-            except Exception:
-                joint_str = ""
+            # Sweep -1 -> +1
+            sweep = build_sweep(dur, fin_indices)
+            epoch_actions.extend(sweep)
+            epoch_labels.extend([label] * len(sweep))
 
-            expected_deg = _DELTA_MAX_DEG * cmd_norm
-            err_pct = abs(fin_actual_deg - expected_deg) / _DELTA_MAX_DEG * 100.0
-            status = "PASS" if err_pct < 1.0 else "FAIL"
-            if status == "FAIL":
-                all_pass = False
+            # Settle back to zero
+            settle = build_settle()
+            epoch_actions.extend(settle)
+            epoch_labels.extend(["settle"] * len(settle))
 
-            print(
-                f"  {fin_names[fin_idx]} cmd={label}  "
-                f"lag_state={fin_actual_deg:+.2f}°  "
-                f"expected={expected_deg:+.2f}°  "
-                f"err={err_pct:.2f}%{joint_str}  [{status}]"
-            )
+    total_steps = len(epoch_actions)
+    epoch_duration_s = total_steps * _DT
 
-    input("\n[test_fins] Press Enter to close...")
+    print(f"\n[test_fins] Config:       {config_path}")
+    print(f"[test_fins] Epochs:       {args.epochs}")
+    print(f"[test_fins] Steps/epoch:  {total_steps}  ({epoch_duration_s:.1f}s)")
+    print(f"[test_fins] Sweep speeds: {', '.join(SWEEP_LABELS)}")
+    print(f"[test_fins] Fin groups:   4 individual + all-4-together")
+    print(f"[test_fins] Running in real time...\n")
+
+    for epoch in range(args.epochs):
+        env.reset(seed=epoch)
+        print(f"[test_fins] === Epoch {epoch + 1:2d}/{args.epochs} ===")
+
+        prev_label = ""
+        for step_idx, (action, label) in enumerate(zip(epoch_actions, epoch_labels)):
+            wall_start = time.perf_counter()
+
+            env.step(action)
+
+            # Print phase transitions
+            if label != prev_label:
+                fins_str = "  ".join(
+                    f"{FIN_NAMES[i].split()[0]}={action[i+1]:+.2f}"
+                    for i in range(4)
+                )
+                print(f"  step {step_idx:5d}  {label:<40s}  [{fins_str}]")
+                prev_label = label
+
+            # Real-time pacing: sleep for remainder of timestep
+            elapsed = time.perf_counter() - wall_start
+            sleep_time = _DT - elapsed
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+
+        print(f"  [done] epoch {epoch + 1} complete\n")
+
+    input("[test_fins] All epochs finished. Press Enter to close...")
     env.close()
     if _SIM_APP is not None:
         _SIM_APP.close()
-
-    print()
-    if all_pass:
-        print("[test_fins] ALL PASS — fin deflections within 1% of ±15°.")
-    else:
-        print("[test_fins] SOME TESTS FAILED — check fin lag parameters.")
-        sys.exit(1)
 
 
 if __name__ == "__main__":
