@@ -284,6 +284,12 @@ class EdfLandingTask(DirectRLEnv):
         # Fallback zero tensor used when wind model is disabled
         self._wind_ema_zeros = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
 
+        # Gyro precession -- load from vehicle YAML edf section
+        edf_cfg = vehicle_data.get("edf", {})
+        gyro_cfg = edf_cfg.get("gyro_precession", {})
+        self._gyro_enabled: bool = bool(gyro_cfg.get("enabled", True))
+        self._I_fan: float = float(edf_cfg.get("I_fan", 3.0e-5))  # kg·m², fan rotor MoI
+
         # Previous action (for smoothness reward)
         self._prev_action = torch.zeros(
             (self.num_envs, 5), dtype=torch.float32, device=self.device
@@ -533,6 +539,18 @@ class EdfLandingTask(DirectRLEnv):
                 r.unsqueeze(0).expand(num_envs, -1), F_i
             )
 
+        # Gyro precession torque: τ_gyro = −ω_body × h_fan  (body frame → world frame)
+        # PhysX handles ω×(I·ω) internally; we only inject the fan angular momentum term.
+        # h_fan = [0, 0, I_fan·ω_fan] in body FRD frame (fan spins about body +Z = down).
+        if self._gyro_enabled:
+            omega_b   = self.robot.data.root_ang_vel_b                       # (N, 3) body frame
+            omega_fan = (self.thrust_actual / _K_THRUST).clamp(min=0).sqrt() # (N,) rad/s
+            h_fan_b   = torch.zeros((num_envs, 3), device=self.device)
+            h_fan_b[:, 2] = self._I_fan * omega_fan                          # body +Z (FRD down)
+            tau_gyro_b = -torch.linalg.cross(omega_b, h_fan_b)              # (N, 3)
+            tau_gyro_w = _rotate_body_to_world(self.robot.data.root_quat_w, tau_gyro_b)
+            torques[:, 0, :] += tau_gyro_w
+
         # T021: Wind drag force -- added if wind model is active
         if self._wind_model is not None:
             wind_vec    = self._wind_model.step(self._dt)   # (num_envs, 3) world frame
@@ -709,3 +727,17 @@ def _rotate_world_to_body(v_world: torch.Tensor, quat_w: torch.Tensor) -> torch.
     t = 2.0 * torch.linalg.cross(q_c, v_world)        # (n, 3)
     v_body = v_world + qw_c.unsqueeze(-1) * t + torch.linalg.cross(q_c, t)
     return v_body
+
+
+def _rotate_body_to_world(quat_w: torch.Tensor, v_body: torch.Tensor) -> torch.Tensor:
+    """Rotate (num_envs, 3) body-frame vectors into world frame using scalar-last quaternion.
+
+    Inverse of _rotate_world_to_body(): uses the forward quaternion (not conjugate).
+    quat_w: (N, 4) scalar-last [qx, qy, qz, qw]
+    v_body: (N, 3) body-frame vector
+    Returns: (N, 3) world-frame vector
+    """
+    q_vec = quat_w[:, :3]       # (N, 3) imaginary part (forward, not conjugate)
+    qw    = quat_w[:, 3:4]      # (N, 1) scalar part
+    t = 2.0 * torch.linalg.cross(q_vec, v_body)        # (N, 3)
+    return v_body + qw * t + torch.linalg.cross(q_vec, t)

@@ -103,8 +103,8 @@ def reconstruct_inertia_tensor(
 # ---------------------------------------------------------------------------
 # Prim path constants
 # ---------------------------------------------------------------------------
-DRONE_ROOT = "/Drone"
-BODY_PRIM  = "/Drone/Body"
+DRONE_ROOT  = "/Drone"
+BODY_PRIM   = "/Drone/Body"
 
 # Body sub-parts: Blender object names that should live under /Drone/Body.
 # Only MVP parts are listed; add more as the model grows.

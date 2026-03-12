@@ -55,6 +55,40 @@ pytest -m isaac simulation/tests/test_mass_validation.py -v
 pytest -m isaac simulation/tests/test_isaac_env.py -v
 ```
 
+## 5. Gyro Precession Diagnostic (requires Isaac Sim v5.1.0)
+
+```bash
+# Spawn in zero-g, apply yaw torque, observe pitch precession response
+python -m simulation.isaac.scripts.diag_gyro_precession \
+  --config simulation/isaac/configs/isaac_env_single.yaml \
+  --yaw-torque 0.5 --duration 2.0
+
+# Expected: pitch rate develops proportional to I_fan * omega_fan * yaw_rate
+
+# Comparison run with precession disabled:
+python -m simulation.isaac.scripts.diag_gyro_precession \
+  --config simulation/isaac/configs/isaac_env_single.yaml \
+  --disable-precession
+
+# Expected: no pitch response from yaw torque
+```
+
+## 6. Validate Rotor Mass Properties (no Isaac Sim required)
+
+```bash
+# Extended validation now checks /Drone/Body/Rotor prim
+python -m simulation.isaac.scripts.validate_mass_props \
+  --usd simulation/isaac/usd/drone.usdc \
+  --config simulation/configs/default_vehicle.yaml
+
+# Expected output now includes:
+# Rotor Prim Validation
+# =====================
+# Prim path:  /Drone/Body/Rotor  ✓ (exists)
+# Radius:     YAML=0.040 m  USD=0.040 m  ✓
+# ...
+```
+
 ## Verification Checklist
 
 - [ ] Mass validation script passes on current `drone.usdc`
@@ -63,3 +97,8 @@ pytest -m isaac simulation/tests/test_isaac_env.py -v
 - [ ] Wind produces lateral drift when enabled
 - [ ] Observation [13:16] reflects wind values when wind active
 - [ ] All existing Feature 001 diagnostics still pass
+- [ ] Gyro precession enabled: yaw torque produces pitch response
+- [ ] Gyro precession disabled: yaw torque produces only yaw response
+- [ ] Rotor prim `/Drone/Body/Rotor` exists in USDC with correct geometry
+- [ ] `validate_mass_props` passes with rotor prim validation
+- [ ] No FPS regression from precession torque computation

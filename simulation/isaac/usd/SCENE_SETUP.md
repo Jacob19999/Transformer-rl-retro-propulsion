@@ -38,7 +38,7 @@ Set via: **Edit → Stage → Up Axis / Meters Per Unit**
     └── RevoluteJoint           ← RevoluteJoint (Body → Fin_4)
 ```
 
-> **Rule:** Only `Body` and `Fin_N` prims get physics APIs.
+> **Rule:** Only `Body` and `Fin_N` prims get physics APIs (`RigidBodyAPI`).
 > `edf` and `Legs` are visual geometry — **do not apply RigidBodyAPI to them**.
 > PhysX will error if a rigid body exists as a child of another rigid body in
 > the same hierarchy without an XformStack reset.

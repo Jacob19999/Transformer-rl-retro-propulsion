@@ -1,23 +1,29 @@
-# Implementation Plan: Isaac Sim Mass Properties, Thrust Test & Environmental Forces
+# Implementation Plan: Gyro Precession Modeling (User Story 4 — Feature 002)
 
-**Branch**: `002-isaac-mass-thrust-env` | **Date**: 2026-03-11 | **Spec**: [spec.md](spec.md)
-**Input**: Feature specification from `specs/main/spec.md`
+**Branch**: `main` | **Date**: 2026-03-11 | **Spec**: [spec.md](spec.md)
+**Input**: Add gyroscopic precession torque from spinning rotor to Isaac Sim env, matching custom sim fidelity. Add invisible rotor cylinder to USDC scene for mass validation.
 
 ## Summary
 
-Building on Feature 001's stable Isaac Sim environment (gravity fall + fin articulation), this feature adds three capabilities: (1) a mass property validation script that compares USDC scene physics attributes against YAML config within 1% tolerance, (2) a thrust application test environment confirming the drone can lift off from the ground under commanded thrust, and (3) configurable wind disturbance forces integrated into the Isaac Sim task. Together, these validate that the Isaac Sim drone is a physically correct, flyable vehicle ready for control policy training.
+The custom Python simulation already models gyroscopic precession via `ω × h_fan` (vehicle.py line 185), but the Isaac Sim `_apply_action()` pipeline omits this torque entirely. This story closes that fidelity gap by:
+
+1. Computing `τ_gyro = ω × h_fan` in `edf_landing_task.py` and injecting it via `set_external_force_and_torque()`
+2. Adding a config toggle `gyro_precession.enabled` (default: true) in `default_vehicle.yaml`
+3. Adding an invisible cylinder prim `/Drone/Body/Rotor` to the USDC scene with correct mass and inertia matching `I_fan` from config
+4. Extending `validate_mass_props.py` to verify rotor prim mass properties against YAML
+5. Creating a `diag_gyro_precession` diagnostic script that spawns the drone in air (no gravity), applies yaw torque, and verifies perpendicular pitch response
 
 ## Technical Context
 
 **Language/Version**: Python 3.10+
-**Primary Dependencies**: pxr (OpenUSD) for USD inspection, IsaacLab (DirectRLEnv), PyTorch, Stable-Baselines3
-**Storage**: YAML configs (`simulation/configs/`), USD scenes (`simulation/isaac/usd/`)
-**Testing**: pytest (with `@pytest.mark.isaac` for Isaac Sim tests)
-**Target Platform**: Windows 11 / Linux, NVIDIA GPU (RTX 5070+)
-**Project Type**: Research simulation + RL training pipeline
-**Performance Goals**: Single-env diagnostics complete in <30s; mass validation <5s (no GPU needed)
-**Constraints**: Mass property validation must work headlessly (no Isaac Sim launch); wind forces must not break existing Feature 001 tests
-**Scale/Scope**: 3 new scripts, 1 new module (wind adapter), modifications to `edf_landing_task.py`
+**Primary Dependencies**: IsaacLab (Isaac Sim v5.1.0), PyTorch, pxr (OpenUSD), numpy
+**Storage**: N/A (config-driven, no database)
+**Testing**: pytest (existing test infrastructure)
+**Target Platform**: Windows 11 + NVIDIA RTX 5070 (GPU sim)
+**Project Type**: Research simulation / RL training environment
+**Performance Goals**: No measurable FPS impact from precession torque (single cross-product per step per env)
+**Constraints**: Must match custom sim physics (vehicle.py §4.1 Euler's equation)
+**Scale/Scope**: Single new torque term + 1 USD prim + 1 config section + 1 diagnostic script
 
 ## Constitution Check
 
@@ -25,14 +31,13 @@ Building on Feature 001's stable Isaac Sim environment (gravity fall + fin artic
 
 | Principle | Status | Notes |
 |-----------|--------|-------|
-| **I. Physics Fidelity** | ✅ PASS | Mass validation script enforces 1% tolerance (constitution requirement). Thrust test validates F=ma consistency. |
-| **II. Configuration-Driven Design** | ✅ PASS | Wind params loaded from `default_environment.yaml`. No hard-coded force values. Validation script compares YAML (authoritative) against USDC. |
-| **III. Test-Driven Validation** | ✅ PASS | Feature includes: thrust liftoff test, fin articulation (existing), environmental force test — all three required by constitution. |
-| **IV. Reproducibility** | ✅ PASS | Diagnostics accept `--seed` for deterministic wind sampling. Config paths are CLI arguments. |
-| **V. Sim-to-Real Integrity** | ✅ PASS | Wind forces configurable via YAML; FRD ↔ Z-up conversion tested in validation script; observation [13:16] reflects actual wind. |
-| **Development Workflow** | ✅ PASS | 4-step Isaac Sim validation sequence addressed: mass validation (US1), thrust diagnostic (US2), fin articulation (existing), wind diagnostic (US3). |
+| I. Physics Fidelity | **PASS** | Gyroscopic precession is listed as "Non-Negotiable" in vehicle.md §1.5. Adding it to Isaac Sim closes a fidelity gap. `I_fan` is parameterized from config, not a tuning constant. |
+| II. Configuration-Driven | **PASS** | `I_fan` already in `default_vehicle.yaml`. New `gyro_precession.enabled` toggle added to config. No hard-coded physics constants. |
+| III. Test-Driven Validation | **PASS** | Diagnostic script validates precession response. Unit test verifies torque magnitude matches analytical prediction. Mass validation extended for rotor prim. |
+| IV. Reproducibility | **N/A** | No training changes — determinism unaffected. |
+| V. Sim-to-Real Integrity | **PASS** | Precession torque uses same `ω × h_fan` formulation as custom sim. Coordinate frame conversions (FRD ↔ Z-up) applied consistently. |
 
-**Post-Phase 1 re-check**: All gates still pass. No new violations introduced by design.
+**Gate result**: ✅ PASS — no violations.
 
 ## Project Structure
 
@@ -40,42 +45,126 @@ Building on Feature 001's stable Isaac Sim environment (gravity fall + fin artic
 
 ```text
 specs/main/
-├── plan.md              # This file
-├── spec.md              # Feature specification
-├── research.md          # Phase 0 research findings
-├── data-model.md        # Entity definitions
-├── quickstart.md        # Validation checklist
-└── tasks.md             # (Phase 2 — generated by /speckit.tasks)
+├── plan.md              # This file (updated for US4)
+├── research.md          # Extended with RQ-7..RQ-10
+├── data-model.md        # Extended with GyroState entity
+├── quickstart.md        # Extended with gyro diagnostic
+├── contracts/
+│   └── cli-contracts.md # Extended with diag_gyro_precession
+└── tasks.md             # Will be generated by /speckit.tasks
 ```
 
 ### Source Code (repository root)
 
 ```text
 simulation/
+├── configs/
+│   └── default_vehicle.yaml           # MODIFIED: add gyro_precession section
 ├── isaac/
 │   ├── tasks/
-│   │   └── edf_landing_task.py     # MODIFY: add wind force injection
-│   ├── envs/
-│   │   └── edf_isaac_env.py        # MODIFY: pass wind config through
-│   ├── wind/
-│   │   └── isaac_wind_model.py     # NEW: GPU-batched wind model for Isaac Sim
+│   │   └── edf_landing_task.py        # MODIFIED: add gyro torque in _apply_action()
 │   ├── scripts/
-│   │   ├── validate_mass_props.py  # NEW: USDC ↔ YAML mass comparison
-│   │   ├── diag_thrust_test.py     # NEW: ground-start thrust liftoff
-│   │   └── diag_wind.py            # NEW: wind disturbance visual diagnostic
+│   │   ├── validate_mass_props.py     # MODIFIED: validate rotor prim mass props
+│   │   └── diag_gyro_precession.py    # NEW: precession diagnostic
 │   └── usd/
-│       └── parts_registry.py       # MODIFY: add inertia tensor reconstruction helper
-├── configs/
-│   ├── default_vehicle.yaml        # READ: explicit mass properties
-│   ├── default_environment.yaml    # READ: wind config (already exists)
-│   └── isaac_wind.yaml             # NEW: Isaac-specific wind overrides (optional)
-└── tests/
-    ├── test_mass_validation.py     # NEW: pytest for mass validation logic
-    └── test_isaac_env.py           # MODIFY: add wind force tests
+│       ├── drone.usdc                 # MODIFIED: add /Drone/Body/Rotor invisible cylinder
+│       └── parts_registry.py          # MODIFIED: add ROTOR_PRIM constant
+├── tests/
+│   └── test_gyro_precession.py        # NEW: unit tests for precession torque
 ```
 
-**Structure Decision**: Follows existing `simulation/isaac/` layout. Wind model placed in new `simulation/isaac/wind/` subdirectory to keep separation from custom sim's `simulation/environment/wind_model.py`. Mass validation is a standalone script under `scripts/` since it doesn't need Isaac Sim runtime.
+**Structure Decision**: Extends existing Feature 002 file layout. No new directories required. Follows established patterns for scripts, tests, and config.
 
 ## Complexity Tracking
 
-> No constitution violations to justify. All design choices align with existing patterns.
+No constitution violations — table intentionally empty.
+
+## Implementation Details
+
+### 1. Gyroscopic Torque Computation (edf_landing_task.py)
+
+The custom sim computes (vehicle.py §4.1):
+```
+I·ω̇ = τ_total − ω × (I·ω) − ω × h_fan
+h_fan = [0, 0, I_fan · ω_fan]   (body frame, spin axis = +Z FRD = −Z world)
+ω_fan = sqrt(T / k_thrust)
+```
+
+In Isaac Sim (`_apply_action()`), PhysX already handles `ω × (I·ω)` internally (rigid body Euler equation). We only need to inject the **fan precession torque** `τ_gyro = −ω × h_fan` as an external torque.
+
+**Implementation approach**:
+- Read `I_fan` and `k_thrust` from config (already available as `_K_THRUST`)
+- Compute `ω_fan = sqrt(thrust_actual / k_thrust)` (matches thrust_model.py)
+- Compute `h_fan` in world frame: spin axis is body +Z (FRD down) = world −Z → `h_fan_world = R_body @ [0, 0, I_fan * ω_fan]` rotated to world
+- Actually simpler: use body angular velocity `ω_body` and compute in body frame, then rotate result to world for `set_external_force_and_torque(is_global=True)`
+- **Key**: the sign convention — in FRD, fan spins about +Z (down). In Z-up world, that's −Z. The cross product `ω × h_fan` must use consistent frame.
+
+**Preferred approach** (from research RQ-7): Compute in body frame, rotate to world:
+```python
+# In _apply_action(), after fin forces:
+if self._gyro_enabled:
+    omega_b = self.robot.data.root_ang_vel_b                    # (N, 3) body frame
+    omega_fan = (self.thrust_actual / _K_THRUST).clamp(min=0).sqrt()  # (N,)
+    h_fan_b = torch.zeros((num_envs, 3), device=self.device)
+    h_fan_b[:, 2] = _I_FAN * omega_fan                         # body +Z (FRD down)
+    tau_gyro_b = -torch.linalg.cross(omega_b, h_fan_b)         # (N, 3)
+    tau_gyro_w = _rotate_body_to_world(self.robot.data.root_quat_w, tau_gyro_b)
+    torques[:, 0, :] += tau_gyro_w
+```
+
+### 2. Config Toggle
+
+Add to `default_vehicle.yaml` under `edf:`:
+```yaml
+gyro_precession:
+  enabled: true   # Toggle gyroscopic precession torque (on by default)
+```
+
+The task reads this at init and skips the `tau_gyro` computation when disabled.
+
+### 3. Invisible Rotor Cylinder (USDC)
+
+Add `/Drone/Body/Rotor` as a cylinder prim with:
+- Invisible render: `visibility = "invisible"` (or no mesh, just physics)
+- `UsdPhysics.MassAPI` with:
+  - `mass = 0.0` (mass already accounted for in Body composite mass)
+  - Alternatively: set mass to rotor mass and adjust Body mass to exclude it
+- **Decision needed (RQ-8)**: Whether rotor mass is additive or included in Body total. User intent: "rotor mass and inertia" → rotor contributes mass that's already in the Body total. Set rotor mass = 0 and use `diagonalInertia` only for the spin-axis MoI component, OR just validate that `I_fan` from config is consistent with the cylinder's theoretical MoI.
+
+**Preferred approach**: The invisible cylinder is a **validation artifact** — its purpose is to confirm that the YAML `I_fan` value is physically plausible for a cylinder of the rotor's dimensions. Set mass=0.35 kg (edf_motor_rotor primitive from YAML), radius=0.040 m, height=0.04 m. The theoretical `I_cyl = 0.5 * m * r² = 0.5 * 0.35 * 0.04² = 2.8e-4 kg·m²`. Compare against `I_fan = 3.0e-5` from YAML. Note: `I_fan` represents only the rotating fan blades (~60g), not the full motor assembly.
+
+### 4. Mass Validation Extension
+
+Extend `validate_mass_props.py` to:
+1. Check `/Drone/Body/Rotor` prim exists
+2. Read its mass and inertia from MassAPI
+3. Compare against YAML `edf.I_fan` value
+4. Report pass/fail for rotor properties
+
+### 5. Diagnostic Script (diag_gyro_precession.py)
+
+Test scenario:
+1. Spawn drone at altitude (e.g., 5 m), disable gravity (`scene.cfg.sim.gravity = (0, 0, 0)`)
+2. Apply constant thrust at hover level (to maintain `ω_fan` without vertical motion)
+3. Apply an external pitch torque (about Y-axis) via `set_external_force_and_torque` — **NOT yaw**, because yaw rate (parallel to spin axis) produces zero cross product
+4. Observe that the drone develops a roll response (about X-axis) — the hallmark of precession: pitch rate `q` → τ_gyro_x = −q·L
+5. Verify: the roll rate magnitude matches `I_fan · ω_fan · pitch_rate / I_roll` (analytical prediction)
+
+**Coupling reference** (h_fan = [0,0,L]):
+- Applied pitch torque → pitch rate q → roll precession τ_x = −q·L ✓
+- Applied roll torque → roll rate p → pitch precession τ_y = p·L ✓
+- Applied yaw torque → yaw rate r → ZERO precession (r ∥ h_fan, cross = 0) — physically correct
+
+With precession disabled, the same pitch torque produces only pitch rotation, no roll coupling.
+
+## Post-Design Constitution Re-Check
+
+| Principle | Status | Post-Design Notes |
+|-----------|--------|-------------------|
+| I. Physics Fidelity | **PASS** | `τ_gyro = −ω × h_fan` matches vehicle.py §4.1 exactly. `I_fan` sourced from YAML config. Precession diagnostic validates analytical prediction. |
+| II. Configuration-Driven | **PASS** | `gyro_precession.enabled` toggle in YAML. `I_fan`, `k_thrust` from existing config. No new hard-coded constants beyond existing `_K_THRUST` pattern. New `_I_FAN` constant follows same pattern. |
+| III. Test-Driven Validation | **PASS** | `diag_gyro_precession.py` validates precession response. `validate_mass_props.py` extended for rotor prim. Unit test `test_gyro_precession.py` planned for analytical torque verification. |
+| IV. Reproducibility | **PASS** | Precession is deterministic (no randomness). Toggle allows exact comparison runs. |
+| V. Sim-to-Real Integrity | **PASS** | Body-frame computation uses FRD convention consistently. `_rotate_body_to_world` inverse of existing `_rotate_world_to_body`. Sign convention verified against vehicle.md §4.5. |
+
+**Post-design gate**: ✅ PASS — all principles satisfied. No violations to track.

@@ -89,9 +89,103 @@ REPORT → print table of expected vs actual
        → exit 0 (pass) or 1 (fail)
 ```
 
+---
+
+## User Story 4: Gyro Precession Entities
+
+### GyroPrecessionConfig
+
+Configuration for gyroscopic precession, loaded from `default_vehicle.yaml` under `edf.gyro_precession`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| enabled | bool | Whether precession torque is injected (default: true) |
+
+**Source parameters** (already in `default_vehicle.yaml` under `edf`):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| I_fan | float | Fan rotor moment of inertia about spin axis (kg·m²) |
+| k_thrust | float | Thrust coefficient N/(rad/s)² — used to derive ω_fan from thrust |
+
+### GyroPrecessionState
+
+Per-environment runtime state for gyro precession computation (GPU tensors, owned by `EdfLandingTask`).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| omega_fan | Tensor[num_envs] | Current fan angular velocity (rad/s), derived from `sqrt(thrust_actual / k_thrust)` |
+| h_fan_body | Tensor[num_envs, 3] | Fan angular momentum in body frame: `[0, 0, I_fan * ω_fan]` |
+| tau_gyro_body | Tensor[num_envs, 3] | Precession torque in body frame: `−ω_body × h_fan_body` |
+| tau_gyro_world | Tensor[num_envs, 3] | Precession torque rotated to world frame for `set_external_force_and_torque` |
+
+### RotorPrimSpec
+
+Specification for the invisible rotor cylinder prim in the USDC scene.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| prim_path | str | `/Drone/Body/Rotor` |
+| shape | str | `cylinder` |
+| radius | float | 0.040 m (from YAML `edf_motor_rotor.radius`) |
+| height | float | 0.04 m (from YAML `edf_motor_rotor.height`) |
+| mass | float | 0.0 kg (mass already included in Body composite) |
+| visibility | str | `invisible` |
+| position_zup | tuple[3] | `(0, 0, 0.06)` converted from FRD via `frd_to_zup()` → `(0, 0, -0.06)` |
+
+### RotorMassValidation
+
+Extension to `MassPropertyReport` for rotor prim validation.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| rotor_prim_exists | bool | Whether `/Drone/Body/Rotor` prim is found in USDC |
+| rotor_radius_yaml | float | From YAML `edf_motor_rotor.radius` (m) |
+| rotor_radius_usd | float | From USDC cylinder extent (m) |
+| rotor_height_yaml | float | From YAML `edf_motor_rotor.height` (m) |
+| rotor_height_usd | float | From USDC cylinder height (m) |
+| rotor_position_match | bool | Position within tolerance |
+| I_fan_yaml | float | From YAML `edf.I_fan` (kg·m²) |
+| I_fan_theoretical | float | `0.5 * m_rotating * r²` for the rotating blades |
+
+## State Transitions
+
+### Precession Torque Per Step
+
+```
+_apply_action():
+  IF gyro_precession.enabled:
+    omega_fan = sqrt(thrust_actual / k_thrust)
+    h_fan_b = [0, 0, I_fan * omega_fan]       # body frame
+    omega_b = robot.data.root_ang_vel_b        # body frame
+    tau_gyro_b = -cross(omega_b, h_fan_b)      # body frame
+    tau_gyro_w = rotate_body_to_world(quat_w, tau_gyro_b)  # world frame
+    torques[:, 0, :] += tau_gyro_w
+```
+
+### Rotor Mass Validation Workflow
+
+```
+LOAD → open USDC, find /Drone/Body/Rotor prim
+     → read cylinder geometry (radius, height)
+     → load YAML edf_motor_rotor primitive + edf.I_fan
+
+CHECK → verify prim exists
+      → compare radius, height within tolerance
+      → compare position (FRD→Z-up converted) within tolerance
+      → log I_fan from config for reference
+
+REPORT → append rotor section to mass validation report
+       → pass/fail for rotor geometry match
+```
+
 ## Relationships
 
 - `MassPropertyReport` depends on `ExplicitMassProps` (from `parts_registry.py`) for YAML values
 - `IsaacWindState` is owned by `EdfLandingTask` (one per task instance, batched over num_envs)
 - `IsaacWindConfig` is loaded from `default_environment.yaml` via the existing `config_loader.py`
 - `IsaacWindState.wind_ema` feeds directly into observation vector elements [13:16]
+- `GyroPrecessionState` is owned by `EdfLandingTask`, computed per `_apply_action()` call
+- `GyroPrecessionConfig.enabled` gates all precession computation — when false, zero overhead
+- `RotorMassValidation` extends `MassPropertyReport` with rotor-specific checks
+- `RotorPrimSpec` maps to `edf_motor_rotor` primitive in `default_vehicle.yaml`

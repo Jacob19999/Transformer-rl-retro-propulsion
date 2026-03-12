@@ -219,6 +219,8 @@ vehicle:
     battery_voltage_full: 33.6     # V (8 × 4.2 V)
     esc_max_current: 120       # A
     esc_type: "120A BLHeli_32"
+    gyro_precession:
+      enabled: true            # Toggle gyroscopic precession torque in Isaac Sim (on by default)
 
   # ─── Aerodynamic Properties (Combined Shape) ────────────────────
   aero:

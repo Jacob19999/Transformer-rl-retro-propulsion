@@ -107,6 +107,18 @@ def main() -> None:
         _SIM_APP.close()
 
 
+def _obs_val(obs: np.ndarray, idx: int) -> float:
+    """Extract scalar obs[idx] from env 0, works for both 1-D and 2-D (batched) obs."""
+    if obs.ndim == 2:
+        return float(obs[0, idx])
+    return float(obs[idx])
+
+
+def _is_done(done) -> bool:
+    """Return True if any env is done (handles scalar bool or numpy bool array)."""
+    return bool(np.any(done))
+
+
 def _run_diagnostic(args) -> None:
     """Run thrust diagnostic; exits with code 0 (pass) or 1 (fail)."""
     from simulation.isaac.envs.edf_isaac_env import EDFIsaacEnv
@@ -135,13 +147,13 @@ def _run_diagnostic(args) -> None:
     for ep in range(args.episodes):
         obs, _ = env.reset()
         print(f"Episode {ep + 1}/{args.episodes}")
-        print(f"  Initial altitude: {obs[_OBS_ALTITUDE]:.3f} m")
+        print(f"  Initial altitude: {_obs_val(obs, _OBS_ALTITUDE):.3f} m")
 
         # Patch spawn altitude if requested (override initial position)
         # The env spawns at random altitude [5, 10] m by default.
         # For ground-start test, we use spawn-alt as a reference; the actual
         # spawn may be higher -- we note that and still check SC-002.
-        start_alt = float(obs[_OBS_ALTITUDE])
+        start_alt = _obs_val(obs, _OBS_ALTITUDE)
 
         # ---------------------------------------------------------------
         # Phase 1: Full thrust
@@ -153,13 +165,13 @@ def _run_diagnostic(args) -> None:
 
         for step in range(full_steps):
             obs, _, done, _, _ = env.step(action_full)
-            alt = float(obs[_OBS_ALTITUDE])
+            alt = _obs_val(obs, _OBS_ALTITUDE)
             alt_history.append(alt)
 
             if step % 30 == 0:
-                print(f"    step {step:4d}  h={alt:.3f} m  speed={obs[_OBS_SPEED]:.3f} m/s")
+                print(f"    step {step:4d}  h={alt:.3f} m  speed={_obs_val(obs, _OBS_SPEED):.3f} m/s")
 
-            if done:
+            if _is_done(done):
                 break
 
         peak_alt = max(alt_history)
@@ -191,20 +203,20 @@ def _run_diagnostic(args) -> None:
         # ---------------------------------------------------------------
         # Phase 2: Hover thrust
         # ---------------------------------------------------------------
-        if done:
+        if _is_done(done):
             obs, _ = env.reset()
 
         print(f"\n  Phase 2: Hover thrust (T_cmd~{hover_norm:.3f}) for 2.0s")
         action_hover = _make_action(hover_norm)
-        hover_start_alt = float(obs[_OBS_ALTITUDE])
+        hover_start_alt = _obs_val(obs, _OBS_ALTITUDE)
         hover_alts: list[float] = []
 
         for step in range(hover_steps):
             obs, _, done, _, _ = env.step(action_hover)
-            hover_alts.append(float(obs[_OBS_ALTITUDE]))
+            hover_alts.append(_obs_val(obs, _OBS_ALTITUDE))
             if step % 30 == 0:
-                print(f"    step {step:4d}  h={obs[_OBS_ALTITUDE]:.3f} m")
-            if done:
+                print(f"    step {step:4d}  h={_obs_val(obs, _OBS_ALTITUDE):.3f} m")
+            if _is_done(done):
                 break
 
         if hover_alts:
@@ -221,13 +233,13 @@ def _run_diagnostic(args) -> None:
         # ---------------------------------------------------------------
         print(f"\n  Phase 3: Zero thrust for 1.0s -- should descend")
         action_zero = _make_action(0.0)
-        cut_start_alt = float(obs[_OBS_ALTITUDE])
+        cut_start_alt = _obs_val(obs, _OBS_ALTITUDE)
         cut_alts: list[float] = []
 
         for step in range(cut_steps):
             obs, _, done, _, _ = env.step(action_zero)
-            cut_alts.append(float(obs[_OBS_ALTITUDE]))
-            if done:
+            cut_alts.append(_obs_val(obs, _OBS_ALTITUDE))
+            if _is_done(done):
                 break
 
         if cut_alts:

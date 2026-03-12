@@ -72,6 +72,13 @@ python -m simulation.isaac.scripts.diag_thrust_test --thrust 1.0 --duration 2.0 
 python -m simulation.isaac.scripts.diag_wind
 python -m simulation.isaac.scripts.diag_wind --wind-x 5.0 --wind-y 0.0 --duration 3.0
 
+# Gyro precession diagnostic — spawn in zero-g, apply pitch torque, observe roll coupling
+# (PASS: roll_rate > 0.1 °/s when precession enabled; pitch torque chosen because yaw rate
+#  is parallel to fan spin axis and produces zero precession — see research.md RQ-7/RQ-11)
+python -m simulation.isaac.scripts.diag_gyro_precession
+python -m simulation.isaac.scripts.diag_gyro_precession --torque-axis pitch --torque-mag 0.5 --duration 2.0
+python -m simulation.isaac.scripts.diag_gyro_precession --disable-precession  # A/B comparison (expects no roll)
+
 # Train PPO on Isaac Sim env (256 envs, RTX 5070 safe)
 python -m simulation.training.scripts.train_isaac_ppo --config simulation/isaac/configs/isaac_env_training.yaml --seed 0
 
