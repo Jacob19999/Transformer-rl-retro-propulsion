@@ -76,7 +76,7 @@ def main() -> None:
     args = parser.parse_args()
 
     global _SIM_APP
-    _SIM_APP = SimulationApp({"headless": True})
+    _SIM_APP = SimulationApp({"headless": False})
 
     try:
         _run_diagnostic(args)
