@@ -146,22 +146,19 @@ torques[:, 0, :] += tau_gyro_w
 - Use `is_global=False` (body frame) for `set_external_force_and_torque` → would require all existing forces (thrust, fin, wind) to also be in body frame. Rejected: disruptive refactor.
 - Compute precession in world frame directly → requires rotating `omega_body` to world first, then h_fan to world, then cross product. Same result, more steps. The body-frame approach is cleaner because h_fan has a trivial form `[0, 0, I_fan * ω_fan]` in body frame.
 
-### RQ-8: How should the rotor cylinder be represented in the USDC scene?
+### RQ-8: How should the rotor be represented for gyroscopic precession?
 
-**Decision**: Add `/Drone/Body/Rotor` as an invisible `UsdGeom.Cylinder` with `UsdPhysics.MassAPI` set to **mass = 0** and a note that the rotor's mass is already included in the Body composite mass. The cylinder's dimensions (radius=0.040 m, height=0.04 m) are taken from the `edf_motor_rotor` primitive in `default_vehicle.yaml`.
+**Decision**: No USD prim is needed. `I_fan` is read directly from `edf.I_fan` in `default_vehicle.yaml` and stored as `self._I_fan` at task init. No `/Drone/Body/Rotor` cylinder is added to the USDC scene.
 
 **Rationale**:
-- The rotor cylinder serves as a **validation anchor** — its presence in the USD scene allows `validate_mass_props.py` to confirm that the rotor geometry is accounted for.
-- Setting mass=0 avoids double-counting (the Body prim already includes the rotor's 0.35 kg in its total 3.13 kg composite mass).
-- The `I_fan` value (3.0e-5 kg·m²) represents only the rotating fan blades (~60g at r≈35mm), NOT the full motor assembly (0.35 kg). The full motor assembly's inertia is already included in the Body's composite inertia tensor.
-- The validation script checks that the rotor prim exists and that its dimensions are consistent with YAML's `edf_motor_rotor` primitive spec.
-
-**User's plan**: "Add an invisible cylinder under Body that represents the rotor (with rotor mass and inertia), validate that rotor mass props are set up correctly." The invisible cylinder validates geometric consistency. The `I_fan` for precession computation comes from YAML config, not from the USD prim.
+- Gyroscopic precession torque `τ_gyro = −ω × h_fan` is a **pure torque** applied to the rigid body's CoM. In rigid body dynamics, pure torques have the same effect regardless of where within the body the fan is located, so rotor position in the scene is irrelevant.
+- `I_fan` (3.0e-5 kg·m²) represents only the rotating fan blades (~60g at r≈35mm). The full motor assembly's (0.35 kg) inertia is already in the Body's composite inertia tensor. This value is already present in `default_vehicle.yaml` under `edf.I_fan`.
+- An invisible USD prim with `mass=0` would contribute nothing to physics and nothing to the torque computation — it was purely a validation artifact with no computational role.
 
 **Alternatives considered**:
-- Set rotor mass = 0.35 kg in USDC and subtract from Body mass → breaks existing Body mass validation. Rejected.
-- No USD prim, validate I_fan purely from config → misses the user's requirement for scene-level validation. Rejected.
-- Model rotor as separate RigidBodyAPI prim with joint → creates unwanted physics DOFs. Rejected.
+- Add `/Drone/Body/Rotor` invisible cylinder as a validation anchor → no computational value since torque is position-independent. Rejected.
+- Hardcode `_I_FAN = 3.0e-5` as a module constant → works, but reading from config is cleaner and config-driven (constitution II). Rejected.
+- Model rotor as a separate spinning rigid body with joint → adds physics DOFs, performance cost for N envs. Rejected.
 
 ### RQ-9: What is the correct `_rotate_body_to_world` implementation?
 

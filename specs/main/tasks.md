@@ -91,27 +91,23 @@
 
 ## Phase 5: User Story 4 — Gyro Precession Modeling (Priority: P2, toggleable)
 
-**Goal**: Gyroscopic precession torque from spinning rotor injected into Isaac Sim physics pipeline, matching custom sim fidelity. Invisible rotor prim added to USDC for mass validation. Config toggle (on by default).
+**Goal**: Gyroscopic precession torque from spinning rotor injected into Isaac Sim physics pipeline, matching custom sim fidelity. `I_fan` read from existing `edf.I_fan` config. Config toggle (on by default).
 
 **Independent Test**:
-- `python -m simulation.isaac.scripts.diag_gyro_precession --yaw-torque 0.5 --duration 2.0` → pitch rate develops proportional to `I_fan · ω_fan · yaw_rate / I_pitch`; exits 0.
-- `python -m simulation.isaac.scripts.diag_gyro_precession --disable-precession` → no pitch response from yaw torque; exits 0.
-- `python -m simulation.isaac.scripts.validate_mass_props` → rotor prim section reports PASS.
+- `python -m simulation.isaac.scripts.diag_gyro_precession --torque-axis pitch --torque-mag 0.5 --duration 2.0` → roll rate develops proportional to `I_fan · ω_fan · pitch_rate / I_roll`; exits 0.
+- `python -m simulation.isaac.scripts.diag_gyro_precession --disable-precession` → no roll response from pitch torque; exits 0.
 
 ### Implementation for User Story 4
 
 - [x] T030 [US4] Add `gyro_precession.enabled: true` config toggle to `simulation/configs/default_vehicle.yaml` under the `edf:` section (below `I_fan` line)
-- [x] T031 [P] [US4] Add `ROTOR_PRIM = "/Drone/Body/Rotor"` path constant to `simulation/isaac/usd/parts_registry.py` alongside existing `BODY_PRIM` constant
-- [ ] T032 [US4] Add invisible Rotor cylinder prim `/Drone/Body/Rotor` to `simulation/isaac/usd/drone.usdc` in Isaac Sim v5.1.0: create cylinder (radius=0.040 m, height=0.04 m), set `visibility = invisible`, apply `UsdPhysics.MassAPI` with `mass=0.0` (mass already in Body composite), position at `(0, 0, -0.06)` in Z-up world frame (= FRD `[0, 0, 0.06]` via `frd_to_zup()`) — **MANUAL SETUP in USD scene editor**
 - [x] T033 [US4] Add `_rotate_body_to_world()` module-level helper function to `simulation/isaac/tasks/edf_landing_task.py` (near the existing `_rotate_world_to_body()` function): takes `quat_w (N,4)` scalar-last and `v_body (N,3)`, returns `v_world (N,3)` using formula `v + 2*qw*(q_vec × v) + 2*(q_vec × (q_vec × v))` — body-to-world is the un-conjugated form of the existing world-to-body helper
-- [x] T034 [US4] Add `_I_FAN` module-level constant to `simulation/isaac/tasks/edf_landing_task.py` (value `3.0e-5`, loaded pattern matching existing `_K_THRUST = 4.55e-7`) and load `gyro_precession.enabled` from vehicle YAML in `EdfLandingTask.__init__()`, store as `self._gyro_enabled: bool` (default `True` if key missing)
-- [x] T035 [US4] Implement gyro precession torque in `EdfLandingTask._apply_action()` in `simulation/isaac/tasks/edf_landing_task.py`: after fin force loop and before `set_external_force_and_torque()` call, add guarded block: if `self._gyro_enabled`: compute `omega_fan = (thrust_actual / _K_THRUST).clamp(min=0).sqrt()`, build `h_fan_b[:, 2] = _I_FAN * omega_fan`, compute `tau_gyro_b = -torch.linalg.cross(omega_b, h_fan_b)` where `omega_b = self.robot.data.root_ang_vel_b`, rotate to world via `_rotate_body_to_world(self.robot.data.root_quat_w, tau_gyro_b)`, add to `torques[:, 0, :]`
-- [x] T036 [US4] Extend `simulation/isaac/scripts/validate_mass_props.py` with `read_usd_rotor_prim()` function: open USDC, find `/Drone/Body/Rotor` prim, read `UsdGeom.Cylinder` radius and height extents, read position from `xformOp:translate`; add `validate_rotor_prim()` that compares against YAML `edf_motor_rotor` primitive dimensions within tolerance and appends rotor section to `MassPropertyReport` output (per CLI contract extended format)
+- [x] T034 [US4] Load `gyro_precession.enabled` and `edf.I_fan` from vehicle YAML in `EdfLandingTask.__init__()`, store as `self._gyro_enabled: bool` (default `True`) and `self._I_fan: float` (default `3.0e-5`). No module-level `_I_FAN` constant — config-driven per constitution II.
+- [x] T035 [US4] Implement gyro precession torque in `EdfLandingTask._apply_action()` in `simulation/isaac/tasks/edf_landing_task.py`: after fin force loop and before `set_external_force_and_torque()` call, add guarded block: if `self._gyro_enabled`: compute `omega_fan = (thrust_actual / _K_THRUST).clamp(min=0).sqrt()`, build `h_fan_b[:, 2] = self._I_fan * omega_fan`, compute `tau_gyro_b = -torch.linalg.cross(omega_b, h_fan_b)` where `omega_b = self.robot.data.root_ang_vel_b`, rotate to world via `_rotate_body_to_world(self.robot.data.root_quat_w, tau_gyro_b)`, add to `torques[:, 0, :]`
 - [x] T037 [P] [US4] Create `simulation/isaac/configs/isaac_env_gyro_test.yaml` as a copy of `isaac_env_single.yaml` with `sim.gravity: [0.0, 0.0, 0.0]` override for zero-g precession diagnostic
 - [x] T038 [US4] Create `simulation/isaac/scripts/diag_gyro_precession.py` with CLI per contract: `--config` (default `isaac_env_gyro_test.yaml`), `--torque-axis` (`pitch` or `roll`, default `pitch`), `--torque-mag` (default 0.5 N·m), `--duration` (default 2.0 s), `--spawn-alt` (default 5.0 m), `--no-gravity` (flag, default true), `--disable-precession` (flag); spawns drone at altitude with hover thrust, applies constant external **pitch** torque (body Y-axis) via `set_external_force_and_torque` — pitch rate `q` → expected roll precession `τ_x = −q·L`; NOTE: yaw torque is NOT used (yaw rate is parallel to spin axis, zero cross product); logs `[time, pitch_rate, roll_rate]` every 30 steps, asserts `roll_rate > 0.1 °/s` at t>0.5 s when precession enabled, asserts `roll_rate < 0.05 °/s` when disabled; prints ratio vs analytical prediction `I_fan·ω_fan·q/I_roll`
 - [x] T039 [P] [US4] Create `simulation/tests/test_gyro_precession.py` with pure-Python unit tests (no Isaac Sim): (1) verify `tau_gyro = -cross([p,q,r], [0,0,I_fan*omega_fan])` matches expected values for known omega_b and omega_fan; (2) zero thrust → zero omega_fan → zero tau_gyro; (3) `_rotate_body_to_world` is inverse of `_rotate_world_to_body` for identity and 90° rotations; (4) `gyro_precession.enabled: false` loads correctly and skips torque block
 
-**Checkpoint**: Gyro precession torque active in Isaac Sim. Yaw input → measurable pitch response. Rotor prim in USDC validates geometry. All existing tests still pass.
+**Checkpoint**: Gyro precession torque active in Isaac Sim. Pitch input → measurable roll response (precession). All existing tests still pass.
 
 ---
 
@@ -136,7 +132,7 @@
 - **User Story 1 (Phase 2)**: Depends on T002, T003 (coordinate + inertia helpers)
 - **User Story 2 (Phase 3)**: No dependency on US1; only needs Feature 001 baseline env
 - **User Story 3 (Phase 4)**: No dependency on US1 or US2; needs T001 (wind directory) from Setup
-- **User Story 4 (Phase 5)**: No dependency on US1, US2, US3; modifies `edf_landing_task.py` — execute after US3 validation complete to avoid mid-integration conflicts
+- **User Story 4 (Phase 5)**: No dependency on US1, US2, US3; modifies `edf_landing_task.py` (different section from US3) — execute after US3 validation complete to avoid mid-integration conflicts
 - **Polish (Phase 6)**: Depends on all user stories complete
 
 ### User Story Dependencies
@@ -144,7 +140,7 @@
 - **US1 (Mass Validation, P1)**: Independent — headless script, no Isaac Sim launch
 - **US2 (Thrust Test, P1)**: Independent — uses existing env, no code modifications
 - **US3 (Wind Forces, P2)**: Independent in testing, but modifies `edf_landing_task.py` shared with US2's env
-- **US4 (Gyro Precession, P2)**: Independent in testing; modifies `edf_landing_task.py` (different section from US3) and `validate_mass_props.py` (extension only). Execute after US3 to avoid file conflicts.
+- **US4 (Gyro Precession, P2)**: Independent in testing; modifies `edf_landing_task.py` (different section from US3). Execute after US3 to avoid file conflicts.
 
 ### Within Each User Story
 
@@ -158,8 +154,8 @@
 ### Parallel Opportunities
 
 - T002, T003 can run in parallel (different functions in same file, but independent)
-- T031, T033, T037, T039 in US4 are all parallel (different files: parts_registry.py, drone.usdc, yaml config, test file)
-- T030, T031, T037, T039 can start in parallel (all different files with no inter-dependency)
+- T033, T037, T039 in US4 are all parallel (different files: edf_landing_task.py, yaml config, test file)
+- T030, T037, T039 can start in parallel (all different files with no inter-dependency)
 - T033, T034 require T030 complete (config value needed) — sequential within US4
 - T035 requires T033 and T034 complete — sequential
 - US1 and US2 can proceed in parallel after Setup (different files entirely)
@@ -170,9 +166,8 @@
 ## Parallel Example: US4 Setup Tasks
 
 ```bash
-# All four can start simultaneously:
+# All three can start simultaneously:
 Task T030: "Add gyro_precession.enabled to default_vehicle.yaml"
-Task T031: "Add ROTOR_PRIM constant to parts_registry.py"
 Task T037: "Create isaac_env_gyro_test.yaml with gravity=0"
 Task T039: "Create test_gyro_precession.py unit tests"
 ```
@@ -214,19 +209,17 @@ Task T010-T014: Thrust Application Test pipeline
 2. US1 → Mass validated → `validate_mass_props` passes
 3. US2 → Thrust validated → drone lifts off, hovers, falls
 4. US3 → Wind integrated → environmental forces working
-5. US4 → Gyro precession → physics fidelity matches custom sim; rotor prim in USDC
+5. US4 → Gyro precession → physics fidelity matches custom sim; `I_fan` from config
 6. Polish → all diagnostics documented, regression confirmed clean
 
 ### Single Developer Strategy (US4 focus)
 
-1. T030, T031, T037, T039 in parallel — config + constants + yaml + tests (~30 min)
-2. T032 — USD scene edit in Isaac Sim v5.1.0 (~20 min)
-3. T033 — add `_rotate_body_to_world()` helper (~10 min)
-4. T034 — load config + store `self._gyro_enabled` (~10 min)
-5. T035 — implement torque in `_apply_action()` (~20 min)
-6. T036 — extend `validate_mass_props.py` for rotor prim (~30 min)
-7. T038 — create `diag_gyro_precession.py` diagnostic (~45 min)
-8. T040-T042 — polish + validation (~20 min)
+1. T030, T037, T039 in parallel — config + yaml + tests (~20 min)
+2. T033 — add `_rotate_body_to_world()` helper (~10 min)
+3. T034 — load config + store `self._gyro_enabled`, `self._I_fan` (~10 min)
+4. T035 — implement torque in `_apply_action()` (~20 min)
+5. T038 — create `diag_gyro_precession.py` diagnostic (~45 min)
+6. T040-T042 — polish + validation (~20 min)
 
 ---
 
@@ -238,6 +231,6 @@ Task T010-T014: Thrust Application Test pipeline
 - US2, US3, US4 require Isaac Sim v5.1.0 runtime — develop on GPU workstation
 - Wind integration (US3) is backward compatible: `isaac_wind.enabled: false` preserves Feature 001 behavior
 - Gyro precession (US4) is backward compatible: `gyro_precession.enabled: false` disables torque injection
-- `_I_FAN = 3.0e-5` (rotating fan blades only, ~60g at r≈35mm); motor stator mass already in Body composite inertia
-- Rotor prim mass=0 — mass is already included in Body's 3.13 kg total; prim exists purely for geometry validation
+- `edf.I_fan = 3.0e-5` (rotating fan blades only, ~60g at r≈35mm); motor stator mass already in Body composite inertia; read via `self._I_fan` at task init
+- No USD prim needed for gyro precession — torque is position-independent (pure torque applied at CoM)
 - All existing Isaac Sim configs default precession to `enabled: true` (on by default per constitution)

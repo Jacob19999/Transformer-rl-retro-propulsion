@@ -1,7 +1,7 @@
 # Implementation Plan: Gyro Precession Modeling (User Story 4 — Feature 002)
 
 **Branch**: `main` | **Date**: 2026-03-11 | **Spec**: [spec.md](spec.md)
-**Input**: Add gyroscopic precession torque from spinning rotor to Isaac Sim env, matching custom sim fidelity. Add invisible rotor cylinder to USDC scene for mass validation.
+**Input**: Add gyroscopic precession torque from spinning rotor to Isaac Sim env, matching custom sim fidelity. `I_fan` is read from existing `edf.I_fan` config — no USD prim required.
 
 ## Summary
 
@@ -9,9 +9,8 @@ The custom Python simulation already models gyroscopic precession via `ω × h_f
 
 1. Computing `τ_gyro = ω × h_fan` in `edf_landing_task.py` and injecting it via `set_external_force_and_torque()`
 2. Adding a config toggle `gyro_precession.enabled` (default: true) in `default_vehicle.yaml`
-3. Adding an invisible cylinder prim `/Drone/Body/Rotor` to the USDC scene with correct mass and inertia matching `I_fan` from config
-4. Extending `validate_mass_props.py` to verify rotor prim mass properties against YAML
-5. Creating a `diag_gyro_precession` diagnostic script that spawns the drone in air (no gravity), applies yaw torque, and verifies perpendicular pitch response
+3. Reading `I_fan` from `edf.I_fan` in `default_vehicle.yaml` (already present) — stored as `self._I_fan` at init (no USD prim needed; gyroscopic torque is a pure torque independent of fan placement)
+4. Creating a `diag_gyro_precession` diagnostic script that spawns the drone in air (no gravity), applies pitch torque, and verifies perpendicular roll response
 
 ## Technical Context
 
@@ -23,7 +22,7 @@ The custom Python simulation already models gyroscopic precession via `ω × h_f
 **Project Type**: Research simulation / RL training environment
 **Performance Goals**: No measurable FPS impact from precession torque (single cross-product per step per env)
 **Constraints**: Must match custom sim physics (vehicle.py §4.1 Euler's equation)
-**Scale/Scope**: Single new torque term + 1 USD prim + 1 config section + 1 diagnostic script
+**Scale/Scope**: Single new torque term + 1 config section + 1 diagnostic script
 
 ## Constitution Check
 
@@ -33,7 +32,7 @@ The custom Python simulation already models gyroscopic precession via `ω × h_f
 |-----------|--------|-------|
 | I. Physics Fidelity | **PASS** | Gyroscopic precession is listed as "Non-Negotiable" in vehicle.md §1.5. Adding it to Isaac Sim closes a fidelity gap. `I_fan` is parameterized from config, not a tuning constant. |
 | II. Configuration-Driven | **PASS** | `I_fan` already in `default_vehicle.yaml`. New `gyro_precession.enabled` toggle added to config. No hard-coded physics constants. |
-| III. Test-Driven Validation | **PASS** | Diagnostic script validates precession response. Unit test verifies torque magnitude matches analytical prediction. Mass validation extended for rotor prim. |
+| III. Test-Driven Validation | **PASS** | Diagnostic script validates precession response. Unit test verifies torque magnitude matches analytical prediction. |
 | IV. Reproducibility | **N/A** | No training changes — determinism unaffected. |
 | V. Sim-to-Real Integrity | **PASS** | Precession torque uses same `ω × h_fan` formulation as custom sim. Coordinate frame conversions (FRD ↔ Z-up) applied consistently. |
 
@@ -64,11 +63,9 @@ simulation/
 │   ├── tasks/
 │   │   └── edf_landing_task.py        # MODIFIED: add gyro torque in _apply_action()
 │   ├── scripts/
-│   │   ├── validate_mass_props.py     # MODIFIED: validate rotor prim mass props
 │   │   └── diag_gyro_precession.py    # NEW: precession diagnostic
 │   └── usd/
-│       ├── drone.usdc                 # MODIFIED: add /Drone/Body/Rotor invisible cylinder
-│       └── parts_registry.py          # MODIFIED: add ROTOR_PRIM constant
+│       └── parts_registry.py          # no change (ROTOR_PRIM not needed)
 ├── tests/
 │   └── test_gyro_precession.py        # NEW: unit tests for precession torque
 ```
@@ -93,21 +90,20 @@ h_fan = [0, 0, I_fan · ω_fan]   (body frame, spin axis = +Z FRD = −Z world)
 In Isaac Sim (`_apply_action()`), PhysX already handles `ω × (I·ω)` internally (rigid body Euler equation). We only need to inject the **fan precession torque** `τ_gyro = −ω × h_fan` as an external torque.
 
 **Implementation approach**:
-- Read `I_fan` and `k_thrust` from config (already available as `_K_THRUST`)
+- `self._I_fan` loaded from `edf.I_fan` in YAML at init (fallback: `3.0e-5`); `_K_THRUST` is an existing module constant
 - Compute `ω_fan = sqrt(thrust_actual / k_thrust)` (matches thrust_model.py)
-- Compute `h_fan` in world frame: spin axis is body +Z (FRD down) = world −Z → `h_fan_world = R_body @ [0, 0, I_fan * ω_fan]` rotated to world
-- Actually simpler: use body angular velocity `ω_body` and compute in body frame, then rotate result to world for `set_external_force_and_torque(is_global=True)`
-- **Key**: the sign convention — in FRD, fan spins about +Z (down). In Z-up world, that's −Z. The cross product `ω × h_fan` must use consistent frame.
+- Compute in body frame (where `h_fan = [0, 0, I_fan·ω_fan]` trivially), rotate result to world for `set_external_force_and_torque(is_global=True)`
+- **Key**: gyroscopic torque is a **pure torque** — independent of fan position within the body, so no USD prim is needed
 
-**Preferred approach** (from research RQ-7): Compute in body frame, rotate to world:
+**Implementation** (from research RQ-7):
 ```python
 # In _apply_action(), after fin forces:
 if self._gyro_enabled:
-    omega_b = self.robot.data.root_ang_vel_b                    # (N, 3) body frame
+    omega_b = self.robot.data.root_ang_vel_b                       # (N, 3) body frame
     omega_fan = (self.thrust_actual / _K_THRUST).clamp(min=0).sqrt()  # (N,)
     h_fan_b = torch.zeros((num_envs, 3), device=self.device)
-    h_fan_b[:, 2] = _I_FAN * omega_fan                         # body +Z (FRD down)
-    tau_gyro_b = -torch.linalg.cross(omega_b, h_fan_b)         # (N, 3)
+    h_fan_b[:, 2] = self._I_fan * omega_fan                       # body +Z (FRD down)
+    tau_gyro_b = -torch.linalg.cross(omega_b, h_fan_b)            # (N, 3)
     tau_gyro_w = _rotate_body_to_world(self.robot.data.root_quat_w, tau_gyro_b)
     torques[:, 0, :] += tau_gyro_w
 ```
@@ -122,26 +118,7 @@ gyro_precession:
 
 The task reads this at init and skips the `tau_gyro` computation when disabled.
 
-### 3. Invisible Rotor Cylinder (USDC)
-
-Add `/Drone/Body/Rotor` as a cylinder prim with:
-- Invisible render: `visibility = "invisible"` (or no mesh, just physics)
-- `UsdPhysics.MassAPI` with:
-  - `mass = 0.0` (mass already accounted for in Body composite mass)
-  - Alternatively: set mass to rotor mass and adjust Body mass to exclude it
-- **Decision needed (RQ-8)**: Whether rotor mass is additive or included in Body total. User intent: "rotor mass and inertia" → rotor contributes mass that's already in the Body total. Set rotor mass = 0 and use `diagonalInertia` only for the spin-axis MoI component, OR just validate that `I_fan` from config is consistent with the cylinder's theoretical MoI.
-
-**Preferred approach**: The invisible cylinder is a **validation artifact** — its purpose is to confirm that the YAML `I_fan` value is physically plausible for a cylinder of the rotor's dimensions. Set mass=0.35 kg (edf_motor_rotor primitive from YAML), radius=0.040 m, height=0.04 m. The theoretical `I_cyl = 0.5 * m * r² = 0.5 * 0.35 * 0.04² = 2.8e-4 kg·m²`. Compare against `I_fan = 3.0e-5` from YAML. Note: `I_fan` represents only the rotating fan blades (~60g), not the full motor assembly.
-
-### 4. Mass Validation Extension
-
-Extend `validate_mass_props.py` to:
-1. Check `/Drone/Body/Rotor` prim exists
-2. Read its mass and inertia from MassAPI
-3. Compare against YAML `edf.I_fan` value
-4. Report pass/fail for rotor properties
-
-### 5. Diagnostic Script (diag_gyro_precession.py)
+### 3. Diagnostic Script (diag_gyro_precession.py)
 
 Test scenario:
 1. Spawn drone at altitude (e.g., 5 m), disable gravity (`scene.cfg.sim.gravity = (0, 0, 0)`)
@@ -162,8 +139,8 @@ With precession disabled, the same pitch torque produces only pitch rotation, no
 | Principle | Status | Post-Design Notes |
 |-----------|--------|-------------------|
 | I. Physics Fidelity | **PASS** | `τ_gyro = −ω × h_fan` matches vehicle.py §4.1 exactly. `I_fan` sourced from YAML config. Precession diagnostic validates analytical prediction. |
-| II. Configuration-Driven | **PASS** | `gyro_precession.enabled` toggle in YAML. `I_fan`, `k_thrust` from existing config. No new hard-coded constants beyond existing `_K_THRUST` pattern. New `_I_FAN` constant follows same pattern. |
-| III. Test-Driven Validation | **PASS** | `diag_gyro_precession.py` validates precession response. `validate_mass_props.py` extended for rotor prim. Unit test `test_gyro_precession.py` planned for analytical torque verification. |
+| II. Configuration-Driven | **PASS** | `gyro_precession.enabled` toggle in YAML. `I_fan`, `k_thrust` from existing config. `self._I_fan` loaded from `edf.I_fan` at init — no hard-coded physics constants. |
+| III. Test-Driven Validation | **PASS** | `diag_gyro_precession.py` validates precession response. Unit test `test_gyro_precession.py` verifies analytical torque (`τ = −ω×h_fan`). |
 | IV. Reproducibility | **PASS** | Precession is deterministic (no randomness). Toggle allows exact comparison runs. |
 | V. Sim-to-Real Integrity | **PASS** | Body-frame computation uses FRD convention consistently. `_rotate_body_to_world` inverse of existing `_rotate_world_to_body`. Sign convention verified against vehicle.md §4.5. |
 
