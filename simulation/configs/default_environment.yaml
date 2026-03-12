@@ -19,6 +19,24 @@ environment:
     gust_magnitude_range: [3.0, 8.0]   # m/s, amplitude bounds
     episode_duration: 15.0        # s, for gust timing bounds (matches training.md max_episode_time)
 
+  # ─── Isaac Sim Wind Model ─────────────────────────────────────────
+  # GPU-batched wind model for Isaac Sim environments (IsaacWindModel).
+  # Disabled by default to preserve Feature 001 backward compatibility.
+  # Enable by setting isaac_wind.enabled: true in your Isaac env YAML config
+  # or via the diag_wind.py diagnostic script override.
+  isaac_wind:
+    enabled: false             # false = wind off (zeros), Feature 001 behaviour preserved
+    dt: 0.008333               # s, Isaac Sim timestep = 1/120 s (differs from custom sim 0.005 s)
+    episode_duration: 5.0      # s, episode length (used for gust onset timing)
+    mean_vector_range_lo: [-10.0, -10.0, -2.0]  # m/s, [X, Y, Z] world frame min
+    mean_vector_range_hi: [ 10.0,  10.0,  2.0]  # m/s, [X, Y, Z] world frame max
+    gust_prob: 0.1             # probability of gust event per episode
+    gust_magnitude_range: [3.0, 8.0]    # m/s, gust amplitude [min, max]
+    air_density: 1.225         # kg/m³, sea-level ISA density
+    drag_coefficient: 1.0      # composite Cd for body drag
+    projected_area: [0.01, 0.01, 0.02]  # m², composite Cd*A per axis [X, Y, Z]
+    wind_ema_tau: 0.5          # s, EMA time constant for observation [13:16]
+
   curriculum:
     enabled: false                # per training.md §10 — enable only if uniform DR fails at 5M steps
     ramp_fraction: 0.7            # fraction of training to reach full difficulty

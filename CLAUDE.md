@@ -59,6 +59,19 @@ python -m simulation.isaac.scripts.diag_fin_wiggle --config simulation/isaac/con
 # Throughput benchmark (1, 128, 512, 1024 envs)
 python -m simulation.isaac.scripts.benchmark_envs
 
+# Feature 002: Mass Properties, Thrust Test & Environmental Forces
+# Validate USDC scene mass properties against YAML config (no Isaac Sim required)
+python -m simulation.isaac.scripts.validate_mass_props
+python -m simulation.isaac.scripts.validate_mass_props --usd simulation/isaac/usd/drone.usdc --config simulation/configs/default_vehicle.yaml --tolerance 0.01
+
+# Thrust application diagnostic — ground start → liftoff validation
+python -m simulation.isaac.scripts.diag_thrust_test
+python -m simulation.isaac.scripts.diag_thrust_test --thrust 1.0 --duration 2.0 --spawn-alt 0.4
+
+# Wind disturbance diagnostic — lateral drift under constant wind
+python -m simulation.isaac.scripts.diag_wind
+python -m simulation.isaac.scripts.diag_wind --wind-x 5.0 --wind-y 0.0 --duration 3.0
+
 # Train PPO on Isaac Sim env (256 envs, RTX 5070 safe)
 python -m simulation.training.scripts.train_isaac_ppo --config simulation/isaac/configs/isaac_env_training.yaml --seed 0
 

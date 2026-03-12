@@ -1,5 +1,5 @@
 """
-edf_isaac_env.py — Gymnasium-compatible wrapper for EdfLandingTask.
+edf_isaac_env.py -- Gymnasium-compatible wrapper for EdfLandingTask.
 
 Implements T021:
 - Wraps EdfLandingTask (IsaacLab DirectRLEnv)
@@ -102,6 +102,12 @@ class EDFIsaacEnv(gym.Env):
             p = Path(reward_path)
             task_cfg.reward_config_path = str(REPO_ROOT / p if not p.is_absolute() else p)
 
+        # T024: Pass environment config path for wind model instantiation
+        env_path = self._cfg_raw.get("environment_config_path", None)
+        if env_path:
+            p = Path(env_path)
+            task_cfg.environment_config_path = str(REPO_ROOT / p if not p.is_absolute() else p)
+
         usd_path = self._cfg_raw.get("drone_usd_path", None)
         if usd_path:
             from simulation.isaac.tasks.edf_landing_task import EdfSceneCfg
@@ -163,7 +169,7 @@ class EDFIsaacEnv(gym.Env):
     def step(
         self, action: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray | float, np.ndarray | bool, np.ndarray | bool, dict]:
-        # Convert action to torch tensor — always (num_envs, action_dim)
+        # Convert action to torch tensor -- always (num_envs, action_dim)
         action_t = torch.from_numpy(action).float().to(self._task.device)
         if action_t.ndim == 1:
             action_t = action_t.unsqueeze(0).expand(self._num_envs, -1)

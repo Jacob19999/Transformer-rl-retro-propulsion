@@ -36,6 +36,70 @@ def frd_to_zup(x: float, y: float, z: float) -> tuple[float, float, float]:
     return (x, -y, -z)
 
 
+def zup_to_frd(x: float, y: float, z: float) -> tuple[float, float, float]:
+    """Convert Z-up world coordinates to FRD body-frame coordinates.
+
+    Inverse of frd_to_zup(). The mapping is its own inverse:
+    World +X → FRD +X,  World +Y → FRD -Y (left),  World +Z → FRD -Z (up).
+    """
+    return (x, -y, -z)
+
+
+def reconstruct_inertia_tensor(
+    diagonal: tuple[float, float, float],
+    principal_axes_quat: tuple[float, float, float, float],
+) -> tuple[
+    tuple[float, float, float],
+    tuple[float, float, float],
+    tuple[float, float, float],
+]:
+    """Reconstruct full 3x3 inertia tensor from USD diagonal + principal axes quaternion.
+
+    USD Physics stores inertia as principal moments (diagonal) and the rotation
+    of the principal axes frame relative to the prim frame (quaternion).
+    Converts to a full symmetric 3x3 tensor: I = R @ diag(I') @ R^T.
+
+    Args:
+        diagonal: Principal moments (Ixx', Iyy', Izz') in principal axes frame (kg·m²).
+        principal_axes_quat: Quaternion (qx, qy, qz, qw), scalar-last. If zero-magnitude,
+            treated as identity (principal axes == prim frame axes).
+
+    Returns:
+        3x3 inertia tensor as nested tuples (row-major) in prim frame (kg·m²).
+    """
+    import math
+
+    Ixx_p, Iyy_p, Izz_p = diagonal
+    qx, qy, qz, qw = principal_axes_quat
+
+    mag = math.sqrt(qx**2 + qy**2 + qz**2 + qw**2)
+    if mag < 1e-9:
+        return (
+            (Ixx_p, 0.0, 0.0),
+            (0.0, Iyy_p, 0.0),
+            (0.0, 0.0, Izz_p),
+        )
+    qx, qy, qz, qw = qx / mag, qy / mag, qz / mag, qw / mag
+
+    # Rotation matrix from quaternion (scalar-last)
+    R = [
+        [1 - 2*(qy*qy + qz*qz), 2*(qx*qy - qz*qw), 2*(qx*qz + qy*qw)],
+        [2*(qx*qy + qz*qw),     1 - 2*(qx*qx + qz*qz), 2*(qy*qz - qx*qw)],
+        [2*(qx*qz - qy*qw),     2*(qy*qz + qx*qw),     1 - 2*(qx*qx + qy*qy)],
+    ]
+    D = [[Ixx_p, 0.0, 0.0], [0.0, Iyy_p, 0.0], [0.0, 0.0, Izz_p]]
+
+    def _mm(A: list, B: list) -> list:
+        return [[sum(A[i][k] * B[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
+
+    I = _mm(_mm(R, D), [[R[j][i] for j in range(3)] for i in range(3)])  # R @ D @ R^T
+    return (
+        (I[0][0], I[0][1], I[0][2]),
+        (I[1][0], I[1][1], I[1][2]),
+        (I[2][0], I[2][1], I[2][2]),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Prim path constants
 # ---------------------------------------------------------------------------
@@ -62,9 +126,10 @@ def fin_joint_path(index: int) -> str:
     """USD prim path for fin joint at 1-based index (1–4).
 
     In the manual Isaac Sim scene, joints are children of each fin Xform:
-      /Drone/Fin_1/RevoluteJoint
+      /Drone/Fin_1/Fin_1_Joint
+    IsaacLab resolves joints by the leaf name: find_joints(["Fin_1_Joint", ...])
     """
-    return f"/Drone/Fin_{index}/RevoluteJoint"
+    return f"/Drone/Fin_{index}/Fin_{index}_Joint"
 
 
 def expected_fin_prim_paths(n: int = 4) -> list[str]:

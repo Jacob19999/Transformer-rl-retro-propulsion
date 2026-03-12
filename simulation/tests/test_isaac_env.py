@@ -216,3 +216,145 @@ def test_parallel_independence():
         assert step_42_final == 10, f"Env 42 should be at step 10, got {step_42_final}"
     finally:
         env.close()
+
+
+# ---------------------------------------------------------------------------
+# T026: Wind force integration tests (Feature 002)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.isaac
+class TestWindForceIntegration:
+    """Validates IsaacWindModel integration in EdfLandingTask.
+
+    These tests manipulate _wind_model directly (unit-level) to avoid
+    requiring wind to be enabled in the default YAML config.
+    """
+
+    def test_wind_model_none_by_default(self):
+        """Wind model is None when isaac_wind.enabled: false (default)."""
+        env = EDFIsaacEnv(_SINGLE_CFG)
+        try:
+            # Default config has isaac_wind.enabled: false
+            assert env._task._wind_model is None, (
+                "Wind model should be None when not enabled in config"
+            )
+        finally:
+            env.close()
+
+    def test_wind_ema_zeros_when_disabled(self):
+        """Observation [13:16] must be zeros when wind is disabled."""
+        env = EDFIsaacEnv(_SINGLE_CFG)
+        try:
+            obs, _ = env.reset()
+            zero_action = np.zeros(5, dtype=np.float32)
+            obs, _, _, _, _ = env.step(zero_action)
+            wind_obs = obs[13:16]
+            assert np.allclose(wind_obs, 0.0, atol=1e-6), (
+                f"Wind obs [13:16] should be zero when disabled, got {wind_obs}"
+            )
+        finally:
+            env.close()
+
+    def test_wind_model_produces_nonzero_ema(self):
+        """After enabling wind with constant 5 m/s, wind_ema becomes non-zero."""
+        import torch
+        from simulation.isaac.wind.isaac_wind_model import IsaacWindModel
+
+        env = EDFIsaacEnv(_SINGLE_CFG)
+        try:
+            task = env._task
+            # Inject wind model manually
+            wind_cfg = {
+                "enabled": True,
+                "mean_vector_range_lo": [5.0, 0.0, 0.0],
+                "mean_vector_range_hi": [5.0, 0.0, 0.0],
+                "gust_prob": 0.0,
+                "gust_magnitude_range": [0.0, 0.0],
+                "air_density": 1.225,
+                "drag_coefficient": 1.0,
+                "projected_area": [0.01, 0.01, 0.02],
+                "wind_ema_tau": 0.1,  # fast EMA for test
+                "episode_duration": 5.0,
+            }
+            task._wind_model = IsaacWindModel(wind_cfg, task.num_envs, task.device)
+            task._wind_model.set_constant_wind((5.0, 0.0, 0.0))
+
+            obs, _ = env.reset()
+            task._wind_model.set_constant_wind((5.0, 0.0, 0.0))
+
+            zero_action = np.zeros(5, dtype=np.float32)
+            # Step enough for EMA to build up (tau=0.1 s → ~12 steps to 50%)
+            for _ in range(60):
+                obs, _, done, _, _ = env.step(zero_action)
+                if done:
+                    break
+
+            wind_obs = obs[13:16]
+            # Wind EMA in X should be non-zero
+            assert abs(wind_obs[0]) > 0.01, (
+                f"Wind obs[13] should be non-zero with 5 m/s wind, got {wind_obs[0]:.6f}"
+            )
+        finally:
+            env.close()
+
+    def test_wind_drag_force_nonzero(self):
+        """compute_drag_force() returns non-zero force for non-zero relative wind."""
+        import torch
+        from simulation.isaac.wind.isaac_wind_model import IsaacWindModel
+
+        wind_cfg = {
+            "enabled": True,
+            "mean_vector_range_lo": [0.0, 0.0, 0.0],
+            "mean_vector_range_hi": [0.0, 0.0, 0.0],
+            "gust_prob": 0.0,
+            "gust_magnitude_range": [0.0, 0.0],
+            "air_density": 1.225,
+            "drag_coefficient": 1.0,
+            "projected_area": [0.01, 0.01, 0.02],
+            "wind_ema_tau": 0.5,
+            "episode_duration": 5.0,
+        }
+        device = torch.device("cpu")
+        wind = IsaacWindModel(wind_cfg, num_envs=1, device=device)
+
+        wind_vec   = torch.tensor([[5.0, 0.0, 0.0]])   # 5 m/s in X
+        body_vel   = torch.tensor([[0.0, 0.0, 0.0]])   # stationary drone
+
+        F = wind.compute_drag_force(wind_vec, body_vel)
+        assert F.shape == (1, 3)
+        # Force should be in +X direction (wind blows from -X side)
+        assert F[0, 0].item() > 0.0, f"X force should be positive, got {F[0, 0].item()}"
+        assert abs(F[0, 1].item()) < 1e-9, "Y force should be zero"
+
+    def test_gust_produces_transient_wind(self):
+        """Gust event produces different wind vector from mean wind."""
+        import torch
+        from simulation.isaac.wind.isaac_wind_model import IsaacWindModel
+
+        wind_cfg = {
+            "enabled": True,
+            "mean_vector_range_lo": [0.0, 0.0, 0.0],
+            "mean_vector_range_hi": [0.0, 0.0, 0.0],
+            "gust_prob": 1.0,  # always gust
+            "gust_magnitude_range": [5.0, 5.0],
+            "air_density": 1.225,
+            "drag_coefficient": 1.0,
+            "projected_area": [0.01, 0.01, 0.02],
+            "wind_ema_tau": 0.5,
+            "episode_duration": 2.0,
+        }
+        device = torch.device("cpu")
+        wind = IsaacWindModel(wind_cfg, num_envs=1, device=device)
+        env_ids = torch.tensor([0])
+        wind.reset(env_ids)
+
+        # Step through episode until gust should be active
+        found_nonzero = False
+        dt = 1.0 / 120.0
+        for _ in range(300):  # 2.5 s
+            vec = wind.step(dt)
+            if vec.norm() > 0.1:
+                found_nonzero = True
+                break
+
+        assert found_nonzero, "Gust event should produce non-zero wind at some point in 2.5 s episode"

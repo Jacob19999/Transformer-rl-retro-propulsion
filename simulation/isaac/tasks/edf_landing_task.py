@@ -1,13 +1,13 @@
 """
-edf_landing_task.py — IsaacLab DirectRLEnv task for EDF retro-propulsive landing.
+edf_landing_task.py -- IsaacLab DirectRLEnv task for EDF retro-propulsive landing.
 
 Implements T012-T020:
   T012-T013: EdfLandingTaskCfg dataclass (scene, sim, landing pad)
   T014:      EdfLandingTask._setup_scene()
   T015:      EdfLandingTask._reset_idx()
   T016:      Physics lag state tensors (thrust, fin deflections)
-  T017:      EdfLandingTask._pre_physics_step() — force injection
-  T018:      EdfLandingTask._get_observations() — 20-dim obs vector
+  T017:      EdfLandingTask._pre_physics_step() -- force injection
+  T018:      EdfLandingTask._get_observations() -- 20-dim obs vector
   T019:      EdfLandingTask._get_rewards()
   T020:      EdfLandingTask._get_dones()
 
@@ -80,6 +80,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from simulation.config_loader import load_config        # noqa: E402
 from simulation.training.reward import RewardConfig, RewardFunction  # noqa: E402
 from simulation.isaac.usd.parts_registry import load_explicit_mass_props, load_fin_specs  # noqa: E402
+from simulation.isaac.wind.isaac_wind_model import IsaacWindModel  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Physical constants from vehicle YAML (loaded once at import)
@@ -88,14 +89,14 @@ _VEHICLE_YAML = REPO_ROOT / "simulation" / "configs" / "default_vehicle.yaml"
 _REWARD_YAML  = REPO_ROOT / "simulation" / "configs" / "reward.yaml"
 
 _T_MAX       = 45.0       # N, EDF max thrust
-_DELTA_MAX   = 0.2618     # rad, ±15° fin control limit
+_DELTA_MAX   = 0.2618     # rad, +/-15 deg fin control limit
 _TAU_MOTOR   = 0.10       # s, EDF first-order thrust lag
 _TAU_SERVO   = 0.04       # s, servo first-order position lag
-_K_THRUST    = 4.55e-7    # N/(rad/s)²
+_K_THRUST    = 4.55e-7    # N/(rad/s)^2
 _V_EXHAUST   = 70.0       # m/s nominal
 _CL_ALPHA    = 6.283      # /rad, NACA0012 thin-airfoil
-_FIN_AREA    = 0.003575   # m² per fin, chord × span
-_GRAVITY     = 9.81       # m/s²
+_FIN_AREA    = 0.003575   # m^2 per fin, chord x span
+_GRAVITY     = 9.81       # m/s^2
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +111,7 @@ class EdfSceneCfg(InteractiveSceneCfg):
     rigid_props / articulation_props / collision_props so that the spawner
     preserves every API schema and material in the original asset.
 
-    No terrain importer — the USD's own GroundPlane (with CollisionPlane)
+    No terrain importer -- the USD's own GroundPlane (with CollisionPlane)
     is referenced into the live stage by _import_scene_prims_from_usd().
     """
 
@@ -118,7 +119,7 @@ class EdfSceneCfg(InteractiveSceneCfg):
         prim_path="{ENV_REGEX_NS}/Drone",
         spawn=sim_utils.UsdFileCfg(
             usd_path=str(REPO_ROOT / "simulation" / "isaac" / "usd" / "drone.usdc"),
-            # No rigid_props / articulation_props / collision_props — preserve USD as-is
+            # No rigid_props / articulation_props / collision_props -- preserve USD as-is
         ),
         init_state=ArticulationCfg.InitialStateCfg(
             pos=(0.0, 0.0, 7.5),  # Z-up: start 7.5 m above ground
@@ -137,7 +138,7 @@ class EdfSceneCfg(InteractiveSceneCfg):
         },
     )
 
-    # Grey studio lighting — neutral dome + soft key light
+    # Grey studio lighting -- neutral dome + soft key light
     sky_light: AssetBaseCfg = AssetBaseCfg(
         prim_path="/World/skyLight",
         spawn=sim_utils.DomeLightCfg(
@@ -154,7 +155,7 @@ class EdfSceneCfg(InteractiveSceneCfg):
             angle=0.53,
         ),
         init_state=AssetBaseCfg.InitialStateCfg(
-            rot=(0.612, 0.354, 0.354, 0.612),  # ~45° elevation from front-right
+            rot=(0.612, 0.354, 0.354, 0.612),  # ~45 deg elevation from front-right
         ),
     )
 
@@ -175,7 +176,7 @@ class EdfLandingTaskCfg(DirectRLEnvCfg):
     action_space: int = 5
     state_space: int = 0
 
-    # Physics step: 1/120 s, 4 substeps (eff. dt ≈ 2.08 ms)
+    # Physics step: 1/120 s, 4 substeps (eff. dt ~ 2.08 ms)
     sim: SimulationCfg = SimulationCfg(
         dt=1.0 / 120.0,
         render_interval=1,
@@ -190,7 +191,7 @@ class EdfLandingTaskCfg(DirectRLEnvCfg):
     decimation: int = 1
 
     # Episode parameters
-    episode_length_s: float = 5.0   # 5 s → 600 steps at 1/120
+    episode_length_s: float = 5.0   # 5 s -> 600 steps at 1/120
 
     # Scene
     scene: EdfSceneCfg = EdfSceneCfg(num_envs=MISSING, env_spacing=4.0)
@@ -208,9 +209,10 @@ class EdfLandingTaskCfg(DirectRLEnvCfg):
     crash_velocity_threshold: float = 3.0   # m/s, max |v| for successful landing
     landing_pad_radius: float = 0.5         # m
 
-    # Vehicle / reward config paths
-    vehicle_config_path: str = str(REPO_ROOT / "simulation" / "configs" / "default_vehicle.yaml")
-    reward_config_path: str  = str(REPO_ROOT / "simulation" / "configs" / "reward.yaml")
+    # Vehicle / reward / environment config paths
+    vehicle_config_path: str     = str(REPO_ROOT / "simulation" / "configs" / "default_vehicle.yaml")
+    reward_config_path: str      = str(REPO_ROOT / "simulation" / "configs" / "reward.yaml")
+    environment_config_path: str = str(REPO_ROOT / "simulation" / "configs" / "default_environment.yaml")
 
 
 # ---------------------------------------------------------------------------
@@ -264,13 +266,23 @@ class EdfLandingTask(DirectRLEnv):
             dtype=torch.float32, device=self.device,
         )  # (4, 3)
 
-        # Vehicle mass (for twr obs) — from explicit config, no primitive aggregation
+        # Vehicle mass (for twr obs) -- from explicit config, no primitive aggregation
         mp = load_explicit_mass_props(vehicle_data)
         self._mass = float(mp.total_mass)
         self._weight = self._mass * _GRAVITY
 
-        # Wind EMA (zero — no wind model in Isaac Sim)
-        self._wind_ema = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
+        # T020: Wind model -- instantiate if isaac_wind.enabled: true in environment config
+        env_cfg_raw  = load_config(cfg.environment_config_path)
+        env_data     = env_cfg_raw.get("environment", env_cfg_raw)
+        wind_cfg     = env_data.get("isaac_wind", {})
+        if wind_cfg.get("enabled", False):
+            self._wind_model: IsaacWindModel | None = IsaacWindModel(
+                wind_cfg, self.num_envs, self.device
+            )
+        else:
+            self._wind_model = None
+        # Fallback zero tensor used when wind model is disabled
+        self._wind_ema_zeros = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
 
         # Previous action (for smoothness reward)
         self._prev_action = torch.zeros(
@@ -376,7 +388,9 @@ class EdfLandingTask(DirectRLEnv):
         self.fin_deflections_actual[env_ids] = 0.0
         self._episode_step[env_ids] = 0
         self._prev_action[env_ids] = 0.0
-        self._wind_ema[env_ids] = 0.0
+        # T022: Reset wind model for selected environments
+        if self._wind_model is not None:
+            self._wind_model.reset(env_ids)
 
         # Sample random altitude and velocity
         alt = torch.zeros(n, device=self.device).uniform_(
@@ -400,7 +414,7 @@ class EdfLandingTask(DirectRLEnv):
 
         # Identity quaternion in wxyz format (IsaacLab convention: w, x, y, z)
         quat = torch.zeros((n, 4), device=self.device)
-        quat[:, 0] = 1.0  # w=1 → identity (wxyz: [1, 0, 0, 0])
+        quat[:, 0] = 1.0  # w=1 -> identity (wxyz: [1, 0, 0, 0])
 
         # Add env origins for multi-env support
         root_pose = torch.cat([pos, quat], dim=-1)  # (n, 7)
@@ -418,7 +432,7 @@ class EdfLandingTask(DirectRLEnv):
             self.robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
 
     # ------------------------------------------------------------------
-    # T017: Pre-physics step — force injection
+    # T017: Pre-physics step -- force injection
     # ------------------------------------------------------------------
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         """Update lag state once per policy step (called by DirectRLEnv before decimation loop)."""
@@ -433,7 +447,7 @@ class EdfLandingTask(DirectRLEnv):
         thrust_cmd_norm = self.actions[:, 0]
         fin_cmd_norm    = self.actions[:, 1:5]
 
-        # Map thrust: [-1,0] → 0, [0,1] → T_MAX
+        # Map thrust: [-1,0] -> 0, [0,1] -> T_MAX
         T_cmd     = thrust_cmd_norm.clamp(0.0, 1.0) * _T_MAX
         delta_cmd = fin_cmd_norm * _DELTA_MAX
 
@@ -454,7 +468,7 @@ class EdfLandingTask(DirectRLEnv):
         torques = torch.zeros((num_envs, 1, 3), device=self.device)
 
         # ----------------------------------------------------------------
-        # Fin joints — set Drive/actuator position targets (degrees)
+        # Fin joints -- set Drive/actuator position targets (degrees)
         # ----------------------------------------------------------------
         if not self._fin_joint_ids:
             # Debug: print all joints the articulation knows about
@@ -470,7 +484,7 @@ class EdfLandingTask(DirectRLEnv):
                     [f"Fin_{i}_Joint" for i in range(1, 5)],
                     preserve_order=True,
                 )
-                print(f"[EdfLandingTask] find_joints(Fin_N_Joint) → ids={joint_ids}, names={joint_names}")
+                print(f"[EdfLandingTask] find_joints(Fin_N_Joint) -> ids={joint_ids}, names={joint_names}")
             except Exception as e:
                 print(f"[EdfLandingTask] find_joints(Fin_N_Joint) FAILED: {e}")
                 joint_ids, joint_names = [], []
@@ -483,7 +497,7 @@ class EdfLandingTask(DirectRLEnv):
                     joint_ids, joint_names = self.robot.find_joints(
                         ".*", preserve_order=False
                     )
-                    print(f"[EdfLandingTask] find_joints('.*') → ids={joint_ids}, names={joint_names}")
+                    print(f"[EdfLandingTask] find_joints('.*') -> ids={joint_ids}, names={joint_names}")
                     if len(joint_ids) == 4:
                         self._fin_joint_ids = [int(i) for i in joint_ids]
                 except Exception as e:
@@ -497,7 +511,7 @@ class EdfLandingTask(DirectRLEnv):
             self.robot.set_joint_position_target(fin_target_deg, joint_ids=self._fin_joint_ids)
 
         # ----------------------------------------------------------------
-        # EDF thrust — world +Z (up in Z-up world), is_global=True
+        # EDF thrust -- world +Z (up in Z-up world), is_global=True
         # ----------------------------------------------------------------
         forces[:, 0, 2] = self.thrust_actual
 
@@ -519,11 +533,18 @@ class EdfLandingTask(DirectRLEnv):
                 r.unsqueeze(0).expand(num_envs, -1), F_i
             )
 
+        # T021: Wind drag force -- added if wind model is active
+        if self._wind_model is not None:
+            wind_vec    = self._wind_model.step(self._dt)   # (num_envs, 3) world frame
+            body_vel_w  = self.robot.data.root_lin_vel_w    # (num_envs, 3) world frame
+            F_wind      = self._wind_model.compute_drag_force(wind_vec, body_vel_w)
+            forces[:, 0, :] += F_wind
+
         self.robot.set_external_force_and_torque(forces, torques, body_ids=[0], is_global=True)
         self.robot.write_data_to_sim()
 
     # ------------------------------------------------------------------
-    # T018: Observations — 20-dim vector
+    # T018: Observations -- 20-dim vector
     # ------------------------------------------------------------------
     def _get_observations(self) -> dict[str, torch.Tensor]:
         """Compute 20-dim observation matching observation.py layout."""
@@ -543,7 +564,7 @@ class EdfLandingTask(DirectRLEnv):
         err_w = target_w - pos_w      # (num_envs, 3)
 
         # --- Rotate error into body frame ---
-        # q_world_body = root_quat_w → rotate world vector to body
+        # q_world_body = root_quat_w -> rotate world vector to body
         err_b = _rotate_world_to_body(err_w, quat_w)  # (num_envs, 3)
 
         # --- Gravity direction in body frame ---
@@ -561,8 +582,15 @@ class EdfLandingTask(DirectRLEnv):
         time_frac = (self._episode_step.float() / self._max_steps).clamp(0.0, 1.0).unsqueeze(-1)
 
         # --- Assemble 20-dim obs ---
+        # T023: Wind EMA -- use model output when wind active, else zeros
+        wind_ema = (
+            self._wind_model.wind_ema
+            if self._wind_model is not None
+            else self._wind_ema_zeros
+        )
+
         # [0:3]=e_p_body, [3:6]=v_body, [6:9]=g_body, [9:12]=omega,
-        # [12]=twr, [13:16]=wind_ema(zeros), [16]=h_agl, [17]=speed,
+        # [12]=twr, [13:16]=wind_ema, [16]=h_agl, [17]=speed,
         # [18]=ang_speed, [19]=time_frac
         obs = torch.cat([
             err_b,                   # 3
@@ -570,7 +598,7 @@ class EdfLandingTask(DirectRLEnv):
             g_b,                     # 3
             omega_b,                 # 3
             twr,                     # 1
-            self._wind_ema,          # 3  (zeros)
+            wind_ema,                # 3  (zeros if wind disabled)
             h_agl.unsqueeze(-1),     # 1
             speed,                   # 1
             ang_speed,               # 1
@@ -580,7 +608,7 @@ class EdfLandingTask(DirectRLEnv):
         return {"policy": obs}
 
     # ------------------------------------------------------------------
-    # T019: Rewards — port from reward.py
+    # T019: Rewards -- port from reward.py
     # ------------------------------------------------------------------
     def _get_rewards(self) -> torch.Tensor:
         """Compute shaped + terminal rewards. Returns (num_envs,) float32 tensor."""
@@ -662,7 +690,7 @@ def _rotate_world_to_body(v_world: torch.Tensor, quat_w: torch.Tensor) -> torch.
     """Rotate (num_envs, 3) world vectors into body frame using scalar-last quaternion.
 
     q = [qx, qy, qz, qw] (scalar-last)
-    v_body = q_conj ⊗ v ⊗ q
+    v_body = q_conj (x) v (x) q
     """
     qx = quat_w[:, 0]
     qy = quat_w[:, 1]
@@ -670,11 +698,11 @@ def _rotate_world_to_body(v_world: torch.Tensor, quat_w: torch.Tensor) -> torch.
     qw = quat_w[:, 3]
 
     # Conjugate rotate: q_conj = [-qx, -qy, -qz, qw]
-    # Rotation: v' = v + 2*qw*(q_vec × v) + 2*(q_vec × (q_vec × v))
-    q_vec = torch.stack([-qx, -qy, -qz], dim=-1)  # (n, 3) — conjugate imaginary
+    # Rotation: v' = v + 2*qw*(q_vec x v) + 2*(q_vec x (q_vec x v))
+    q_vec = torch.stack([-qx, -qy, -qz], dim=-1)  # (n, 3) -- conjugate imaginary
     # Actually use forward rotation with conjugate:
-    # For q acting on world→body: apply q_conj to v
-    # v' = v + 2w (q × v) + 2 (q × (q × v))  where q is the conjugate imaginary part
+    # For q acting on world->body: apply q_conj to v
+    # v' = v + 2w (q x v) + 2 (q x (q x v))  where q is the conjugate imaginary part
     qw_c = qw            # scalar part of conjugate = qw
     q_c  = torch.stack([-qx, -qy, -qz], dim=-1)  # imaginary part of conjugate
 

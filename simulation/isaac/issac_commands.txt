@@ -13,6 +13,9 @@
 .\env_isaaclab\Scripts\python.exe -m simulation.isaac.scripts.diag_fin_wiggle --config simulation/isaac/configs/isaac_env_single.yaml
 .\env_isaaclab\Scripts\python.exe -m simulation.isaac.scripts.diag_fin_wiggle --config simulation/isaac/configs/isaac_env_128.yaml
 
+# Thrust tests
+.\env_isaaclab\Scripts\python.exe -m simulation.isaac.scripts.diag_thrust_test --config simulation/isaac/configs/isaac_env_single.yaml
+
 # Validate
 .\env_isaaclab\Scripts\python.exe -m simulation.isaac.usd.drone_builder validate --usd simulation/isaac/usd/drone.usdc
 

@@ -45,7 +45,6 @@ from simulation.config_loader import load_config                       # noqa: E
 from simulation.isaac.usd.parts_registry import (                      # noqa: E402
     DRONE_ROOT,
     BODY_PRIM,
-    LEGS_PRIM,
     expected_fin_prim_paths,
     expected_mvp_prim_paths,
     load_explicit_mass_props,
@@ -256,8 +255,9 @@ def _create_fin_joints(
     """
     for spec in fin_specs:
         fin_path   = f"{DRONE_ROOT}/{spec.prim_name}"
-        # Place joint as child of the fin Xform (matches manual Isaac Sim scene layout)
-        joint_path = f"{fin_path}/RevoluteJoint"
+        # Place joint as child of the fin Xform using per-fin name (Fin_N_Joint)
+        # so IsaacLab can resolve each joint by name: find_joints(["Fin_1_Joint",...])
+        joint_path = f"{fin_path}/{spec.prim_name}_Joint"
 
         joint = UsdPhysics.RevoluteJoint.Define(stage, joint_path)
         joint.GetAxisAttr().Set(spec.hinge_axis)
@@ -275,6 +275,24 @@ def _create_fin_joints(
         drive_api.GetStiffnessAttr().Set(_DRIVE_STIFFNESS)
         drive_api.GetDampingAttr().Set(_DRIVE_DAMPING)
         drive_api.GetTargetPositionAttr().Set(0.0)
+
+
+# ---------------------------------------------------------------------------
+# Cleanup helpers
+# ---------------------------------------------------------------------------
+def _strip_rigid_body_from_visual_children(stage: Usd.Stage) -> None:
+    """Remove RigidBodyAPI from visual-only prims under /Drone/Body.
+
+    Prims like /Drone/Body/Legs are pure geometry — they should not have
+    RigidBodyAPI applied (PhysX errors on nested rigid bodies in same hierarchy).
+    """
+    body_prim = stage.GetPrimAtPath(BODY_PRIM)
+    if not body_prim.IsValid():
+        return
+    for child in body_prim.GetChildren():
+        if child.HasAPI(UsdPhysics.RigidBodyAPI):
+            child.RemoveAPI(UsdPhysics.RigidBodyAPI)
+            print(f"[postprocess_usd] Removed RigidBodyAPI from visual prim {child.GetPath()}")
 
 
 # ---------------------------------------------------------------------------
@@ -350,7 +368,7 @@ def postprocess_drone_usd(
     mass_props = load_explicit_mass_props(vehicle_cfg)
 
     _add_root_physics(stage, mass_props)
-    _ensure_legs_under_body(stage)
+    _strip_rigid_body_from_visual_children(stage)
     _add_fin_physics(stage, fin_specs, fin_mass)
     _create_fin_joints(stage, fin_specs, -joint_limit_deg, joint_limit_deg)
 
