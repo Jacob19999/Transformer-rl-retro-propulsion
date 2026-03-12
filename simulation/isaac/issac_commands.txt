@@ -16,8 +16,16 @@
 # Thrust tests
 .\env_isaaclab\Scripts\python.exe -m simulation.isaac.scripts.diag_thrust_test --config simulation/isaac/configs/isaac_env_single.yaml
 
+# Wind tests
+.\env_isaaclab\Scripts\python.exe -m simulation.isaac.scripts.diag_wind --config simulation/isaac/configs/isaac_env_single.yaml
+
+# Yaw tests
+.\env_isaaclab\Scripts\python.exe -m simulation.isaac.scripts.diag_yaw-issac --config simulation/isaac/configs/isaac_env_single.yaml
+
+
 # Validate
 .\env_isaaclab\Scripts\python.exe -m simulation.isaac.usd.drone_builder validate --usd simulation/isaac/usd/drone.usdc
+python -m simulation.isaac.scripts.validate_mass_props --usd simulation/isaac/usd/done.usdc --config simulation/configs/default_vehicle.yaml --tolerance 0.01
 
 # Launch Isaac Sim GUI
 .\env_isaaclab\Scripts\isaacsim.exe
