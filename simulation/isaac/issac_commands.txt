@@ -12,15 +12,18 @@
 .\env_isaaclab\Scripts\python.exe -m simulation.isaac.scripts.test_fins --config simulation/isaac/configs/isaac_env_single.yaml
 .\env_isaaclab\Scripts\python.exe -m simulation.isaac.scripts.diag_fin_wiggle --config simulation/isaac/configs/isaac_env_single.yaml
 .\env_isaaclab\Scripts\python.exe -m simulation.isaac.scripts.diag_fin_wiggle --config simulation/isaac/configs/isaac_env_128.yaml
+python -m simulation.isaac.scripts.diag_thrust_fin_wiggle --thrust 0.75 --max-deflection 0.1 --fixed-altitude
 
 # Thrust tests
 .\env_isaaclab\Scripts\python.exe -m simulation.isaac.scripts.diag_thrust_test --config simulation/isaac/configs/isaac_env_single.yaml
+.\env_isaaclab\Scripts\python.exe -m simulation.isaac.scripts.diag_thrust_test --config simulation/isaac/configs/isaac_env_128.yaml
 
 # Wind tests
 .\env_isaaclab\Scripts\python.exe -m simulation.isaac.scripts.diag_wind --config simulation/isaac/configs/isaac_env_single.yaml
+.\env_isaaclab\Scripts\python.exe -m simulation.isaac.scripts.diag_wind --config simulation/isaac/configs/isaac_env_128.yaml
 
 # Yaw tests
-.\env_isaaclab\Scripts\python.exe -m simulation.isaac.scripts.diag_yaw-issac --config simulation/isaac/configs/isaac_env_single.yaml
+.\env_isaaclab\Scripts\python.exe -m simulation.isaac.scripts.diag_yaw_isaac --config simulation/isaac/configs/isaac_env_single.yaml
 
 
 # Validate
@@ -30,3 +33,4 @@ python -m simulation.isaac.scripts.validate_mass_props --usd simulation/isaac/us
 # Launch Isaac Sim GUI
 .\env_isaaclab\Scripts\isaacsim.exe
 
+python -m simulation.isaac.scripts.diag_thrust_fin_wiggle --thrust 0.75 --max-deflection 0.1 --fixed-altitude --override-inertia 0.1 0.1 0.1 --hold-secs 1.0

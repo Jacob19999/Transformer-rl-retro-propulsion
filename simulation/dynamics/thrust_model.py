@@ -43,6 +43,8 @@ class ThrustModelConfig:
     I_fan: float  # kg*m^2, rotor MoI about spin axis
     rho_ref: float = 1.225  # kg/m^3
     T_max: float | None = None  # N, optional clamp (e.g., max_static_thrust)
+    k_torque: float = 0.0  # N·m/(rad/s)^2, steady-state anti-torque coefficient
+    anti_torque_enabled: bool = True  # gate for steady-state anti-torque in outputs()
 
     def __post_init__(self) -> None:
         if float(self.k_thrust) <= 0.0:
@@ -57,6 +59,8 @@ class ThrustModelConfig:
             raise ValueError(f"rho_ref must be > 0, got {self.rho_ref}.")
         if self.T_max is not None and float(self.T_max) <= 0.0:
             raise ValueError(f"T_max must be > 0 when provided, got {self.T_max}.")
+        if float(self.k_torque) < 0.0:
+            raise ValueError(f"k_torque must be >= 0, got {self.k_torque}.")
 
         object.__setattr__(self, "r_thrust", _as_vec3(self.r_thrust, name="r_thrust"))
 

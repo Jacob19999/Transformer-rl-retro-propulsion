@@ -33,6 +33,8 @@ vehicle:
     r_thrust: [0.0, 0.0, 0.0]
     r_duct: 0.05
     exhaust_velocity_max: 50.0
+    anti_torque:
+      enabled: true
 
   aero:
     Cd: 0.0
@@ -69,31 +71,33 @@ vehicle:
     V_exhaust_nominal: 50.0
     exhaust_velocity_ratio: true
 
+    # Fin layout: FRD body frame (+X=fwd/nose, +Y=right, +Z=down)
+    #   Fin_1=fwd (+X), Fin_2=aft (-X), Fin_3=left (-Y), Fin_4=right (+Y)
     fins_config:
       - name: "fin_1"
-        position: [0.0, 0.04, 0.0]
+        position: [0.04, 0.0, 0.0]    # FRD +X = nose/forward
         hinge_axis: [1.0, 0.0, 0.0]
         lift_direction: [1.0, 0.0, 0.0]
-        drag_direction: [0.0, 0.0, 1.0]
-        angular_offset_deg: 0
-      - name: "fin_2"
-        position: [0.0, -0.04, 0.0]
-        hinge_axis: [1.0, 0.0, 0.0]
-        lift_direction: [1.0, 0.0, 0.0]
-        drag_direction: [0.0, 0.0, 1.0]
-        angular_offset_deg: 180
-      - name: "fin_3"
-        position: [0.04, 0.0, 0.0]
-        hinge_axis: [0.0, 1.0, 0.0]
-        lift_direction: [0.0, 1.0, 0.0]
         drag_direction: [0.0, 0.0, 1.0]
         angular_offset_deg: 90
-      - name: "fin_4"
-        position: [-0.04, 0.0, 0.0]
+      - name: "fin_2"
+        position: [-0.04, 0.0, 0.0]   # FRD -X = aft
+        hinge_axis: [1.0, 0.0, 0.0]
+        lift_direction: [1.0, 0.0, 0.0]
+        drag_direction: [0.0, 0.0, 1.0]
+        angular_offset_deg: 270
+      - name: "fin_3"
+        position: [0.0, -0.04, 0.0]   # FRD -Y = left
         hinge_axis: [0.0, 1.0, 0.0]
         lift_direction: [0.0, 1.0, 0.0]
         drag_direction: [0.0, 0.0, 1.0]
-        angular_offset_deg: 270
+        angular_offset_deg: 180
+      - name: "fin_4"
+        position: [0.0, 0.04, 0.0]    # FRD +Y = right/starboard
+        hinge_axis: [0.0, 1.0, 0.0]
+        lift_direction: [0.0, 1.0, 0.0]
+        drag_direction: [0.0, 0.0, 1.0]
+        angular_offset_deg: 0
 
   _computed:
     total_mass: null

@@ -63,14 +63,54 @@ def build_episode_sequence(n_sweeps: int) -> tuple[list[np.ndarray], list[str]]:
             actions.append(np.zeros(5, dtype=np.float32))
             labels.append("settle")
 
-    # --- Phase 5: all fins full-min ---
+    # --- Phase 5: axis-aligned pairs (yaw, then pitch, then roll) ---
+
+    # Yaw: all four fins in opposing pairs
+    for v in sweep:
+        action = np.zeros(5, dtype=np.float32)
+        action[1] = float(+v)  # Fin_1 (right)
+        action[2] = float(-v)  # Fin_2 (left)
+        action[3] = float(+v)  # Fin_3 (forward)
+        action[4] = float(-v)  # Fin_4 (aft)
+        actions.append(action)
+        labels.append("Yaw sweep (all 4 fins)")
+
+    for _ in range(_STEPS_SETTLE):
+        actions.append(np.zeros(5, dtype=np.float32))
+        labels.append("settle")
+
+    # Pitch: forward + aft fins together
+    for v in sweep:
+        action = np.zeros(5, dtype=np.float32)
+        action[3] = float(+v)  # Fin_3 (forward)
+        action[4] = float(+v)  # Fin_4 (aft)
+        actions.append(action)
+        labels.append("Pitch sweep (Fin_3 & Fin_4)")
+
+    for _ in range(_STEPS_SETTLE):
+        actions.append(np.zeros(5, dtype=np.float32))
+        labels.append("settle")
+
+    # Roll: side fins together in same direction
+    for v in sweep:
+        action = np.zeros(5, dtype=np.float32)
+        action[1] = float(+v)  # Fin_1 (right)
+        action[2] = float(+v)  # Fin_2 (left)
+        actions.append(action)
+        labels.append("Roll sweep (Fin_1 & Fin_2)")
+
+    for _ in range(_STEPS_SETTLE):
+        actions.append(np.zeros(5, dtype=np.float32))
+        labels.append("settle")
+
+    # --- Phase 6: all fins full-min ---
     all_min = np.zeros(5, dtype=np.float32)
     all_min[1:] = -1.0
     for _ in range(_STEPS_HOLD):
         actions.append(all_min.copy())
         labels.append("All fins -1.0 (full min)")
 
-    # --- Phase 6: all fins full-max ---
+    # --- Phase 7: all fins full-max ---
     all_max = np.zeros(5, dtype=np.float32)
     all_max[1:] = +1.0
     for _ in range(_STEPS_HOLD):

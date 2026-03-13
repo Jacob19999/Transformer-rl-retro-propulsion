@@ -76,7 +76,7 @@ A researcher reruns the existing thrust-test liftoff scenario (from the mass-pro
 - **FR-005**: A diagnostic script MUST provide a `--mode constant` test where constant thrust is held and yaw rate is measured, and a `--mode ramp` test where thrust is ramped and the transient yaw spike is measured.
 - **FR-006**: The diagnostic script MUST accept command-line arguments for thrust magnitude, ramp duration, test duration, and YAML config path.
 - **FR-007**: The diagnostic script MUST output a structured log (yaw angle, yaw rate, thrust, anti-torque magnitude) at each simulation timestep for post-processing validation.
-- **FR-008**: The existing thrust-test liftoff diagnostic MUST be extended with an `--anti-torque` flag (default: enabled) so the yaw response during liftoff can be observed and compared against the disabled baseline.
+- **FR-008**: The `diag_reaction_torque` script MUST support a `--mode liftoff` test (normal gravity, ground start) with a `--disable-anti-torque` flag so the yaw response can be observed and compared against the no-torque baseline. `diag_thrust_test` is NOT modified and remains a pure thrust/altitude diagnostic.
 - **FR-009**: The custom Python simulation's `ThrustModel` (non-Isaac path) MUST also apply the same anti-torque and ramp-torque contributions to ensure consistency between the custom sim and Isaac Sim.
 - **FR-010**: A unit test MUST validate that the computed anti-torque value matches `k_Q × T` for a set of known thrust inputs without launching Isaac Sim.
 

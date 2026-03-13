@@ -15,8 +15,8 @@ Current intent:
 - Do not author or modify the USD.
 
 CLI examples:
-  python -m simulation.isaac.usd.drone_builder validate --usd simulation/isaac/usd/drone.usd
-  python -m simulation.isaac.usd.drone_builder info --usd simulation/isaac/usd/drone.usd
+  python -m simulation.isaac.usd.drone_builder validate --usd simulation/isaac/usd/drone_v2.usdc
+  python -m simulation.isaac.usd.drone_builder info --usd simulation/isaac/usd/drone_v2.usdc
 """
 
 from __future__ import annotations
@@ -167,13 +167,6 @@ def print_stage_info(stage) -> None:  # stage: Usd.Stage
         else:
             print(f"[drone_usd] /Drone/{fin_name} — no joint found")
 
-    # Legs (may be under Body or directly under Drone)
-    for lp in ("/Drone/Body/Legs", "/Drone/Legs"):
-        prim = stage.GetPrimAtPath(lp)
-        if prim and prim.IsValid():
-            print(f"[drone_usd] {lp} type={prim.GetTypeName()}")
-            break
-
 
 # ---------------------------------------------------------------------------
 # CLI (T010)
@@ -185,8 +178,8 @@ def _main() -> None:
     def _add_usd_arg(p: argparse.ArgumentParser) -> None:
         p.add_argument(
             "--usd",
-            default="simulation/isaac/usd/drone.usdc",
-            help="Path to drone USD (default: simulation/isaac/usd/drone.usdc)",
+            default="simulation/isaac/usd/drone_v2.usdc",
+            help="Path to drone USD (default: simulation/isaac/usd/drone_v2.usdc)",
         )
 
     p_validate = sub.add_parser("validate", help="Validate expected prim layout / schemas")

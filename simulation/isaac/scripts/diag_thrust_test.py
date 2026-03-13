@@ -25,9 +25,11 @@ from __future__ import annotations
 
 import argparse
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
@@ -78,14 +80,14 @@ def main() -> None:
     parser.add_argument(
         "--spawn-alt",
         type=float,
-        default=0.4,
-        help="Spawn altitude above ground in meters (default: 0.4)",
+        default=0.32,
+        help="Spawn altitude above ground in meters (default: 0.32 — legs near ground)",
     )
     parser.add_argument(
         "--episodes",
         type=int,
-        default=1,
-        help="Number of episodes to run (default: 1)",
+        default=100,
+        help="Number of episodes to run (default: 100)",
     )
     parser.add_argument(
         "--headless",
@@ -132,10 +134,26 @@ def _run_diagnostic(args) -> None:
     hover_norm = (_MASS * _GRAVITY) / _T_MAX
     print(f"Hover norm:  T_cmd ~ {hover_norm:.3f} (weight/T_max)")
     print(f"Expected a:  {(args.thrust * _T_MAX) / _MASS - _GRAVITY:.2f} m/s^2 (full thrust phase)")
+    print(f"Gyro precession: DISABLED (thrust isolation)")
     print(f"{'='*60}\n")
 
-    # Load env
-    env = EDFIsaacEnv(config_path=args.config)
+    # Load base config and force ground spawn (spawn_altitude_range: [0, 0])
+    with open(REPO_ROOT / args.config) as f:
+        cfg = yaml.safe_load(f)
+    cfg["spawn_altitude_range"] = [0.32, 0.32]
+    cfg["spawn_velocity_magnitude_range"] = [0.0, 0.0]
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".yaml", delete=False
+    ) as tmp:
+        yaml.dump(cfg, tmp)
+        tmp_config_path = tmp.name
+
+    env = EDFIsaacEnv(config_path=tmp_config_path)
+
+    # Disable gyro precession to isolate thrust dynamics
+    if hasattr(env, "_task"):
+        env._task._gyro_enabled = False
 
     dt = 1.0 / 120.0  # simulation timestep
     full_steps  = int(args.duration / dt)

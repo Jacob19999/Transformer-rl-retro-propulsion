@@ -70,8 +70,8 @@ def main() -> None:
         help="Test duration in seconds (default: 3.0)",
     )
     parser.add_argument(
-        "--episodes", type=int, default=1,
-        help="Number of episodes (default: 1)",
+        "--episodes", type=int, default=50,
+        help="Number of episodes (default: 50)",
     )
     args = parser.parse_args()
 

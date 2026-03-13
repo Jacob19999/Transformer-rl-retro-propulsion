@@ -147,7 +147,7 @@ vehicle:
       shape: "box"
       mass: 0.010              # kg (~9–12 g, Freewing 9 g servo)
       dimensions: [0.0235, 0.012, 0.027]  # m (23.5×12×27 mm)
-      position: [0, 0.060, 0.12]   # m, right fin servo
+      position: [0.060, 0, 0.12]   # m, forward/nose fin servo (FRD +X)
       orientation: [0, 0, 0]
       surface_area: 0.0023     # m²
       Cd_local: 0.0            # inside duct shroud
@@ -156,7 +156,7 @@ vehicle:
       shape: "box"
       mass: 0.010
       dimensions: [0.0235, 0.012, 0.027]
-      position: [0, -0.060, 0.12]  # m, left fin servo
+      position: [-0.060, 0, 0.12]  # m, aft fin servo (FRD -X)
       orientation: [0, 0, 0]
       surface_area: 0.0023
       Cd_local: 0.0
@@ -165,7 +165,7 @@ vehicle:
       shape: "box"
       mass: 0.010
       dimensions: [0.0235, 0.012, 0.027]
-      position: [0.060, 0, 0.12]   # m, forward fin servo
+      position: [0, -0.060, 0.12]  # m, left fin servo (FRD -Y)
       orientation: [0, 0, 0]
       surface_area: 0.0023
       Cd_local: 0.0
@@ -174,7 +174,7 @@ vehicle:
       shape: "box"
       mass: 0.010
       dimensions: [0.0235, 0.012, 0.027]
-      position: [-0.060, 0, 0.12]  # m, aft fin servo
+      position: [0, 0.060, 0.12]   # m, right fin servo (FRD +Y)
       orientation: [0, 0, 0]
       surface_area: 0.0023
       Cd_local: 0.0
@@ -221,6 +221,8 @@ vehicle:
     esc_type: "120A BLHeli_32"
     gyro_precession:
       enabled: true            # Toggle gyroscopic precession torque in Isaac Sim (on by default)
+    anti_torque:
+      enabled: true            # Toggle steady-state anti-torque and RPM-ramp yaw torque (on by default)
 
   # ─── Aerodynamic Properties (Combined Shape) ────────────────────
   aero:
@@ -280,35 +282,44 @@ vehicle:
     V_exhaust_nominal: 70              # m/s at full RPM
     exhaust_velocity_ratio: true       # V_exhaust scales linearly with ω_fan / ω_fan_max
 
-    # ── Per-Fin Configuration (body frame) ──
+    # ── Per-Fin Configuration (body frame: FRD, +X=fwd/nose, +Y=right, +Z=down) ──
+    # Fin layout confirmed from Isaac Sim 3D model top-down view:
+    #   Fin_1 = nose/forward  (FRD +X)   Fin_2 = aft        (FRD −X)
+    #   Fin_3 = left          (FRD −Y)   Fin_4 = right      (FRD +Y)
+    # Torque authority:
+    #   Fin_1+Fin_2 (fwd+aft): τ_y → PITCH   (hinge X, lift +X)
+    #   Fin_3+Fin_4 (left+right): τ_x → ROLL (hinge Y, lift +Y)
+    #   Yaw: anti_torque (EDF spin reaction) is primary yaw authority;
+    #        fin-based yaw couples are zero with this geometry.
+    # angular_offset_deg: azimuthal position, 0° = FRD +Y (starboard/right).
     fins_config:
-      - name: "fin_1_right"
-        position: [0, 0.055, 0.14]    # m, body frame (moved outward + aft for more torque)
-        hinge_axis: [1, 0, 0]         # deflection rotates about body x-axis
-        lift_direction: [1, 0, 0]     # lift acts in body x-direction
+      - name: "fin_1_fwd"
+        position: [0.055, 0, 0.14]    # m, FRD +X = nose/forward
+        hinge_axis: [1, 0, 0]         # deflection rotates about body x-axis (fwd)
+        lift_direction: [1, 0, 0]     # lift acts in body x-direction → τ_y (pitch)
         drag_direction: [0, 0, 1]     # drag opposes exhaust (body z)
-        angular_offset_deg: 0         # azimuthal position (0° = starboard)
+        angular_offset_deg: 90        # azimuthal position (90° = forward)
 
-      - name: "fin_2_left"
-        position: [0, -0.055, 0.14]
+      - name: "fin_2_aft"
+        position: [-0.055, 0, 0.14]   # m, FRD -X = aft
         hinge_axis: [1, 0, 0]
         lift_direction: [1, 0, 0]
         drag_direction: [0, 0, 1]
-        angular_offset_deg: 180
+        angular_offset_deg: 270       # azimuthal position (270° = aft)
 
-      - name: "fin_3_forward"
-        position: [0.055, 0, 0.14]
+      - name: "fin_3_left"
+        position: [0, -0.055, 0.14]   # m, FRD -Y = left
+        hinge_axis: [0, 1, 0]         # deflection rotates about body y-axis (right)
+        lift_direction: [0, 1, 0]     # lift acts in body y-direction → τ_x (roll)
+        drag_direction: [0, 0, 1]
+        angular_offset_deg: 180       # azimuthal position (180° = left/port)
+
+      - name: "fin_4_right"
+        position: [0, 0.055, 0.14]    # m, FRD +Y = right/starboard
         hinge_axis: [0, 1, 0]
         lift_direction: [0, 1, 0]
         drag_direction: [0, 0, 1]
-        angular_offset_deg: 90
-
-      - name: "fin_4_aft"
-        position: [-0.055, 0, 0.14]
-        hinge_axis: [0, 1, 0]
-        lift_direction: [0, 1, 0]
-        drag_direction: [0, 0, 1]
-        angular_offset_deg: 270
+        angular_offset_deg: 0         # azimuthal position (0° = starboard/right)
 
   # ─── Explicit Mass Properties ────────────────────────────────────
   # Primary source for Isaac Sim / IsaacLab.

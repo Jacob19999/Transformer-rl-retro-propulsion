@@ -24,4 +24,4 @@ domain_randomization_config_path: simulation/configs/domain_randomization.yaml
 reward_config_path: simulation/configs/reward.yaml
 
 # USD asset
-drone_usd_path: simulation/isaac/usd/drone.usdc
+drone_usd_path: simulation/isaac/usd/drone_v2.usdc

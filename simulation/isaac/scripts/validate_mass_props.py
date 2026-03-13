@@ -314,8 +314,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument(
         "--usd",
         type=Path,
-        default=_repo_path("simulation/isaac/usd/drone.usdc"),
-        help="Path to USDC scene (default: simulation/isaac/usd/drone.usdc)",
+        default=_repo_path("simulation/isaac/usd/drone_v2.usdc"),
+        help="Path to USDC scene (default: simulation/isaac/usd/drone_v2.usdc)",
     )
     parser.add_argument(
         "--config",
