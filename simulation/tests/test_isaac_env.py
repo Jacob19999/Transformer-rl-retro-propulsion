@@ -137,6 +137,50 @@ def test_gravity_fall(single_env):
 
 
 # ---------------------------------------------------------------------------
+# T023-d: Inverted hover thrust should still fall
+# ---------------------------------------------------------------------------
+@pytest.mark.isaac
+def test_inverted_hover_thrust_loses_altitude():
+    """Hover thrust on an upside-down vehicle must not hold altitude."""
+    env = EDFIsaacEnv(
+        config_path=_SINGLE_CFG,
+        seed=2,
+        disable_wind=True,
+        disable_gyro=True,
+        disable_anti_torque=True,
+    )
+    try:
+        env._task.cfg.spawn_altitude_min = 5.0
+        env._task.cfg.spawn_altitude_max = 5.0
+        env._task.cfg.spawn_vel_mag_min = 0.0
+        env._task.cfg.spawn_vel_mag_max = 0.0
+        env.set_reset_perturbation(roll_offset_rad=np.pi)
+        obs, _ = env.reset(seed=2)
+
+        hover_cmd = float(env._task._weight / _T_MAX)
+        action = np.zeros(5, dtype=np.float32)
+        action[0] = hover_cmd
+
+        initial_h = float(obs[16])
+        prev_h = initial_h
+        for step in range(30):
+            obs, _, term, trunc, _ = env.step(action)
+            h_agl = float(obs[16])
+            assert h_agl <= prev_h + 0.001, (
+                f"Step {step}: inverted hover-thrust increased altitude from {prev_h:.4f} to {h_agl:.4f}"
+            )
+            prev_h = h_agl
+            if term or trunc:
+                break
+
+        assert prev_h < initial_h - 0.1, (
+            f"Inverted hover thrust should lose altitude, got initial={initial_h:.4f} final={prev_h:.4f}"
+        )
+    finally:
+        env.close()
+
+
+# ---------------------------------------------------------------------------
 # T025: Fin deflection limits ±15°
 # ---------------------------------------------------------------------------
 @pytest.mark.isaac

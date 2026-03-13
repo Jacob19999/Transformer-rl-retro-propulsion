@@ -2,7 +2,7 @@
 # Safe default for RTX 5070 (12 GB VRAM): 256 envs.
 # Usage: python -m simulation.training.scripts.train_isaac_ppo --config simulation/isaac/configs/isaac_env_training.yaml
 
-num_envs: 256
+num_envs: 128
 episode_length_steps: 600          # 5 s at 1/120 s per step
 
 # Physics

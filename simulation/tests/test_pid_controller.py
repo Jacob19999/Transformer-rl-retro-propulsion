@@ -106,8 +106,10 @@ def test_reset_clears_integral_state() -> None:
 
 
 def test_get_action_with_debug_matches_get_action() -> None:
-    ctrl = PIDController(_base_cfg())
-    ctrl.reset()
+    ctrl_plain = PIDController(_base_cfg())
+    ctrl_plain.reset()
+    ctrl_debug = PIDController(_base_cfg())
+    ctrl_debug.reset()
 
     o = _obs(
         target_body=np.array([0.5, -0.25, 0.0]),
@@ -116,8 +118,8 @@ def test_get_action_with_debug_matches_get_action() -> None:
         omega=np.array([0.05, -0.02, 0.01]),
         h_agl=1.5,
     )
-    a_plain = ctrl.get_action(o)
-    a_dbg, dbg = ctrl.get_action_with_debug(o)
+    a_plain = ctrl_plain.get_action(o)
+    a_dbg, dbg = ctrl_debug.get_action_with_debug(o)
 
     np.testing.assert_allclose(a_plain, a_dbg, atol=1e-12)
     assert "alt_error" in dbg and "pitch_cmd" in dbg and "yaw_total" in dbg

@@ -18,16 +18,16 @@ Body frame: FRD (+X=fwd/nose, +Y=right, +Z=down)
   ωz = YAW   (rotation about +Z = down axis)
 
 Fin physical layout (confirmed from Isaac Sim 3D model top-down view):
-  Fin_1(fwd)    at FRD +X  →  hinge X, lift +X  →  τ_y → PITCH  (Fin_1+Fin_2)
-  Fin_2(aft)    at FRD −X  →  hinge X, lift +X  →  τ_y → PITCH  (Fin_1+Fin_2)
-  Fin_3(left)   at FRD −Y  →  hinge Y, lift +Y  →  τ_x → ROLL   (Fin_3+Fin_4)
-  Fin_4(right)  at FRD +Y  →  hinge Y, lift +Y  →  τ_x → ROLL   (Fin_3+Fin_4)
+  Fin_1(fwd)    at FRD +X  →  hinge X, pitch-dominant lift with small yaw cant
+  Fin_2(aft)    at FRD −X  →  hinge X, pitch-dominant lift with small yaw cant
+  Fin_3(left)   at FRD −Y  →  hinge Y, roll-dominant  lift with small yaw cant
+  Fin_4(right)  at FRD +Y  →  hinge Y, roll-dominant  lift with small yaw cant
 Note: YAML fins_config names (fin_1_right, fin_3_forward) are INCORRECT vs the 3D model.
 
 Expected axis responses:
   Yaw  (all 4 fins): ωz dominant  →  d1=∓v  d2=±v  d3=±v  d4=∓v
-  Roll (Fin_3+Fin_4): ωx dominant →  d1=0   d2=0   d3=±v  d4=±v
-  Pitch(Fin_1+Fin_2): ωy dominant →  d1=±v  d2=±v  d3=0   d4=0
+  Roll (Fin_3+Fin_4): ωx dominant with smaller ωy cross-couple
+  Pitch(Fin_1+Fin_2): ωy dominant with smaller ωx cross-couple
 
 Usage::
     python -m simulation.isaac.scripts.diag_thrust_fin_wiggle --fixed-altitude
@@ -196,13 +196,13 @@ def build_episode_sequence(
     and appends one final settle at the end.
 
     Fin commands per axis (FRD body frame):
-      Yaw  τ_z = 0.055·k·(−d1+d2+d3−d4)
+      Yaw  τ_z ∝ (−d1+d2+d3−d4)  from the fin cant
         Yaw-: d1=+v  d2=−v  d3=−v  d4=+v  →  τ_z < 0
         Yaw+: d1=−v  d2=+v  d3=+v  d4=−v  →  τ_z > 0
-      Roll  τ_x = −Z·k·(d3+d4)   [Fin_3(left)+Fin_4(right) at ±Y, lift +Y]
+      Roll  τ_x dominant, τ_y secondary   [Fin_3(left)+Fin_4(right)]
         Roll-: d3=+v  d4=+v  →  τ_x < 0
         Roll+: d3=−v  d4=−v  →  τ_x > 0
-      Pitch τ_y = +Z·k·(d1+d2)   [Fin_1(fwd)+Fin_2(aft) at ±X, lift +X]
+      Pitch τ_y dominant, τ_x secondary   [Fin_1(fwd)+Fin_2(aft)]
         Pitch-: d1=−v  d2=−v  →  τ_y < 0
         Pitch+: d1=+v  d2=+v  →  τ_y > 0
     """
@@ -229,11 +229,11 @@ def build_episode_sequence(
             labels.append("settle")
 
     axis_routine: list[tuple[str, list[float], list[float]]] = [
-        # τ_z = 0.055·k·(−d1+d2+d3−d4)
+        # Differential fin pattern excites the canted-fin yaw couple.
         ("Yaw",   [+v, -v, -v, +v], [-v, +v, +v, -v]),
-        # τ_x = −Z·k·(d3+d4) [Fin_3(left)+Fin_4(right)]
+        # Roll is dominant; a smaller pitch cross-couple is expected.
         ("Roll",  [0.0, 0.0, +v, +v], [0.0, 0.0, -v, -v]),
-        # τ_y = +Z·k·(d1+d2) [Fin_1(fwd)+Fin_2(aft)]
+        # Pitch is dominant; a smaller roll cross-couple is expected.
         ("Pitch", [-v, -v, 0.0, 0.0], [+v, +v, 0.0, 0.0]),
     ]
 

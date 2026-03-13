@@ -111,6 +111,23 @@ def _zup_to_frd_tensor(vec: torch.Tensor) -> torch.Tensor:
     return out
 
 
+def _gravity_world_to_controller_frd(
+    g_world: torch.Tensor, quat_w: torch.Tensor
+) -> torch.Tensor:
+    """Rotate world gravity into the controller's FRD observation convention.
+
+    Isaac's body-rate channels already follow the FRD convention used by the
+    shared PID controller, but the gravity-vector tilt projection coming from
+    world->body rotation is mirrored in roll/pitch relative to those rates.
+    Negating x/y keeps gravity-derived roll/pitch estimates aligned with
+    omega_x/omega_y without changing the aerodynamic/body-rate conventions.
+    """
+    g_b = rotate_world_to_body_wxyz(g_world, quat_w)
+    g_b[..., 0] = -g_b[..., 0]
+    g_b[..., 1] = -g_b[..., 1]
+    return g_b
+
+
 # ---------------------------------------------------------------------------
 # Scene configuration
 # ---------------------------------------------------------------------------
@@ -715,10 +732,18 @@ class EdfLandingTask(DirectRLEnv):
             )
             self.robot.set_joint_position_target(fin_target_deg, joint_ids=self._fin_joint_ids)
 
+        quat_w = self.robot.data.root_quat_w  # (N, 4) IsaacLab wxyz [qw, qx, qy, qz]
+
         # ----------------------------------------------------------------
-        # EDF thrust -- world +Z (up in Z-up world), is_global=True
+        # EDF thrust -- body-frame +Z rotated into world.
+        #
+        # The previous world-up implementation let inverted vehicles hold
+        # altitude. Here we make thrust follow the vehicle attitude by rotating
+        # the body-axis thrust vector into world before applying it.
         # ----------------------------------------------------------------
-        forces[:, 0, 2] = self.thrust_actual
+        thrust_b = torch.zeros((num_envs, 3), dtype=torch.float32, device=self.device)
+        thrust_b[:, 2] = self.thrust_actual
+        forces[:, 0, :] += rotate_body_to_world_wxyz(quat_w, thrust_b)
 
         # ----------------------------------------------------------------
         # Fin aerodynamic forces (NACA0012 in exhaust stream)
@@ -729,7 +754,6 @@ class EdfLandingTask(DirectRLEnv):
 
         # Fin anchor points are authored in the USD asset. Convert them to live
         # lever arms about the Isaac-computed body CoM each step.
-        quat_w = self.robot.data.root_quat_w  # (N, 4) IsaacLab wxyz [qw, qx, qy, qz]
         body_com_frd = _zup_to_frd_tensor(self.robot.data.body_com_pos_b[:, self._body_id, :])
 
         for i in range(4):
@@ -812,12 +836,7 @@ class EdfLandingTask(DirectRLEnv):
         # World gravity is -Z in Z-up frame
         g_world = torch.zeros((self.num_envs, 3), device=self.device)
         g_world[:, 2] = -1.0  # unit vector pointing down in Z-up
-        g_b = rotate_world_to_body_wxyz(g_world, quat_w)  # (num_envs, 3)
-        # Isaac's FRD/Z-up convention yields gravity-vector angle signs opposite
-        # to the body-rate conventions used by the shared PID controller. Flip
-        # g_b.x/g_b.y so pitch_est and roll_est stay consistent with omega_y/x.
-        g_b[:, 0] = -g_b[:, 0]
-        g_b[:, 1] = -g_b[:, 1]
+        g_b = _gravity_world_to_controller_frd(g_world, quat_w)  # (num_envs, 3)
 
         # --- Thrust-to-weight ratio ---
         twr = (self.thrust_actual / self._weight).unsqueeze(-1)  # (num_envs, 1)

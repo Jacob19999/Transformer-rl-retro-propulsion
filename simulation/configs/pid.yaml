@@ -11,11 +11,11 @@ pid:
       integral_limit: 1.0
       target_h_agl: 0.0
     lateral_x:
-      Kp: 0.1725
-      Kd: 0.2875
+      Kp: -0.1725
+      Kd: -0.2875
     lateral_y:
-      Kp: 0.195
-      Kd: 0.325
+      Kp: -0.195
+      Kd: -0.325
     max_tilt_cmd_deg: 15.0
   inner_loop:
     roll:
@@ -25,9 +25,9 @@ pid:
       Kp: 0.5
       Kd: 0.2
     gyro_ff: 0.02
-    yaw_Kd: 0.5
-    yaw_lp_hz: 0.0
-    max_yaw_frac: 0.4
+    yaw_Kd: 1.5
+    yaw_lp_hz: 1.5
+    max_yaw_frac: 0.5
   gain_schedule:
     enabled: true
     phases:

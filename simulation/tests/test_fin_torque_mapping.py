@@ -6,18 +6,17 @@ Physical body frame (FRD: +X=fwd/nose, +Y=right, +Z=down)
   Confirmed from Isaac Sim 3D model top-down view.
 
 Fin physical layout:
-  Fin_1 at FRD +X (fwd/nose), Fin_2 at FRD -X (aft)   → τ_y → PITCH
-  Fin_3 at FRD -Y (left),     Fin_4 at FRD +Y (right)  → τ_x → ROLL
+  Fin_1 at FRD +X (fwd/nose), Fin_2 at FRD -X (aft)   → pitch-dominant
+  Fin_3 at FRD -Y (left),     Fin_4 at FRD +Y (right) → roll-dominant
+
+The Isaac/default vehicle config now uses a 3 deg in-plane cant on all fin
+lift directions. This keeps pitch/roll as the dominant axes while making the
+differential fin pattern [-,+,+,-] produce a non-zero yaw torque.
 
 Torque formula (τ = Σ r_i × F_i, F_i = scale·d_i·lift_dir_i):
-  τ_y (pitch) = +Z·k·(d1+d2)   [Fin_1+Fin_2 at ±X, lift +X]
-  τ_x (roll)  = −Z·k·(d3+d4)   [Fin_3+Fin_4 at ±Y, lift +Y]
-  τ_z (yaw)   = 0               [no fin-based yaw with this geometry;
-                                  yaw authority comes from EDF anti-torque]
-
-Correct sweep patterns:
-  Roll : d3=+v, d4=+v, d1=0,  d2=0   → τ_x = −0.28kv, τ_y=τ_z=0
-  Pitch: d1=+v, d2=+v, d3=0,  d4=0   → τ_y = +0.28kv, τ_x=τ_z=0
+  Pitch sweep d1=d2=+v: τ_y > 0, τ_x > 0, τ_z = 0
+  Roll  sweep d3=d4=+v: τ_x < 0, τ_y > 0, τ_z = 0
+  Yaw   sweep [-,+,+,-]: τ_z > 0, τ_x = τ_y = 0
 
 Historical notes:
   Old wrong yaw sweep d1=−v,d2=+v,d3=+v,d4=−v → τ=0 with correct geometry.
@@ -28,6 +27,10 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+
+CANT_DEG = 3.0
+COS_CANT = float(np.cos(np.deg2rad(CANT_DEG)))
+SIN_CANT = float(np.sin(np.deg2rad(CANT_DEG)))
 
 
 def _load_fin_geometry() -> tuple[list[np.ndarray], list[np.ndarray]]:
@@ -40,10 +43,10 @@ def _load_fin_geometry() -> tuple[list[np.ndarray], list[np.ndarray]]:
         np.array([0.0, +0.055, 0.14], dtype=float),   # Fin_4(right)
     ]
     lift_dirs = [
-        np.array([1.0, 0.0, 0.0], dtype=float),
-        np.array([1.0, 0.0, 0.0], dtype=float),
-        np.array([0.0, 1.0, 0.0], dtype=float),
-        np.array([0.0, 1.0, 0.0], dtype=float),
+        np.array([COS_CANT, -SIN_CANT, 0.0], dtype=float),
+        np.array([COS_CANT, -SIN_CANT, 0.0], dtype=float),
+        np.array([SIN_CANT, COS_CANT, 0.0], dtype=float),
+        np.array([SIN_CANT, COS_CANT, 0.0], dtype=float),
     ]
     return positions, lift_dirs
 
@@ -78,8 +81,8 @@ class TestFinTorqueMapping:
       Fin_1(fwd) at FRD +X, Fin_2(aft) at FRD -X  →  hinge X, lift +X → τ_y (PITCH)
       Fin_3(left) at FRD -Y, Fin_4(right) at FRD +Y  →  hinge Y, lift +Y → τ_x (ROLL)
 
-    Note: τ_z = 0 for all fin combinations with this geometry.
-          Yaw authority comes from EDF anti-torque, not fins.
+    The 10 deg cant introduces a secondary fin-yaw couple while preserving
+    pitch/roll as the dominant axes.
     """
 
     SCALE = 1.0
@@ -87,8 +90,7 @@ class TestFinTorqueMapping:
 
     # ------------------------------------------------------------------
     # Roll sweep (Fin_3+Fin_4): d3=+v, d4=+v
-    # τ_x = −Z·k·(d3+d4) < 0  →  ROLL (rotation about nose/+X axis)
-    # τ_y = 0, τ_z = 0
+    # τ_x < 0 is dominant, τ_y > 0 is secondary, τ_z = 0.
     # ------------------------------------------------------------------
     def test_roll_sweep_produces_negative_roll(self, fin_geometry):
         """Fin_3+Fin_4 same positive deflection → τ_x < 0 (roll)."""
@@ -101,8 +103,9 @@ class TestFinTorqueMapping:
         pos, ld = fin_geometry
         v = self.DEFLECTION
         tau = _net_torque([0, 0, +v, +v], pos, ld, self.SCALE)
-        assert abs(tau[1]) < 1e-9, f"τ_y should be 0 for roll sweep, got {tau[1]:.2e}"
-        assert abs(tau[2]) < 1e-9, f"τ_z should be 0 for roll sweep, got {tau[2]:.2e}"
+        assert tau[1] > 0, f"Roll sweep should have positive pitch cross-couple, got {tau}"
+        assert abs(tau[2]) < 1e-9, f"τ_z should still be 0 for roll sweep, got {tau[2]:.2e}"
+        assert abs(tau[0]) > abs(tau[1]), f"Roll must remain dominant, got {tau}"
         assert tau[0] < 0
 
     def test_roll_antisymmetric(self, fin_geometry):
@@ -114,8 +117,7 @@ class TestFinTorqueMapping:
 
     # ------------------------------------------------------------------
     # Pitch sweep (Fin_1+Fin_2): d1=+v, d2=+v
-    # τ_y = +Z·k·(d1+d2) > 0  →  PITCH (rotation about right/+Y axis)
-    # τ_x = 0, τ_z = 0
+    # τ_y > 0 is dominant, τ_x > 0 is secondary, τ_z = 0.
     # ------------------------------------------------------------------
     def test_pitch_sweep_produces_positive_pitch(self, fin_geometry):
         """Fin_1+Fin_2 same positive deflection → τ_y > 0 (pitch)."""
@@ -128,8 +130,9 @@ class TestFinTorqueMapping:
         pos, ld = fin_geometry
         v = self.DEFLECTION
         tau = _net_torque([+v, +v, 0, 0], pos, ld, self.SCALE)
-        assert abs(tau[0]) < 1e-9, f"τ_x should be 0 for pitch sweep, got {tau[0]:.2e}"
-        assert abs(tau[2]) < 1e-9, f"τ_z should be 0 for pitch sweep, got {tau[2]:.2e}"
+        assert tau[0] > 0, f"Pitch sweep should have positive roll cross-couple, got {tau}"
+        assert abs(tau[2]) < 1e-9, f"τ_z should still be 0 for pitch sweep, got {tau[2]:.2e}"
+        assert abs(tau[1]) > abs(tau[0]), f"Pitch must remain dominant, got {tau}"
         assert tau[1] > 0
 
     def test_pitch_antisymmetric(self, fin_geometry):
@@ -140,66 +143,54 @@ class TestFinTorqueMapping:
         assert tau[1] < 0, f"Reverse pitch sweep must produce negative τ_y, got {tau}"
 
     # ------------------------------------------------------------------
-    # No fin-based yaw torque with FRD geometry
+    # Differential yaw pattern from canted fin lift vectors
     # ------------------------------------------------------------------
-    def test_no_fin_yaw_single_fins(self, fin_geometry):
-        """Each fin alone produces τ_z = 0."""
+    def test_yaw_pattern_produces_positive_yaw(self, fin_geometry):
         pos, ld = fin_geometry
-        for i, name in enumerate(["Fin_1", "Fin_2", "Fin_3", "Fin_4"]):
-            deflections = [0.0, 0.0, 0.0, 0.0]
-            deflections[i] = 1.0
-            tau = _net_torque(deflections, pos, ld, 1.0)
-            assert abs(tau[2]) < 1e-9, (
-                f"{name} alone must not produce yaw: τ_z={tau[2]:.2e}"
-            )
+        tau = _net_torque([-1.0, +1.0, +1.0, -1.0], pos, ld, 1.0)
+        assert tau[2] > 0, f"Yaw+ pattern must produce positive τ_z, got {tau}"
+        assert abs(tau[0]) < 1e-9, f"Yaw pattern should cancel τ_x, got {tau[0]:.2e}"
+        assert abs(tau[1]) < 1e-9, f"Yaw pattern should cancel τ_y, got {tau[1]:.2e}"
 
-    def test_no_fin_yaw_all_combinations(self, fin_geometry):
-        """Several fin combinations all give τ_z = 0."""
+    def test_yaw_pattern_produces_negative_yaw(self, fin_geometry):
         pos, ld = fin_geometry
-        combos = [
-            [1.0, 1.0, 1.0, 1.0],
-            [-1.0, 1.0, 1.0, -1.0],
-            [1.0, -1.0, -1.0, 1.0],
-            [1.0, -1.0, 1.0, -1.0],
-        ]
-        for combo in combos:
-            tau = _net_torque(combo, pos, ld, 1.0)
-            assert abs(tau[2]) < 1e-9, (
-                f"Combo {combo} must give τ_z=0, got {tau[2]:.2e}"
-            )
+        tau = _net_torque([+1.0, -1.0, -1.0, +1.0], pos, ld, 1.0)
+        assert tau[2] < 0, f"Yaw- pattern must produce negative τ_z, got {tau}"
+        assert abs(tau[0]) < 1e-9, f"Yaw pattern should cancel τ_x, got {tau[0]:.2e}"
+        assert abs(tau[1]) < 1e-9, f"Yaw pattern should cancel τ_y, got {tau[1]:.2e}"
 
     # ------------------------------------------------------------------
     # Axis orthogonality
     # ------------------------------------------------------------------
-    def test_pitch_does_not_affect_roll(self, fin_geometry):
+    def test_pitch_cross_couples_less_than_primary(self, fin_geometry):
         pos, ld = fin_geometry
         tau = _net_torque([1.0, 1.0, 0.0, 0.0], pos, ld, 1.0)
-        assert abs(tau[0]) < 1e-9, f"Pitch must not produce roll: τ_x={tau[0]:.2e}"
+        assert 0.0 < tau[0] < tau[1], f"Pitch cross-couple should stay smaller than primary, got {tau}"
 
-    def test_roll_does_not_affect_pitch(self, fin_geometry):
+    def test_roll_cross_couples_less_than_primary(self, fin_geometry):
         pos, ld = fin_geometry
         tau = _net_torque([0.0, 0.0, 1.0, 1.0], pos, ld, 1.0)
-        assert abs(tau[1]) < 1e-9, f"Roll must not produce pitch: τ_y={tau[1]:.2e}"
+        assert 0.0 < tau[1] < abs(tau[0]), f"Roll cross-couple should stay smaller than primary, got {tau}"
 
     # ------------------------------------------------------------------
     # Lever arm magnitude sanity
     # ------------------------------------------------------------------
     def test_pitch_lever_arm_fin1(self, fin_geometry):
-        """Fin_1 alone: τ_y = Z_hinge (r1[2]) × deflection."""
+        """Fin_1 alone: τ_y = Z_hinge * cos(cant) for unit deflection."""
         pos, ld = fin_geometry
         r1 = pos[0]
         tau = _net_torque([1.0, 0.0, 0.0, 0.0], pos, ld, 1.0)
-        expected = abs(r1[2])   # Z_hinge × scale=1 × deflection=1
+        expected = abs(r1[2]) * COS_CANT
         assert abs(abs(tau[1]) - expected) < 1e-6, (
             f"Pitch lever: expected τ_y={expected:.4f}, got {abs(tau[1]):.4f}"
         )
 
     def test_roll_lever_arm_fin3(self, fin_geometry):
-        """Fin_3 alone: |τ_x| = Z_hinge (r3[2]) × deflection."""
+        """Fin_3 alone: |τ_x| = Z_hinge * cos(cant) for unit deflection."""
         pos, ld = fin_geometry
         r3 = pos[2]
         tau = _net_torque([0.0, 0.0, 1.0, 0.0], pos, ld, 1.0)
-        expected = abs(r3[2])   # Z_hinge × scale=1 × deflection=1
+        expected = abs(r3[2]) * COS_CANT
         assert abs(abs(tau[0]) - expected) < 1e-6, (
             f"Roll lever: expected |τ_x|={expected:.4f}, got {abs(tau[0]):.4f}"
         )

@@ -865,7 +865,11 @@ def _evaluate_single_env(
                 impact_arr = np.asarray(info.get("impact_speed"), dtype=float).reshape(num_envs)
                 lateral_arr = np.asarray(info.get("lateral_dist"), dtype=float).reshape(num_envs)
                 h_agl_arr = np.asarray(info.get("h_agl"), dtype=float).reshape(num_envs)
-                speed_arr = np.asarray(info.get("speed"), dtype=float).reshape(num_envs)
+                # EDFIsaacEnv does not currently expose per-env speed in the info dict
+                # (it only reports impact_speed / lateral_dist / h_agl).  Derive the
+                # instantaneous speed for episode logging directly from the observation
+                # channel instead: obs_next[:, 17] is speed in the shared layout.
+                speed_arr = obs_next[:, 17]
 
                 cur_rewards += rew_arr
                 cur_steps += 1
@@ -1117,7 +1121,7 @@ def _signal_from_obs(loop_name: str, obs: np.ndarray, *, hover_altitude: float) 
 def _signal_min_amplitude(loop_name: str) -> float:
     if loop_name == "altitude":
         return 0.03
-    return math.radians(0.25)
+    return math.radians(0.5)
 
 
 def _signal_stats(signal: Iterable[float]) -> tuple[float, float, float]:
@@ -1143,7 +1147,7 @@ def _detect_sustained_oscillation(
     tail = sig[start:].copy()
     tail -= float(np.mean(tail))
     cross = np.where(tail[:-1] * tail[1:] <= 0.0)[0]
-    if cross.size < 4:
+    if cross.size < 6:
         return None, None, int(cross.size)
 
     half_periods = np.diff(cross).astype(float) * float(dt)

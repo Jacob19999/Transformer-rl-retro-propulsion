@@ -77,25 +77,25 @@ vehicle:
       - name: "fin_1"
         position: [0.04, 0.0, 0.0]    # FRD +X = nose/forward
         hinge_axis: [1.0, 0.0, 0.0]
-        lift_direction: [1.0, 0.0, 0.0]
+        lift_direction: [0.998630, -0.052336, 0.0]
         drag_direction: [0.0, 0.0, 1.0]
         angular_offset_deg: 90
       - name: "fin_2"
         position: [-0.04, 0.0, 0.0]   # FRD -X = aft
         hinge_axis: [1.0, 0.0, 0.0]
-        lift_direction: [1.0, 0.0, 0.0]
+        lift_direction: [0.998630, -0.052336, 0.0]
         drag_direction: [0.0, 0.0, 1.0]
         angular_offset_deg: 270
       - name: "fin_3"
         position: [0.0, -0.04, 0.0]   # FRD -Y = left
         hinge_axis: [0.0, 1.0, 0.0]
-        lift_direction: [0.0, 1.0, 0.0]
+        lift_direction: [0.052336, 0.998630, 0.0]
         drag_direction: [0.0, 0.0, 1.0]
         angular_offset_deg: 180
       - name: "fin_4"
         position: [0.0, 0.04, 0.0]    # FRD +Y = right/starboard
         hinge_axis: [0.0, 1.0, 0.0]
-        lift_direction: [0.0, 1.0, 0.0]
+        lift_direction: [0.052336, 0.998630, 0.0]
         drag_direction: [0.0, 0.0, 1.0]
         angular_offset_deg: 0
 
