@@ -381,6 +381,10 @@ def main() -> None:
             "[thrust_fin_wiggle] Body CoM from Isaac Sim:"
             f" {tuple(f'{x:.4f}' for x in env._task._body_com_default_frd.tolist())}"
         )
+        print(
+            "[thrust_fin_wiggle] Joint visual sign correction:"
+            f" {tuple(int(x) for x in env._task._fin_joint_visual_sign.tolist())}"
+        )
         print()
     except Exception as exc:
         print(f"[thrust_fin_wiggle] WARNING: could not print fin hinge configuration: {exc}")

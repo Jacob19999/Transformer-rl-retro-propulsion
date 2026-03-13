@@ -273,6 +273,14 @@ class EdfLandingTask(DirectRLEnv):
             [list(s.lift_direction) for s in fin_specs],
             dtype=torch.float32, device=self.device,
         )  # (4, 3)
+        # Front/aft fin joints are mounted with the opposite positive rotation
+        # sign relative to the control/aero convention. Keep the force model as-is
+        # and only flip the rendered/actuated joint targets for those fins.
+        self._fin_joint_visual_sign = torch.tensor(
+            [-1.0, -1.0, 1.0, 1.0],
+            dtype=torch.float32,
+            device=self.device,
+        )
 
         # Vehicle mass, CoM, and fin anchors come from the live Isaac asset.
         self._body_id = self._resolve_single_body_id("Body")
@@ -288,6 +296,10 @@ class EdfLandingTask(DirectRLEnv):
             "[EdfLandingTask] WARNING: ignoring YAML fin positions and explicit CoM/inertia. "
             f"Using Isaac Sim asset data instead: total_mass={self._mass:.3f} kg, "
             f"body_com_frd={tuple(float(x) for x in self._body_com_default_frd.tolist())}"
+        )
+        print(
+            "[EdfLandingTask] Joint visual sign correction: "
+            "Fin_1=-1, Fin_2=-1, Fin_3=+1, Fin_4=+1"
         )
 
         # T020: Wind model -- instantiate if isaac_wind.enabled: true in environment config
@@ -579,7 +591,11 @@ class EdfLandingTask(DirectRLEnv):
                 print("[EdfLandingTask] WARNING: Could not find 4 fin joints! Fins will not move.")
 
         if self._fin_joint_ids:
-            fin_target_deg = self.fin_deflections_actual * (180.0 / math.pi)
+            fin_target_deg = (
+                self.fin_deflections_actual
+                * self._fin_joint_visual_sign.unsqueeze(0)
+                * (180.0 / math.pi)
+            )
             self.robot.set_joint_position_target(fin_target_deg, joint_ids=self._fin_joint_ids)
 
         # ----------------------------------------------------------------
