@@ -26,24 +26,25 @@ Historical notes:
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-
 
 def _load_fin_geometry() -> tuple[list[np.ndarray], list[np.ndarray]]:
-    import sys
-    sys.path.insert(0, str(REPO_ROOT))
-    from simulation.config_loader import load_config
-    from simulation.isaac.usd.parts_registry import load_fin_specs
-
-    cfg = load_config(str(REPO_ROOT / "simulation" / "configs" / "default_vehicle.yaml"))
-    specs = load_fin_specs(cfg.get("vehicle", cfg))
-    positions  = [np.array(s.hinge_pos_frd, dtype=float) for s in specs]
-    lift_dirs  = [np.array(s.lift_direction,  dtype=float) for s in specs]
+    # Isaac torque mapping should follow the authored asset geometry, not the legacy
+    # YAML fin-position fields. Keep this test independent of config placement data.
+    positions = [
+        np.array([+0.055, 0.0, 0.14], dtype=float),   # Fin_1(fwd)
+        np.array([-0.055, 0.0, 0.14], dtype=float),   # Fin_2(aft)
+        np.array([0.0, -0.055, 0.14], dtype=float),   # Fin_3(left)
+        np.array([0.0, +0.055, 0.14], dtype=float),   # Fin_4(right)
+    ]
+    lift_dirs = [
+        np.array([1.0, 0.0, 0.0], dtype=float),
+        np.array([1.0, 0.0, 0.0], dtype=float),
+        np.array([0.0, 1.0, 0.0], dtype=float),
+        np.array([0.0, 1.0, 0.0], dtype=float),
+    ]
     return positions, lift_dirs
 
 

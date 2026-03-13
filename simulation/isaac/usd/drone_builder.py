@@ -15,8 +15,8 @@ Current intent:
 - Do not author or modify the USD.
 
 CLI examples:
-  python -m simulation.isaac.usd.drone_builder validate --usd simulation/isaac/usd/drone_v2.usdc
-  python -m simulation.isaac.usd.drone_builder info --usd simulation/isaac/usd/drone_v2.usdc
+  python -m simulation.isaac.usd.drone_builder validate --usd simulation/isaac/usd/drone_v2_physics.usdc
+  python -m simulation.isaac.usd.drone_builder info --usd simulation/isaac/usd/drone_v2_physics.usdc
 """
 
 from __future__ import annotations
@@ -178,8 +178,8 @@ def _main() -> None:
     def _add_usd_arg(p: argparse.ArgumentParser) -> None:
         p.add_argument(
             "--usd",
-            default="simulation/isaac/usd/drone_v2.usdc",
-            help="Path to drone USD (default: simulation/isaac/usd/drone_v2.usdc)",
+            default="simulation/isaac/usd/drone_v2_physics.usdc",
+            help="Path to drone USD (default: simulation/isaac/usd/drone_v2_physics.usdc)",
         )
 
     p_validate = sub.add_parser("validate", help="Validate expected prim layout / schemas")

@@ -74,19 +74,21 @@ Set via: **Edit → Stage → Up Axis / Meters Per Unit**
 
 ### MassAPI
 
-Values sourced from `simulation/configs/default_vehicle.yaml → mass_properties`.
+Author total mass on `/Drone/Body`, then let Isaac Sim / PhysX compute CoM and
+inertia from the collider geometry.
 
 
-| Property              | Value (baseline)                  |
-| --------------------- | --------------------------------- |
-| Mass                  | 3.13 kg                           |
-| Center of mass (Z-up) | (0.0045, −0.0008, −0.0046) m      |
-| Diagonal inertia      | (0.01358, 0.01549, 0.00480) kg·m² |
-| Principal axes        | identity quaternion (0, 0, 0, 1)  |
+| Property         | Value (baseline) |
+| ---------------- | ---------------- |
+| Mass             | 3.13 kg          |
+| Center of mass   | leave unset      |
+| Diagonal inertia | leave unset      |
+| Principal axes   | leave unset      |
 
 
-> **CoM frame note:** YAML stores CoM in FRD body frame `[x, y, z]`.
-> USD uses Z-up: `x_zup = x_frd`, `y_zup = -y_frd`, `z_zup = -z_frd`.
+> The CAD/Blender mesh and convex-decomposition colliders are now the source of
+> truth for mass distribution. Legacy YAML CoM/inertia values are ignored by the
+> Isaac pipeline.
 
 **GUI:** Select `/Drone/Body` → **Add → Physics → Mass**
 
@@ -145,15 +147,11 @@ Per-joint settings:
 | Local pos 1        | (0, 0, 0)                    | (0, 0, 0)                    |
 
 
-**Fin hinge positions — FRD → Z-up converted** (from `fins.fins_config` in YAML):
+**Fin hinge positions**
 
-
-| Fin   | Joint prim path            | FRD position (m)  | Z-up local pos 0 (m) |
-| ----- | -------------------------- | ----------------- | -------------------- |
-| Fin_1 | `/Drone/Fin_1/Fin_1_Joint` | (0, 0.055, 0.14)  | (0, −0.055, −0.14)   |
-| Fin_2 | `/Drone/Fin_2/Fin_2_Joint` | (0, −0.055, 0.14) | (0, 0.055, −0.14)    |
-| Fin_3 | `/Drone/Fin_3/Fin_3_Joint` | (0.055, 0, 0.14)  | (0.055, 0, −0.14)    |
-| Fin_4 | `/Drone/Fin_4/Fin_4_Joint` | (−0.055, 0, 0.14) | (−0.055, 0, −0.14)   |
+Use the authored fin prim transforms as the source of truth. `postprocess_usd.py`
+reads each fin origin relative to `/Drone/Body` and writes that value into the
+joint `localPos0`. Legacy YAML fin positions are ignored.
 
 
 **GUI:** Select fin prim → **Add → Physics → Joint → Revolute Joint**,
@@ -199,7 +197,10 @@ python -m simulation.isaac.usd.postprocess_usd \
     --config simulation/configs/default_vehicle.yaml
 ```
 
-Then validate:
+`validate_mass_props.py` is a legacy YAML-vs-USD comparison tool and is no longer
+authoritative when PhysX computes CoM/inertia from colliders.
+
+Legacy validation command:
 
 ```bash
 python -m simulation.isaac.scripts.validate_mass_props \

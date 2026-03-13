@@ -46,9 +46,6 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
-from simulation.config_loader import load_config  # noqa: E402
-from simulation.isaac.usd.parts_registry import load_fin_specs  # noqa: E402
-
 # SimulationApp MUST be created before any isaaclab.sim / carb imports
 from isaacsim import SimulationApp  # noqa: E402
 
@@ -372,20 +369,18 @@ def main() -> None:
     # Print fin geometry / hinge axes and body-frame convention
     # ------------------------------------------------------------------
     try:
-        vehicle_cfg = load_config(env._task.cfg.vehicle_config_path)
-        vehicle_data = vehicle_cfg.get("vehicle", vehicle_cfg)
-        fin_specs = load_fin_specs(vehicle_data)
-
         print("\n[thrust_fin_wiggle] Body frame: Y-forward (+X=right, +Y=fwd/nose, +Z=up/EDF)")
         print("[thrust_fin_wiggle] Axis semantics: ωx=ROLL  ωy=PITCH  ωz=YAW")
-        print("[thrust_fin_wiggle] Fin hinge configuration from vehicle config:")
-        for i, spec in enumerate(fin_specs, start=1):
+        print("[thrust_fin_wiggle] Fin hinge configuration from Isaac Sim asset:")
+        for i, pos in enumerate(env._task._fin_anchor_pos_frd.tolist(), start=1):
             print(
-                f"  Fin_{i}: name={spec.prim_name}  "
-                f"hinge_axis={spec.hinge_axis}  "
-                f"hinge_pos_frd={tuple(f'{x:.4f}' for x in spec.hinge_pos_frd)}  "
-                f"lift_dir_frd={tuple(spec.lift_direction)}"
+                f"  Fin_{i}: hinge_pos_frd={tuple(f'{x:.4f}' for x in pos)}  "
+                f"lift_dir_frd={tuple(float(x) for x in env._task._fin_lift[i - 1].tolist())}"
             )
+        print(
+            "[thrust_fin_wiggle] Body CoM from Isaac Sim:"
+            f" {tuple(f'{x:.4f}' for x in env._task._body_com_default_frd.tolist())}"
+        )
         print()
     except Exception as exc:
         print(f"[thrust_fin_wiggle] WARNING: could not print fin hinge configuration: {exc}")

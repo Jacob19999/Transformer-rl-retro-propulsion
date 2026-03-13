@@ -79,7 +79,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from simulation.config_loader import load_config        # noqa: E402
 from simulation.training.reward import RewardConfig, RewardFunction  # noqa: E402
-from simulation.isaac.usd.parts_registry import load_explicit_mass_props, load_fin_specs  # noqa: E402
+from simulation.isaac.usd.parts_registry import BODY_PRIM, DRONE_ROOT, load_fin_specs, zup_to_frd  # noqa: E402
 from simulation.isaac.wind.isaac_wind_model import IsaacWindModel  # noqa: E402
 from simulation.isaac.quaternion_isaac import (  # noqa: E402
     rotate_body_to_world_wxyz,
@@ -103,6 +103,14 @@ _FIN_AREA    = 0.003575   # m^2 per fin, chord x span
 _GRAVITY     = 9.81       # m/s^2
 
 
+def _zup_to_frd_tensor(vec: torch.Tensor) -> torch.Tensor:
+    """Convert Z-up vectors to FRD vectors while preserving tensor shape."""
+    out = vec.clone()
+    out[..., 1] = -out[..., 1]
+    out[..., 2] = -out[..., 2]
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Scene configuration
 # ---------------------------------------------------------------------------
@@ -122,7 +130,7 @@ class EdfSceneCfg(InteractiveSceneCfg):
     robot: ArticulationCfg = ArticulationCfg(
         prim_path="{ENV_REGEX_NS}/Drone",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=str(REPO_ROOT / "simulation" / "isaac" / "usd" / "drone_v2.usdc"),
+            usd_path=str(REPO_ROOT / "simulation" / "isaac" / "usd" / "drone_v2_physics.usdc"),
             # No rigid_props / articulation_props / collision_props -- preserve USD as-is
         ),
         init_state=ArticulationCfg.InitialStateCfg(
@@ -255,25 +263,32 @@ class EdfLandingTask(DirectRLEnv):
         # Max steps per episode
         self._max_steps = int(cfg.episode_length_s / cfg.sim.dt)
 
-        # Load vehicle config (fin geometry + mass properties from YAML)
+        # Load vehicle config (lift directions + rotor properties only)
         vehicle_cfg  = load_config(cfg.vehicle_config_path)
         vehicle_data = vehicle_cfg.get("vehicle", vehicle_cfg)
 
-        # Fin hinge positions and lift directions from YAML (single source of truth)
+        # Lift directions remain in config for now; fin anchor positions come from the USD asset.
         fin_specs = load_fin_specs(vehicle_data)
-        self._fin_pos = torch.tensor(
-            [list(s.hinge_pos_frd) for s in fin_specs],
-            dtype=torch.float32, device=self.device,
-        )  # (4, 3)
         self._fin_lift = torch.tensor(
             [list(s.lift_direction) for s in fin_specs],
             dtype=torch.float32, device=self.device,
         )  # (4, 3)
 
-        # Vehicle mass (for twr obs) -- from explicit config, no primitive aggregation
-        mp = load_explicit_mass_props(vehicle_data)
-        self._mass = float(mp.total_mass)
+        # Vehicle mass, CoM, and fin anchors come from the live Isaac asset.
+        self._body_id = self._resolve_single_body_id("Body")
+        self._fin_body_ids = self._resolve_body_ids([f"Fin_{i}" for i in range(1, 5)])
+        self._fin_anchor_pos_frd = self._read_fin_anchor_positions_from_usd(
+            [f"Fin_{i}" for i in range(1, 5)]
+        )
+        self._mass = float(self.robot.data.default_mass[0].sum().item())
         self._weight = self._mass * _GRAVITY
+        self._body_com_default_frd = _zup_to_frd_tensor(self.robot.data.body_com_pos_b[0, self._body_id, :])
+        self._body_inertia_default = self.robot.data.default_inertia[0, self._body_id, :].reshape(3, 3).clone()
+        print(
+            "[EdfLandingTask] WARNING: ignoring YAML fin positions and explicit CoM/inertia. "
+            f"Using Isaac Sim asset data instead: total_mass={self._mass:.3f} kg, "
+            f"body_com_frd={tuple(float(x) for x in self._body_com_default_frd.tolist())}"
+        )
 
         # T020: Wind model -- instantiate if isaac_wind.enabled: true in environment config
         env_cfg_raw  = load_config(cfg.environment_config_path)
@@ -298,6 +313,53 @@ class EdfLandingTask(DirectRLEnv):
         self._prev_action = torch.zeros(
             (self.num_envs, 5), dtype=torch.float32, device=self.device
         )
+
+    def _resolve_single_body_id(self, body_name: str) -> int:
+        """Resolve a single articulation body by name."""
+        body_ids, body_names = self.robot.find_bodies([body_name], preserve_order=True)
+        if len(body_ids) != 1:
+            raise RuntimeError(
+                f"Expected exactly one body named {body_name!r}, found {body_names!r}."
+            )
+        return int(body_ids[0])
+
+    def _resolve_body_ids(self, body_names: list[str]) -> list[int]:
+        """Resolve articulation body ids in the provided order."""
+        body_ids, resolved_names = self.robot.find_bodies(body_names, preserve_order=True)
+        if len(body_ids) != len(body_names):
+            raise RuntimeError(
+                f"Expected bodies {body_names!r}, found {resolved_names!r}."
+            )
+        return [int(idx) for idx in body_ids]
+
+    def _read_fin_anchor_positions_from_usd(self, fin_names: list[str]) -> torch.Tensor:
+        """Read fin-link origins from the source USD relative to `/Drone/Body`, in FRD."""
+        from pxr import Gf, Usd, UsdGeom
+
+        usd_path = Path(self.cfg.scene.robot.spawn.usd_path)
+        stage = Usd.Stage.Open(str(usd_path))
+        if stage is None:
+            raise RuntimeError(f"Failed to open drone USD: {usd_path}")
+
+        body_prim = stage.GetPrimAtPath(BODY_PRIM)
+        if not body_prim.IsValid():
+            raise RuntimeError(f"Missing body prim in USD: {BODY_PRIM}")
+
+        body_xf = UsdGeom.Xformable(body_prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+        fin_positions_frd: list[list[float]] = []
+        for fin_name in fin_names:
+            fin_path = f"{DRONE_ROOT}/{fin_name}"
+            fin_prim = stage.GetPrimAtPath(fin_path)
+            if not fin_prim.IsValid():
+                raise RuntimeError(f"Missing fin prim in USD: {fin_path}")
+            fin_xf = UsdGeom.Xformable(fin_prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+            rel = body_xf.GetInverse() * fin_xf
+            rel_xf = Gf.Transform()
+            rel_xf.SetMatrix(rel)
+            pos_zup = rel_xf.GetTranslation()
+            fin_positions_frd.append(list(zup_to_frd(float(pos_zup[0]), float(pos_zup[1]), float(pos_zup[2]))))
+
+        return torch.tensor(fin_positions_frd, dtype=torch.float32, device=self.device)
 
     # ------------------------------------------------------------------
     # T014: Scene setup
@@ -532,10 +594,10 @@ class EdfLandingTask(DirectRLEnv):
         V_ex         = omega_ratio * _V_EXHAUST
         dyn_pressure = 0.5 * 1.225 * V_ex.pow(2)  # sea-level rho
 
-        # Fin geometry is defined in body FRD frame (hinge_pos_frd, lift_direction).
-        # Rotate these vectors into world frame each step so that forces/torques are
-        # applied correctly when the vehicle is tilted.
+        # Fin anchor points are authored in the USD asset. Convert them to live
+        # lever arms about the Isaac-computed body CoM each step.
         quat_w = self.robot.data.root_quat_w  # (N, 4) IsaacLab wxyz [qw, qx, qy, qz]
+        body_com_frd = _zup_to_frd_tensor(self.robot.data.body_com_pos_b[:, self._body_id, :])
 
         for i in range(4):
             delta_i = self.fin_deflections_actual[:, i]                  # (N,)
@@ -543,7 +605,8 @@ class EdfLandingTask(DirectRLEnv):
 
             # Broadcast per-fin body-frame vectors to (N, 3)
             lift_dir_b = self._fin_lift[i].unsqueeze(0).expand(num_envs, -1)  # (N, 3)
-            r_b        = self._fin_pos[i].unsqueeze(0).expand(num_envs, -1)   # (N, 3)
+            anchor_b   = self._fin_anchor_pos_frd[i].unsqueeze(0).expand(num_envs, -1)
+            r_b        = anchor_b - body_com_frd
 
             # Rotate into world (Z-up) frame
             lift_dir_w = rotate_body_to_world_wxyz(quat_w, lift_dir_b)  # (N, 3)
@@ -572,7 +635,7 @@ class EdfLandingTask(DirectRLEnv):
             F_wind      = self._wind_model.compute_drag_force(wind_vec, body_vel_w)
             forces[:, 0, :] += F_wind
 
-        self.robot.set_external_force_and_torque(forces, torques, body_ids=[0], is_global=True)
+        self.robot.set_external_force_and_torque(forces, torques, body_ids=[self._body_id], is_global=True)
         self.robot.write_data_to_sim()
 
     # ------------------------------------------------------------------

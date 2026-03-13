@@ -4,11 +4,12 @@ postprocess_usd.py — Post-process a Blender-exported USD to add IsaacLab physi
 Workflow:
   1. Model the drone in Blender with the required part names (see BLENDER_EXPORT_GUIDE.md)
   2. Export as USD from Blender (Z-up axis, unit = meters)
-  3. Run this script — it adds ArticulationRootAPI, RigidBodyAPI, MassAPI,
-     RevoluteJoint, and DriveAPI using parameters from default_vehicle.yaml.
+    3. Run this script — it adds ArticulationRootAPI, RigidBodyAPI, MassAPI,
+        RevoluteJoint, and DriveAPI. Fin hinge positions come from the authored
+        USD transforms, and Isaac Sim computes CoM/inertia from the colliders.
 
 This replaces the geometry-authoring path in drone_builder.py: geometry comes
-from Blender, physics comes from this script + the YAML config.
+from Blender, while this script adds the physics APIs needed by Isaac Sim.
 
 CLI:
   # Add physics and write final drone.usd
@@ -45,17 +46,14 @@ from simulation.config_loader import load_config                       # noqa: E
 from simulation.isaac.usd.parts_registry import (                      # noqa: E402
     DRONE_ROOT,
     BODY_PRIM,
-    expected_fin_prim_paths,
+    BODY_PARTS_MVP,
     expected_mvp_prim_paths,
-    load_explicit_mass_props,
     load_fin_specs,
-    frd_to_zup,
     FinSpec,
 )
 
 _DRIVE_STIFFNESS = 20.0
 _DRIVE_DAMPING   = 1.0
-
 def _bake_nonuniform_scale_into_mesh(prim: Usd.Prim) -> None:
     """Bake prim's *local* non-uniform scale into mesh points, then set scale to 1.
 
@@ -120,58 +118,6 @@ def _bake_nonuniform_scale_into_mesh(prim: Usd.Prim) -> None:
         pass
 
 
-def _ensure_legs_under_body(stage: Usd.Stage) -> None:
-    """Ensure legs follow the simulated base link.
-
-    With /Drone as an articulation-root Xform (not a rigid body) and /Drone/Body
-    as the base rigid link, purely-visual children under /Drone will not follow
-    physics motion. To avoid fragile USD namespace editing (which varies across
-    USD builds and can break with composed references), we instead:
-
-    - apply RigidBodyAPI to /Drone/Legs
-    - create a FixedJoint from /Drone/Body to /Drone/Legs
-
-    This makes legs a rigid link that follows the base link deterministically.
-    """
-    legs_prim = stage.GetPrimAtPath(LEGS_PRIM)
-    if not legs_prim.IsValid():
-        return
-
-    # Remove problematic non-uniform scale on legs rigid link.
-    _bake_nonuniform_scale_into_mesh(legs_prim)
-
-    # Ensure legs are a rigid body link.
-    UsdPhysics.RigidBodyAPI.Apply(legs_prim)
-
-    # Create a fixed joint tying Body (base link) to Legs.
-    joint_path = f"{DRONE_ROOT}/Legs_FixedJoint"
-    joint = UsdPhysics.FixedJoint.Define(stage, joint_path)
-    joint.GetBody0Rel().SetTargets([Sdf.Path(BODY_PRIM)])
-    joint.GetBody1Rel().SetTargets([Sdf.Path(LEGS_PRIM)])
-
-    # Set joint anchors so no snap/rotation occurs: compute Legs pose in Body frame.
-    body_prim = stage.GetPrimAtPath(BODY_PRIM)
-    try:
-        body_xf = UsdGeom.Xformable(body_prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
-        legs_xf = UsdGeom.Xformable(legs_prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
-        rel = body_xf.GetInverse() * legs_xf
-        # Decompose with Gf.Transform to remove scale/shear from the joint frame.
-        rel_xf = Gf.Transform()
-        rel_xf.SetMatrix(rel)
-        t = rel_xf.GetTranslation()
-        quatd = rel_xf.GetRotation().GetQuat()  # (real, imag)
-        qw = float(quatd.GetReal())
-        qx, qy, qz = (float(quatd.GetImaginary()[0]), float(quatd.GetImaginary()[1]), float(quatd.GetImaginary()[2]))
-        joint.GetLocalPos0Attr().Set(Gf.Vec3f(float(t[0]), float(t[1]), float(t[2])))
-        joint.GetLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
-        joint.GetLocalRot0Attr().Set(Gf.Quatf(qw, Gf.Vec3f(qx, qy, qz)))
-        joint.GetLocalRot1Attr().Set(Gf.Quatf(1.0, Gf.Vec3f(0.0, 0.0, 0.0)))
-    except Exception as exc:
-        print(f"[postprocess_usd] WARNING: Could not compute fixed-joint anchors for legs: {exc}")
-
-    print(f"[postprocess_usd] Legs fixed to Body via {joint_path}")
-
-
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
@@ -204,26 +150,71 @@ def _ensure_stage_metadata(stage: Usd.Stage) -> None:
 # ---------------------------------------------------------------------------
 # Physics API authoring
 # ---------------------------------------------------------------------------
-def _add_root_physics(stage: Usd.Stage, mass_props) -> None:
-    """Apply ArticulationRootAPI to /Drone and RigidBodyAPI + MassAPI to /Drone/Body.
+def _warn_ignored_legacy_config(vehicle_cfg: dict) -> None:
+    """Warn when legacy YAML geometry or inertia fields are present but ignored."""
+    ignored_fields: list[str] = []
 
-    Args:
-        mass_props: ExplicitMassProps from parts_registry.
-    """
+    mass_props_cfg = vehicle_cfg.get("mass_properties", {})
+    if mass_props_cfg.get("center_of_mass") is not None:
+        ignored_fields.append("vehicle.mass_properties.center_of_mass")
+    if mass_props_cfg.get("inertia_tensor") is not None:
+        ignored_fields.append("vehicle.mass_properties.inertia_tensor")
+
+    fins_cfg = vehicle_cfg.get("fins", {}).get("fins_config", [])
+    if any(fin.get("position") is not None for fin in fins_cfg):
+        ignored_fields.append("vehicle.fins.fins_config[*].position")
+
+    if ignored_fields:
+        joined = ", ".join(ignored_fields)
+        print(
+            "[postprocess_usd] WARNING: ignoring legacy YAML geometry fields: "
+            f"{joined}. Fin joints use authored USD transforms, and Isaac Sim/PhysX "
+            "will compute CoM/inertia from the colliders."
+        )
+
+
+def _load_total_vehicle_mass(vehicle_cfg: dict) -> float:
+    """Load the total vehicle mass from the legacy vehicle config."""
+    mass_props_cfg = vehicle_cfg.get("mass_properties", {})
+    if "total_mass" not in mass_props_cfg:
+        raise KeyError(
+            "vehicle.mass_properties.total_mass is required so the USD body mass can be authored."
+        )
+    return float(mass_props_cfg["total_mass"])
+
+
+def _compute_body_mass(total_vehicle_mass: float, fin_mass: float, num_fins: int) -> float:
+    """Split total vehicle mass into root-body mass plus articulated fin masses."""
+    body_mass = total_vehicle_mass - num_fins * fin_mass
+    if body_mass <= 0.0:
+        print(
+            "[postprocess_usd] WARNING: fin masses exceed total vehicle mass; "
+            "using total mass directly on /Drone/Body."
+        )
+        return total_vehicle_mass
+    return body_mass
+
+
+def _clear_authored_mass_distribution(mass_api: UsdPhysics.MassAPI) -> None:
+    """Remove authored CoM/inertia so Isaac Sim computes them from colliders."""
+    for attr in (
+        mass_api.GetCenterOfMassAttr(),
+        mass_api.GetDiagonalInertiaAttr(),
+        mass_api.GetPrincipalAxesAttr(),
+    ):
+        if attr.IsValid():
+            attr.Clear()
+
+
+def _add_root_physics(stage: Usd.Stage, body_mass: float) -> None:
+    """Apply ArticulationRootAPI to /Drone and RigidBodyAPI + MassAPI to /Drone/Body."""
     root_prim = stage.GetPrimAtPath(DRONE_ROOT)
     body_prim = stage.GetPrimAtPath(BODY_PRIM)
     UsdPhysics.ArticulationRootAPI.Apply(root_prim)
     UsdPhysics.RigidBodyAPI.Apply(body_prim)
     mass_api = UsdPhysics.MassAPI.Apply(body_prim)
-    mass_api.GetMassAttr().Set(mass_props.total_mass)
-
-    com_frd = mass_props.center_of_mass_frd
-    com_zup = frd_to_zup(float(com_frd[0]), float(com_frd[1]), float(com_frd[2]))
-    mass_api.GetCenterOfMassAttr().Set(Gf.Vec3f(*com_zup))
-
-    I    = mass_props.inertia_tensor
-    diag = (float(I[0][0]), float(I[1][1]), float(I[2][2]))
-    mass_api.GetDiagonalInertiaAttr().Set(Gf.Vec3f(*diag))
+    mass_api.GetMassAttr().Set(body_mass)
+    _clear_authored_mass_distribution(mass_api)
 
 
 def _add_fin_physics(stage: Usd.Stage, fin_specs: list[FinSpec], fin_mass: float) -> None:
@@ -241,6 +232,61 @@ def _add_fin_physics(stage: Usd.Stage, fin_specs: list[FinSpec], fin_mass: float
         mass_api.GetMassAttr().Set(fin_mass)
 
 
+def _read_fin_hinge_from_stage(stage: Usd.Stage, fin_path: str) -> tuple[float, float, float]:
+    """Read the fin origin position in the Body frame from the authored USD transforms."""
+    body_prim = stage.GetPrimAtPath(BODY_PRIM)
+    fin_prim = stage.GetPrimAtPath(fin_path)
+    if not body_prim.IsValid():
+        raise ValueError(f"Missing body prim: {BODY_PRIM}")
+    if not fin_prim.IsValid():
+        raise ValueError(f"Missing fin prim: {fin_path}")
+
+    time = Usd.TimeCode.Default()
+    body_xf = UsdGeom.Xformable(body_prim).ComputeLocalToWorldTransform(time)
+    fin_xf = UsdGeom.Xformable(fin_prim).ComputeLocalToWorldTransform(time)
+    rel = body_xf.GetInverse() * fin_xf
+
+    rel_xf = Gf.Transform()
+    rel_xf.SetMatrix(rel)
+    t = rel_xf.GetTranslation()
+    return (float(t[0]), float(t[1]), float(t[2]))
+
+
+def _add_collision_apis(stage: Usd.Stage, fin_specs: list[FinSpec]) -> None:
+    """Attach collision APIs to body and fin meshes using convex decomposition.
+
+    We currently approximate all colliders via convex decomposition of the render meshes:
+      - /Drone/Body/edf_drone  (combined body + legs geometry)
+      - /Drone/Fin_1 .. /Drone/Fin_N
+    This provides a better fit than a single convex hull while remaining efficient.
+    """
+    # Body-attached meshes under /Drone/Body.
+    body_mesh_paths = [f"{BODY_PRIM}/{name}" for name in BODY_PARTS_MVP]
+
+    # Some assets (drone_v2) nest the render mesh one level deeper, e.g.
+    #   /Drone/Body/edf_drone/edf_drone
+    # Add those nested meshes explicitly when present so they also get colliders.
+    extra_body_mesh_paths: list[str] = []
+    for name in BODY_PARTS_MVP:
+        nested = f"{BODY_PRIM}/{name}/{name}"
+        if stage.GetPrimAtPath(nested).IsValid():
+            extra_body_mesh_paths.append(nested)
+    body_mesh_paths = [*body_mesh_paths, *extra_body_mesh_paths]
+
+    # Articulated fins (direct children of /Drone).
+    fin_mesh_paths = [f"{DRONE_ROOT}/{spec.prim_name}" for spec in fin_specs]
+
+    for path in [*body_mesh_paths, *fin_mesh_paths]:
+        prim = stage.GetPrimAtPath(path)
+        if not prim.IsValid():
+            continue
+        # Base collision API (enables participation in contact generation).
+        UsdPhysics.CollisionAPI.Apply(prim)
+        # Mesh-specific approximation: convex decomposition of the mesh geometry.
+        mesh_collision = UsdPhysics.MeshCollisionAPI.Apply(prim)
+        mesh_collision.CreateApproximationAttr("convexDecomposition")
+
+
 def _create_fin_joints(
     stage: Usd.Stage,
     fin_specs: list[FinSpec],
@@ -249,9 +295,8 @@ def _create_fin_joints(
 ) -> None:
     """Define RevoluteJoint + DriveAPI for each fin.
 
-    localPos0 is taken from the YAML hinge position (FRD → Z-up converted).
-    This must match the fin prim's world translate set in Blender — the guide
-    documents the required positions so artists can position fins correctly.
+    The hinge position is read from the current USD transforms, so the CAD/Blender
+    authored asset remains the source of truth for link placement.
     """
     for spec in fin_specs:
         fin_path   = f"{DRONE_ROOT}/{spec.prim_name}"
@@ -260,8 +305,17 @@ def _create_fin_joints(
         joint_path = f"{fin_path}/{spec.prim_name}_Joint"
 
         joint = UsdPhysics.RevoluteJoint.Define(stage, joint_path)
-        # Use joint_axis_local (fin prim local frame) when fin mesh axes differ from body
-        axis_token = getattr(spec, "joint_axis_local", spec.hinge_axis)
+
+        # Joint axis in fin-local frame:
+        #   - Fin_1, Fin_2: rotate about local Y
+        #   - Fin_3, Fin_4: rotate about local X
+        if spec.prim_name in ("Fin_1", "Fin_2"):
+            axis_token = "Y"
+        elif spec.prim_name in ("Fin_3", "Fin_4"):
+            axis_token = "X"
+        else:
+            # Fallback to configuration if new fins are added.
+            axis_token = getattr(spec, "joint_axis_local", spec.hinge_axis)
         joint.GetAxisAttr().Set(axis_token)
         joint.GetLowerLimitAttr().Set(joint_lower_deg)
         joint.GetUpperLimitAttr().Set(joint_upper_deg)
@@ -269,7 +323,7 @@ def _create_fin_joints(
         joint.GetBody0Rel().SetTargets([Sdf.Path(BODY_PRIM)])
         joint.GetBody1Rel().SetTargets([Sdf.Path(fin_path)])
 
-        hinge_zup = frd_to_zup(*spec.hinge_pos_frd)
+        hinge_zup = _read_fin_hinge_from_stage(stage, fin_path)
         joint.GetLocalPos0Attr().Set(Gf.Vec3f(*hinge_zup))
         joint.GetLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
 
@@ -312,7 +366,7 @@ def postprocess_drone_usd(
     Args:
         input_path:    Blender-exported .usd/.usda file.
         output_path:   Destination .usd file (ignored when validate_only=True).
-        config_path:   Vehicle YAML config for mass/fin parameters.
+        config_path:   Vehicle YAML config for total mass, fin mass, and joint limits.
         validate_only: If True, only check prim names exist; do not write output.
 
     Raises:
@@ -325,12 +379,15 @@ def postprocess_drone_usd(
     # Load config and fin specs
     cfg         = load_config(config_path)
     vehicle_cfg = cfg.get("vehicle", cfg)
+    _warn_ignored_legacy_config(vehicle_cfg)
     fin_specs   = load_fin_specs(vehicle_cfg)
     if not fin_specs:
         raise ValueError("No fins found in vehicle config. Check fins.fins_config.")
 
     fins_cfg = vehicle_cfg.get("fins", {})
     fin_mass = float(fins_cfg.get("servo", {}).get("weight_kg", 0.003))
+    total_vehicle_mass = _load_total_vehicle_mass(vehicle_cfg)
+    body_mass = _compute_body_mass(total_vehicle_mass, fin_mass, len(fin_specs))
 
     max_deflection_rad = float(fins_cfg.get("max_deflection", 0.349))
     joint_limit_deg    = math.degrees(max_deflection_rad)
@@ -366,22 +423,21 @@ def postprocess_drone_usd(
 
     _ensure_stage_metadata(stage)
 
-    # Explicit mass properties from YAML (no primitive aggregation)
-    mass_props = load_explicit_mass_props(vehicle_cfg)
-
-    _add_root_physics(stage, mass_props)
+    # Author mass only; let Isaac Sim derive CoM/inertia from the colliders.
+    _add_root_physics(stage, body_mass)
     _strip_rigid_body_from_visual_children(stage)
     _add_fin_physics(stage, fin_specs, fin_mass)
+    _add_collision_apis(stage, fin_specs)
     _create_fin_joints(stage, fin_specs, -joint_limit_deg, joint_limit_deg)
 
     stage.SetDefaultPrim(stage.GetPrimAtPath(DRONE_ROOT))
     stage.GetRootLayer().Save()
 
-    com_zup = frd_to_zup(*mass_props.center_of_mass_frd)
     print(
         f"[postprocess_usd] Wrote {output_path}\n"
-        f"  mass={mass_props.total_mass:.3f} kg  "
-        f"CoM_zup={com_zup}  "
+        f"  total_mass={total_vehicle_mass:.3f} kg  "
+        f"body_mass={body_mass:.3f} kg  "
+        f"fin_mass={fin_mass:.3f} kg each  "
         f"fins={len(fin_specs)}"
     )
 
@@ -398,7 +454,10 @@ def _main() -> None:
     parser.add_argument(
         "--config",
         default="simulation/configs/default_vehicle.yaml",
-        help="Vehicle YAML config (default: simulation/configs/default_vehicle.yaml)",
+        help=(
+            "Vehicle YAML config used for total mass, fin mass, and joint limits. "
+            "Fin positions and explicit CoM/inertia are ignored."
+        ),
     )
     parser.add_argument(
         "--validate-only",

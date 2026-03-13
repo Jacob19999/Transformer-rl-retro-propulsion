@@ -8,14 +8,15 @@ name objects in Blender (see BLENDER_EXPORT_GUIDE.md).
 Blender object name → USD prim path mapping:
 
   Articulated parts (direct children of Drone — get joints from postprocess_usd):
-    Drone        →  /Drone          (root empty)
-    Fin_1..4     →  /Drone/Fin_N    (fin mesh, origin at hinge point)
+    Drone        →  /Drone             (root empty)
+    Fin_1..4     →  /Drone/Fin_N       (fin mesh, origin at hinge point)
 
   Rigid body parts (children of Body — no joints, grouped for rigid physics):
-    Body         →  /Drone/Body         (empty — rigid body group)
-    edf          →  /Drone/Body/edf     (combined duct + fan mesh)
+    Body         →  /Drone/Body
+    edf_drone    →  /Drone/Body/edf_drone  # combined duct + fan + legs mesh
 
-  Note (drone_v2): Legs are modeled as part of Body geometry — no separate Legs prim.
+  Note (drone_v2): Legs are modeled as part of the main body geometry in ``edf_drone`` —
+  there is no separate ``Legs`` prim in the Blender-exported USD.
 """
 
 from __future__ import annotations
@@ -107,10 +108,9 @@ BODY_PRIM   = "/Drone/Body"
 
 # Body sub-parts: Blender object names that should live under /Drone/Body.
 # Only MVP parts are listed; add more as the model grows.
-BODY_PARTS_MVP = ["edf"]
-
-# Appendages: Legs live under Body in the manual Isaac Sim scene layout.
-LEGS_PRIM = "/Drone/Body/Legs"
+# In the current drone_v2 asset, the combined EDF, frame, and legs geometry is a single
+# mesh named ``edf_drone`` parented under ``Body``.
+BODY_PARTS_MVP = ["edf_drone"]
 
 
 # ---------------------------------------------------------------------------
@@ -153,8 +153,9 @@ def expected_mvp_prim_paths(num_fins: int = 4) -> dict[str, list[str]]:
             BODY_PRIM,
             *expected_fin_prim_paths(num_fins),
         ],
+        # Recommended prims are non-blocking; for drone_v2 the only MVP sub-part
+        # we expect is /Drone/Body/edf_drone.
         "recommended": [
-            LEGS_PRIM,
             *[f"{BODY_PRIM}/{p}" for p in BODY_PARTS_MVP],
         ],
     }

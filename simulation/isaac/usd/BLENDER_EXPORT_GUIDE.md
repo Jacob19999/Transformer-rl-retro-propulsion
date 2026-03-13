@@ -1,7 +1,8 @@
 # Blender → IsaacLab Export Guide
 
 How to model the drone in Blender and export it so `postprocess_usd.py` can
-add physics APIs and produce a simulation-ready `drone.usd`.
+add physics APIs and produce a simulation-ready `drone.usd` that trusts the
+authored CAD/Blender transforms.
 
 ---
 
@@ -76,19 +77,11 @@ This is Z-up right-handed — the Isaac Sim convention.
 ## Fin Origin Placement (Critical)
 
 Each fin's **Blender object origin must be at the hinge point**, not the mesh
-center. The post-process script creates a revolute joint at this position.
+center. The post-process script creates the revolute joint at the authored
+origin, so the USD asset is the source of truth for fin placement.
 
-**Required fin hinge positions (Z-up world frame):**
-
-| Object | X (m) | Y (m) | Z (m) | Hinge Axis | Description |
-|--------|--------|--------|--------|------------|-------------|
-| `Fin_1` | 0.000 | -0.055 | -0.14 | X (pitch) | Right fin |
-| `Fin_2` | 0.000 | +0.055 | -0.14 | X (pitch) | Left fin |
-| `Fin_3` | -0.055 | 0.000 | -0.14 | Y (yaw) | Forward fin |
-| `Fin_4` | +0.055 | 0.000 | -0.14 | Y (yaw) | Aft fin |
-
-> Derived from `default_vehicle.yaml` → `fins.fins_config[i].position` via
-> FRD→Z-up: `(x, y, z)_FRD → (x, -y, -z)_Zup`.
+Legacy YAML `fins[*].position` values are ignored by the Isaac pipeline and only
+trigger a warning if still present.
 
 To set a custom origin in Blender:
 1. Select the fin mesh → Edit Mode
@@ -131,7 +124,12 @@ The post-process script adds **all** USD physics APIs:
 - `ArticulationRootAPI` + `RigidBodyAPI` + `MassAPI` on `/Drone`
 - `RigidBodyAPI` + `MassAPI` on each fin
 - `RevoluteJoint` + `DriveAPI` for each fin
-- All mass properties from `default_vehicle.yaml`
+- Collision APIs with convex decomposition on the authored meshes
+
+For the main body, the script only authors **mass**. It intentionally leaves
+CoM and inertia unset so Isaac Sim / PhysX can derive them from the collider
+geometry. This keeps the CAD → Blender → Isaac workflow editable without
+re-entering placement numbers in YAML.
 
 Do **not** add Rigid Body or Constraint modifiers in Blender.
 
@@ -165,6 +163,9 @@ python -m simulation.isaac.usd.postprocess_usd \
     --output simulation/isaac/usd/drone.usd \
     --config simulation/configs/default_vehicle.yaml
 ```
+
+`--config` is still used for total mass, fin mass, and joint limits, but Isaac
+fin positions and body CoM/inertia now come from the USD asset itself.
 
 ---
 
