@@ -5,9 +5,8 @@
 > Bridging the sim-to-real gap for attention-enhanced reinforcement learning in thrust-vectoring control systems.
 
 ---
-Work in progress issac sim training env: 
-<img width="1791" height="967" alt="image" src="https://github.com/user-attachments/assets/3e471e1f-7d94-4d47-b5b6-59f3ea05fa1d" />
-
+Work in progress issac sim training env (parallel): 
+<img width="1792" height="916" alt="image" src="https://github.com/user-attachments/assets/f7e2d12d-152e-48e2-8a61-a02b2548ff64" />
 
 ## Overview
 
