@@ -17,8 +17,8 @@ A researcher runs the existing cascaded `PIDController` from `simulation/trainin
 
 **Acceptance Scenarios**:
 
-1. **Given** the Isaac Sim single-env task exposes the same 20-D observation contract expected by `PIDController`, **When** the tuning script runs in single-env mode, **Then** it can roll out closed-loop episodes without modifying the controller law.
-2. **Given** the tuning method is `ziegler-nichols`, **When** the script searches for ultimate gain / oscillation period per loop, **Then** it produces finite gains for the enabled loops and stores them in a PID-config-compatible structure.
+1. **Given** the Isaac Sim single-env task exposes the same 20-D observation contract expected by `PIDController` (`target_body[0:3]`, `v_b[3:6]`, `g_body[6:9]`, `omega[9:12]`, `h_agl[16]`), **When** the tuning script runs in single-env mode, **Then** it can roll out closed-loop episodes without modifying the controller law.
+2. **Given** the tuning method is `ziegler-nichols`, **When** the script searches for ultimate gain / oscillation period per loop, **Then** it produces finite gains for the enabled loops and stores them in a PID-config-compatible structure that preserves the existing cascaded layout (`outer_loop.altitude`, `outer_loop.lateral_x`, `outer_loop.lateral_y`, `inner_loop.roll`, `inner_loop.pitch`, `inner_loop.yaw_Kd`).
 3. **Given** a baseline `simulation/configs/pid.yaml`, **When** the tuning run finishes, **Then** the script reports the baseline score and the tuned score on the same evaluation seeds.
 4. **Given** force toggles `--disable-wind` and `--disable-gyro`, **When** the single-env tuning run starts, **Then** those effects are disabled for every episode in that run.
 
@@ -52,7 +52,7 @@ A researcher takes the best PID gains from the Isaac tuning run and validates th
 **Acceptance Scenarios**:
 
 1. **Given** a saved best-gains YAML file, **When** the evaluation script runs, **Then** it reuses that file without manual translation or editing.
-2. **Given** episode logging is enabled, **When** a rollout executes, **Then** each logged step includes at least `episode_id`, `env_id`, `step`, `time_s`, observation/state fields, action vector, step reward, cumulative reward, and PID terms/gains used for that action.
+2. **Given** episode logging is enabled, **When** a rollout executes, **Then** each logged step includes at least `episode_id`, `env_id`, `step`, `time_s`, observation/state fields, action vector, step reward, cumulative reward, and PID terms/gains used for that action, including altitude error/integral/rate, lateral errors, estimated roll/pitch, yaw-rate damping term, and pre-clipped loop outputs.
 3. **Given** a rollout terminates early due to crash, landing, out-of-bounds, or timeout, **When** the episode summary is written, **Then** the termination reason and aggregate metrics are preserved.
 4. **Given** the best PID gains are tested in both single-env and multi-env configs, **When** evaluation completes, **Then** the summary reports per-config success rate, mean total reward, mean CEP, and failure counts.
 
@@ -90,13 +90,16 @@ A researcher runs long PID tuning / training jobs and wants the script to tell t
 ### Functional Requirements
 
 - **FR-001**: The system MUST reuse the existing `simulation/training/controllers/pid_controller.py` controller implementation for Isaac Sim tuning and evaluation; it MUST NOT introduce a second, divergent PID law for Isaac-only use.
+- **FR-001a**: The Isaac integration MUST preserve the controller's existing frame conventions: inertial frame `NED`, body frame `FRD` (`+X` forward, `+Y` right, `+Z` down), with altitude logged as `h_agl > 0` upward even though inertial `p_z` is positive downward.
+- **FR-001b**: The Isaac integration MUST preserve the controller's existing observation semantics and index mapping from `simulation/training/observation.py`, especially `target_body[0:3]`, `v_b[3:6]`, `g_body[6:9]`, `omega[9:12]`, `twr[12]`, `wind_ema[13:16]`, and `h_agl[16]`.
 - **FR-002**: The Isaac PID workflow MUST support both single-environment and multi-environment evaluation using existing Isaac env config files.
-- **FR-003**: The tuning workflow MUST implement Ziegler-Nichols-based gain initialization for the controllable loops exposed by `PIDController`, at minimum altitude, lateral-x, lateral-y, roll, and pitch; yaw damping MAY be tuned by a compatible derivative-only sweep.
+- **FR-003**: The tuning workflow MUST implement Ziegler-Nichols-based gain initialization for the controllable loops exposed by `PIDController`, at minimum altitude, lateral-x, lateral-y, roll, and pitch; yaw control in the current implementation is derivative-only damping via `inner_loop.yaw_Kd` and MAY be tuned by a compatible derivative-only sweep rather than a full PID loop.
 - **FR-004**: The tuning workflow MUST evaluate PID candidates using Isaac episode outcomes and reward-derived scoring, not only open-loop heuristic metrics.
 - **FR-005**: The workflow MUST support testing a baseline PID config and one or more tuned candidate configs on the same seed set for direct comparison.
 - **FR-006**: The workflow MUST save the best-performing PID gains in a YAML structure compatible with `simulation/configs/pid.yaml`.
 - **FR-007**: The evaluation workflow MUST provide a dedicated "best PID values" test path that runs the saved best gains without re-tuning.
 - **FR-008**: Per-step logging MUST include action vector, observation/state values, step reward, cumulative reward, and PID values used to produce the action.
+- **FR-008a**: Per-step logging MUST make the controller's axis conventions inspectable by recording enough signed quantities to debug mapping errors: body-frame target error, body-frame velocity, body-frame gravity vector, body angular velocity, desired roll/pitch commands, and the final per-fin actions `[fin1, fin2, fin3, fin4]`.
 - **FR-009**: Per-episode logging MUST include at least total reward, termination reason, landed/crashed/out-of-bounds flags, episode length, and CEP or equivalent landing error metric.
 - **FR-010**: The training / tuning CLI MUST print ongoing progress to the console, including completed episodes, current candidate score, and current best gains.
 - **FR-011**: The workflow MUST support runtime force toggles for at least wind and gyro precession, and SHOULD also support anti-torque and gravity because those already exist as separately identifiable Isaac-side effects.
@@ -105,6 +108,7 @@ A researcher runs long PID tuning / training jobs and wants the script to tell t
 - **FR-014**: The reward monitor MUST support `decreasing` as a valid direction because that is the requested user workflow, even if the implementation internally monitors an equivalent cost metric derived from reward.
 - **FR-015**: The workflow MUST accept CLI paths for Isaac env config, vehicle config, reward config, PID config, output directory, and log directory.
 - **FR-016**: The workflow MUST expose enough logged PID internals to explain each action, including loop errors and the corresponding loop outputs before final action clipping.
+- **FR-016a**: The workflow MUST preserve and document the current fin-axis mapping used by `PIDController`: `Fin_1`/`Fin_2` are the forward/aft pitch pair, `Fin_3`/`Fin_4` are the left/right roll pair, and yaw damping is applied through the differential pattern `[-d, +d, +d, -d]`.
 - **FR-017**: The workflow MUST function when disturbances are disabled, so deterministic ablation runs can be used for controller debugging and repeatable comparisons.
 - **FR-018**: The workflow MUST preserve compatibility with the existing observation/action contract used by the custom Python simulation, so the same PID config can be ported between backends.
 
@@ -115,6 +119,7 @@ A researcher runs long PID tuning / training jobs and wants the script to tell t
 - **PidCandidateEvaluator**: Scores one PID gain set over one or more Isaac episodes and returns reward, success, CEP, and failure metrics.
 - **EpisodeTraceLogger**: Writes per-step and per-episode logs including state, action, reward, PID internals, and active force toggles.
 - **ForceToggleConfig**: Runtime configuration describing which Isaac-side disturbances or physics effects are disabled for a run.
+- **PidAxisConvention**: The fixed controller convention inherited from the existing implementation: inertial `NED`, body `FRD`, positive pitch command means nose-down response in FRD, positive descent rate is `v_b[2] > 0`, and altitude control is based on `h_agl` rather than raw inertial `p_z`.
 
 ## Success Criteria *(mandatory)*
 
@@ -133,9 +138,11 @@ A researcher runs long PID tuning / training jobs and wants the script to tell t
 - "Train a PID controller" in this feature means tuning / optimizing PID gains against Isaac Sim episodes, not replacing PID with PPO or another learned policy.
 - `simulation/training/controllers/pid_controller.py` remains the source of truth for the control law; Isaac-specific code wraps the environment, logging, and tuning workflow around it.
 - The Isaac environment exposes an observation layout compatible enough with `PIDController.get_action()` that no structural controller rewrite is required.
+- The controller's current semantics are intentionally not generic aerospace conventions: altitude uses `h_agl` positive upward, but velocity and angular quantities are body-frame `FRD`; implementation work must preserve that exact mix instead of renormalizing to ENU/FLU.
 - Existing reward signals in `simulation/configs/reward.yaml` are meaningful enough to rank candidate PID settings, even if the warning monitor tracks an equivalent cost-like transform when the user wants a "decreasing" metric.
 - Force toggles can be implemented by patching task-level runtime flags / models (for example `_wind_model`, `_gyro_enabled`, `_anti_torque_enabled`) rather than requiring separate YAML variants.
 - Single-env runs are used for debugging and loop identification; multi-env runs are used for throughput and robustness evaluation.
+- The controller already includes thrust rate limiting and yaw low-pass filtering; Isaac tuning should treat those as part of the controller behavior, not strip them out unless explicitly running an ablation.
 
 ## Dependencies
 
@@ -146,3 +153,4 @@ A researcher runs long PID tuning / training jobs and wants the script to tell t
 - Existing reward configuration in `simulation/configs/reward.yaml`
 - Feature 001 Isaac Sim environment support
 - Feature 002 reaction torque / force-model infrastructure, because force ablations are part of this feature
+

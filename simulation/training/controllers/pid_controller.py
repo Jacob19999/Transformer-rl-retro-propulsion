@@ -125,13 +125,14 @@ class PIDController(Controller):
                 return float(ph.gain_scale)
         return 1.0
 
-    def get_action(self, obs: np.ndarray) -> np.ndarray:
-        """Map observation (20,) to normalized action in [-1,1]^5."""
+    def _compute_action(
+        self, obs: np.ndarray, *, return_debug: bool
+    ) -> tuple[np.ndarray, dict[str, float] | None]:
+        """Shared implementation for get_action and debug variants."""
         o = np.asarray(obs, dtype=float).reshape(-1)
         if o.size < 20:
             raise ValueError(f"obs must have at least 20 elements, got {o.size}.")
 
-        # Unpack observation (training.md §3.2, observation.py docstring)
         target_body = o[0:3]
         v_b = o[3:6]
         g_body = o[6:9]
@@ -140,16 +141,10 @@ class PIDController(Controller):
 
         s = self._gain_scale(h_agl)
 
-        # --- Outer loop: altitude PID -> normalized throttle action a0 ---
-        # h_agl is positive upwards; to descend, error is negative.
-        # NOTE: altitude loop is NOT scaled by gain_schedule so that the
-        # vehicle always retains full altitude control authority, even in the
-        # terminal phase where inner-loop gains are reduced.
         Kz = dict(self.outer["altitude"])
         alt_target = float(Kz.get("target_h_agl", 0.0))
         alt_error = alt_target - h_agl
 
-        # Clamp error to prevent thrust saturation at large altitude offsets.
         alt_error_clamped = float(
             np.clip(alt_error, -self.max_alt_error, self.max_alt_error)
         )
@@ -162,36 +157,23 @@ class PIDController(Controller):
             )
         )
 
-        # Use measured body vertical velocity for derivative term.
-        # In FRD body frame v_b[2] > 0 = descending, which approximates
-        # d(alt_error)/dt = -d(h_agl)/dt.  This avoids the large derivative
-        # kick that occurs when differencing alt_error with prev_alt_error=0.
         alt_rate = float(v_b[2])
         self.prev_alt_error = float(alt_error)
 
-        thrust_action = (
+        thrust_cmd_raw = (
             float(Kz.get("Kp", 0.0)) * alt_error_clamped
             + float(Kz.get("Ki", 0.0)) * self.alt_integral
             + float(Kz.get("Kd", 0.0)) * alt_rate
         )
-        thrust_action = float(np.clip(thrust_action, -1.0, 1.0))
+        thrust_action = float(np.clip(thrust_cmd_raw, -1.0, 1.0))
 
-        # Rate-limit thrust to reduce motor reaction torque (which causes
-        # yaw spin-up on a single-fan vehicle with limited yaw authority).
         if self.thrust_rate_limit > 0:
             lo = self.prev_thrust_action - self.thrust_rate_limit
             hi = self.prev_thrust_action + self.thrust_rate_limit
             thrust_action = float(np.clip(thrust_action, lo, hi))
-        # Record thrust change for motor-torque feedforward (used in yaw).
         self._thrust_delta = thrust_action - self.prev_thrust_action
         self.prev_thrust_action = thrust_action
 
-        # --- Outer loop: lateral PD -> desired roll/pitch angles (rad) ---
-        # target_body is R^T (p_target - p), expressed in body FRD.
-        # For a target forward (+x body), we want negative pitch (nose down)
-        # to accelerate toward it.  The Kd term uses body velocity to damp
-        # the lateral motion: when moving toward the target (v_b > 0 in that
-        # axis), we *reduce* the tilt command so the vehicle decelerates.
         Kx = dict(self.outer.get("lateral_x", {}))
         Ky = dict(self.outer.get("lateral_y", {}))
 
@@ -206,8 +188,6 @@ class PIDController(Controller):
         pitch_des = float(np.clip(pitch_des, -self.max_tilt, self.max_tilt))
         roll_des = float(np.clip(roll_des, -self.max_tilt, self.max_tilt))
 
-        # --- Inner loop: attitude PD -> fin deflections (rad) ---
-        # Estimate roll/pitch from gravity direction (training.md §3.3 rationale).
         g2 = float(g_body[2]) if abs(float(g_body[2])) > 1e-9 else 1e-9
         roll_est = float(np.arctan2(float(g_body[1]), g2))
         pitch_est = float(np.arctan2(-float(g_body[0]), g2))
@@ -218,14 +198,6 @@ class PIDController(Controller):
         Kr = dict(self.inner.get("roll", {}))
         Kp_i = dict(self.inner.get("pitch", {}))
 
-        # PD + gyroscopic feedforward.
-        # The EOM has: I*w_dot = tau - w x (I*w) - w x h_fan
-        # So the effective gyroscopic disturbance torque is:
-        #   tau_eff_gyro_x = -omega_y * h_z  (negative when pitching positive)
-        #   tau_eff_gyro_y = +omega_x * h_z  (positive when rolling positive)
-        # To compensate, the feedforward adds:
-        #   roll_cmd  += +Kff * omega_y  (positive roll torque to oppose negative gyro)
-        #   pitch_cmd += -Kff * omega_x  (negative pitch torque to oppose positive gyro)
         Kff = float(self.inner.get("gyro_ff", 0.0))
         roll_cmd = (
             s * float(Kr.get("Kp", 0.0)) * roll_error
@@ -238,14 +210,6 @@ class PIDController(Controller):
             - s * Kff * float(omega[0])
         )
 
-        # Yaw rate damping via differential fin deflection.
-        # The yaw deflection is clamped to a fraction of delta_max so that
-        # yaw damping never consumes more than ~40 % of the available fin
-        # authority, leaving the rest for pitch/roll attitude control.
-        #
-        # A low-pass filter on omega_z prevents servo-lag-driven limit cycles:
-        # the yaw oscillation (~7 Hz) is above the servo bandwidth (~4 Hz),
-        # so unfiltered damping would arrive late and amplify the oscillation.
         omega_z_raw = float(omega[2])
         self._omega_z_filt = (
             self._yaw_lp_alpha * omega_z_raw
@@ -255,26 +219,60 @@ class PIDController(Controller):
         Kyaw = float(self.inner.get("yaw_Kd", 0.0))
         max_yaw_frac = float(self.inner.get("max_yaw_frac", 0.30))
         yaw_limit = max_yaw_frac * self.delta_max
-        yaw_total = float(np.clip(-Kyaw * self._omega_z_filt,
-                                  -yaw_limit, yaw_limit))
+        yaw_total = float(
+            np.clip(-Kyaw * self._omega_z_filt, -yaw_limit, yaw_limit)
+        )
 
-        # Map to fin actions: common-mode deflection for pitch/roll torque,
-        # differential deflection for yaw torque.
-        #
-        # Pitch: fins 1/2 (fwd/aft, lift in body-x) produce pitch torque
-        #   via common-mode deflection.
-        # Roll:  fins 3/4 (left/right, lift in body-y) produce roll torque
-        #   via common-mode deflection (sign inverted per fin_model.compute).
-        # Yaw:   the correct yaw-producing pattern is [-d,+d,+d,-d].
-        #   Fins 1 at y>0 and fin 3 at x>0 must have *opposite* differential
-        #   signs so that their yaw-torque contributions add rather than
-        #   cancel.  Pattern verified via open-loop yaw diagnostic.
         fin1 = float(np.clip((+pitch_cmd - yaw_total) / self.delta_max, -1.0, 1.0))
         fin2 = float(np.clip((+pitch_cmd + yaw_total) / self.delta_max, -1.0, 1.0))
         fin3 = float(np.clip((-roll_cmd + yaw_total) / self.delta_max, -1.0, 1.0))
         fin4 = float(np.clip((-roll_cmd - yaw_total) / self.delta_max, -1.0, 1.0))
 
-        return np.array([thrust_action, fin1, fin2, fin3, fin4], dtype=np.float32)
+        action = np.array(
+            [thrust_action, fin1, fin2, fin3, fin4], dtype=np.float32
+        )
+
+        if not return_debug:
+            return action, None
+
+        debug: dict[str, float] = {
+            "alt_target": alt_target,
+            "alt_error": alt_error,
+            "alt_error_clamped": alt_error_clamped,
+            "alt_integral": self.alt_integral,
+            "alt_rate_vb_z": alt_rate,
+            "thrust_cmd_raw": thrust_cmd_raw,
+            "thrust_action": thrust_action,
+            "pitch_des": pitch_des,
+            "roll_des": roll_des,
+            "pitch_est": pitch_est,
+            "roll_est": roll_est,
+            "pitch_error": pitch_error,
+            "roll_error": roll_error,
+            "pitch_cmd": pitch_cmd,
+            "roll_cmd": roll_cmd,
+            "omega_z_raw": omega_z_raw,
+            "omega_z_filt": self._omega_z_filt,
+            "yaw_total": yaw_total,
+            "fin1": fin1,
+            "fin2": fin2,
+            "fin3": fin3,
+            "fin4": fin4,
+        }
+        return action, debug
+
+    def get_action(self, obs: np.ndarray) -> np.ndarray:
+        """Map observation (20,) to normalized action in [-1,1]^5."""
+        action, _ = self._compute_action(obs, return_debug=False)
+        return action
+
+    def get_action_with_debug(
+        self, obs: np.ndarray
+    ) -> tuple[np.ndarray, dict[str, float]]:
+        """Return action and a debug snapshot of internal PID terms."""
+        action, debug = self._compute_action(obs, return_debug=True)
+        assert debug is not None
+        return action, debug
 
 
 __all__ = ["PIDController"]

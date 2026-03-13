@@ -104,3 +104,46 @@ def test_reset_clears_integral_state() -> None:
     # After reset, the first-step response should match again.
     np.testing.assert_allclose(a1, a2, atol=1e-9)
 
+
+def test_get_action_with_debug_matches_get_action() -> None:
+    ctrl = PIDController(_base_cfg())
+    ctrl.reset()
+
+    o = _obs(
+        target_body=np.array([0.5, -0.25, 0.0]),
+        v_b=np.array([0.1, -0.2, 0.3]),
+        g_body=np.array([0.1, -0.1, 0.98]),
+        omega=np.array([0.05, -0.02, 0.01]),
+        h_agl=1.5,
+    )
+    a_plain = ctrl.get_action(o)
+    a_dbg, dbg = ctrl.get_action_with_debug(o)
+
+    np.testing.assert_allclose(a_plain, a_dbg, atol=1e-12)
+    assert "alt_error" in dbg and "pitch_cmd" in dbg and "yaw_total" in dbg
+
+
+def test_debug_sign_conventions_match_existing_tests() -> None:
+    ctrl = PIDController(_base_cfg())
+    ctrl.reset()
+
+    # Forward (+x) target should still drive negative pitch_cmd and negative Fin_1/Fin_2.
+    o_fwd = _obs(target_body=np.array([1.0, 0.0, 0.0]), h_agl=0.0)
+    a_fwd, dbg_fwd = ctrl.get_action_with_debug(o_fwd)
+    assert a_fwd[1] < 0.0 and a_fwd[2] < 0.0
+    assert dbg_fwd["pitch_cmd"] < 0.0
+
+    # Right (+y) target should still drive positive roll_cmd and negative Fin_3/Fin_4.
+    o_right = _obs(target_body=np.array([0.0, 1.0, 0.0]), h_agl=0.0)
+    a_right, dbg_right = ctrl.get_action_with_debug(o_right)
+    assert a_right[3] < 0.0 and a_right[4] < 0.0
+    assert dbg_right["roll_cmd"] > 0.0
+
+    # Yaw damping pattern [-d, +d, +d, -d] should appear for pure yaw-rate input.
+    o_yaw = _obs(omega=np.array([0.0, 0.0, 1.0]), h_agl=0.0)
+    a_yaw, dbg_yaw = ctrl.get_action_with_debug(o_yaw)
+    d = dbg_yaw["yaw_total"]
+    # Fin pattern implied by yaw_total sign:
+    # fin1 = pitch_cmd - d, fin2 = pitch_cmd + d, fin3 = -roll_cmd + d, fin4 = -roll_cmd - d
+    assert np.sign(a_yaw[1] - a_yaw[2]) == -np.sign(d) or d == 0.0
+
