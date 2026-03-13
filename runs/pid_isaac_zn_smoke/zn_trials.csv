@@ -1,0 +1,3 @@
+loop,kp_tested,oscillation_detected,Tu_s,median_amplitude,zero_crossings,steps,crashed,truncated
+roll,0.1,False,nan,nan,0,60,False,False
+roll,0.2,False,nan,nan,0,60,False,False

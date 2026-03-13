@@ -62,6 +62,7 @@ class PIDController(Controller):
         self.max_alt_error: float = float(alt_cfg.get("max_error", 2.0))
         self.alt_integral: float = 0.0
         self.prev_alt_error: float = 0.0
+        self.prev_h_agl: float | None = None
 
         # Thrust rate limiter: maximum change in normalised thrust action per
         # controller step.  Limits motor reaction torque that causes yaw spin-up.
@@ -112,6 +113,7 @@ class PIDController(Controller):
     def reset(self) -> None:
         self.alt_integral = 0.0
         self.prev_alt_error = 0.0
+        self.prev_h_agl = None
         self.prev_thrust_action = 0.0
         self._thrust_delta = 0.0
         self._omega_z_filt = 0.0
@@ -157,7 +159,13 @@ class PIDController(Controller):
             )
         )
 
-        alt_rate = float(v_b[2])
+        # Use measured altitude change instead of body-frame z velocity so the
+        # thrust damping term stays meaningful when the vehicle tilts.
+        if self.prev_h_agl is None:
+            alt_rate = 0.0
+        else:
+            alt_rate = float((self.prev_h_agl - h_agl) / self.dt)
+        self.prev_h_agl = h_agl
         self.prev_alt_error = float(alt_error)
 
         thrust_cmd_raw = (
@@ -188,9 +196,15 @@ class PIDController(Controller):
         pitch_des = float(np.clip(pitch_des, -self.max_tilt, self.max_tilt))
         roll_des = float(np.clip(roll_des, -self.max_tilt, self.max_tilt))
 
-        g2 = float(g_body[2]) if abs(float(g_body[2])) > 1e-9 else 1e-9
-        roll_est = float(np.arctan2(float(g_body[1]), g2))
-        pitch_est = float(np.arctan2(-float(g_body[0]), g2))
+        gx = float(g_body[0])
+        gy = float(g_body[1])
+        gz = float(g_body[2])
+        # Use bounded gravity-vector tilt estimates ([-pi/2, +pi/2]) to avoid
+        # branch flips when g_body[2] crosses zero during aggressive maneuvers.
+        roll_den = max(float(np.hypot(gx, gz)), 1e-9)
+        pitch_den = max(float(np.hypot(gy, gz)), 1e-9)
+        roll_est = float(np.arctan2(gy, roll_den))
+        pitch_est = float(np.arctan2(-gx, pitch_den))
 
         roll_error = roll_des - roll_est
         pitch_error = pitch_des - pitch_est
@@ -236,11 +250,12 @@ class PIDController(Controller):
             return action, None
 
         debug: dict[str, float] = {
+            "gain_scale": float(s),
             "alt_target": alt_target,
             "alt_error": alt_error,
             "alt_error_clamped": alt_error_clamped,
             "alt_integral": self.alt_integral,
-            "alt_rate_vb_z": alt_rate,
+            "alt_rate": alt_rate,
             "thrust_cmd_raw": thrust_cmd_raw,
             "thrust_action": thrust_action,
             "pitch_des": pitch_des,
@@ -249,6 +264,14 @@ class PIDController(Controller):
             "roll_est": roll_est,
             "pitch_error": pitch_error,
             "roll_error": roll_error,
+            "omega_x": float(omega[0]),
+            "omega_y": float(omega[1]),
+            "omega_z": float(omega[2]),
+            "roll_Kp": float(Kr.get("Kp", 0.0)),
+            "roll_Kd": float(Kr.get("Kd", 0.0)),
+            "pitch_Kp": float(Kp_i.get("Kp", 0.0)),
+            "pitch_Kd": float(Kp_i.get("Kd", 0.0)),
+            "gyro_ff": float(Kff),
             "pitch_cmd": pitch_cmd,
             "roll_cmd": roll_cmd,
             "omega_z_raw": omega_z_raw,

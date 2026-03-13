@@ -200,6 +200,11 @@ class EdfLandingTaskCfg(DirectRLEnvCfg):
     # Crash / landing thresholds
     crash_velocity_threshold: float = 3.0   # m/s, max |v| for successful landing
     landing_pad_radius: float = 0.5         # m
+    # The USD root frame sits about 0.31 m above the ground when the landing
+    # gear/body is actually resting on the plane, so touchdown cannot be
+    # detected with a near-zero altitude threshold.
+    ground_contact_height: float = 0.35     # m, root height considered ground contact
+    ground_contact_hysteresis: float = 0.05 # m, re-arm band to avoid ground-start resets
 
     # Vehicle / reward / environment config paths
     vehicle_config_path: str     = str(REPO_ROOT / "simulation" / "configs" / "default_vehicle.yaml")
@@ -307,11 +312,100 @@ class EdfLandingTask(DirectRLEnv):
         self._tau_ramp_b = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
         self._omega_fan = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
         self._thrust_dot = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
+        self._prev_speed = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
+        self._was_airborne = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
 
         # Previous action (for smoothness reward)
         self._prev_action = torch.zeros(
             (self.num_envs, 5), dtype=torch.float32, device=self.device
         )
+        self._current_action = torch.zeros_like(self._prev_action)
+
+        # Per-step terminal diagnostics cached for the wrapper / tuning scripts.
+        self._last_landed = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._last_crashed = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._last_out_of_bounds = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._last_ground_hit = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._last_h_agl = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
+        self._last_speed = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
+        self._last_impact_speed = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
+        self._last_lateral_dist = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
+
+        # Runtime override flags (used by PID tuning/eval scripts).
+        self._runtime_disable_wind: bool = False
+        self._runtime_disable_gyro: bool = False
+        self._runtime_disable_anti_torque: bool = False
+        self._runtime_disable_gravity: bool = False
+        self._runtime_reset_altitude_offset_m: float = 0.0
+        self._runtime_reset_roll_offset_rad: float = 0.0
+        self._runtime_reset_pitch_offset_rad: float = 0.0
+        self._runtime_reset_ang_vel_frd = torch.zeros(
+            3, dtype=torch.float32, device=self.device
+        )
+
+    # ------------------------------------------------------------------
+    # Runtime toggles (PID tuning / evaluation)
+    # ------------------------------------------------------------------
+    def set_runtime_overrides(
+        self,
+        *,
+        disable_wind: bool = False,
+        disable_gyro: bool = False,
+        disable_anti_torque: bool = False,
+        disable_gravity: bool = False,
+    ) -> None:
+        """Apply per-run overrides for disturbances / gravity.
+
+        These are soft runtime toggles layered on top of YAML config:
+        they never re-enable an effect that the config has disabled.
+        """
+        self._runtime_disable_wind = bool(disable_wind)
+        self._runtime_disable_gyro = bool(disable_gyro)
+        self._runtime_disable_anti_torque = bool(disable_anti_torque)
+        self._runtime_disable_gravity = bool(disable_gravity)
+
+    def set_reset_perturbation(
+        self,
+        *,
+        altitude_offset_m: float = 0.0,
+        roll_offset_rad: float = 0.0,
+        pitch_offset_rad: float = 0.0,
+        ang_vel_frd: tuple[float, float, float] | list[float] | None = None,
+    ) -> None:
+        """Apply deterministic reset perturbations for hover tuning."""
+        self._runtime_reset_altitude_offset_m = float(altitude_offset_m)
+        self._runtime_reset_roll_offset_rad = float(roll_offset_rad)
+        self._runtime_reset_pitch_offset_rad = float(pitch_offset_rad)
+        if ang_vel_frd is None:
+            self._runtime_reset_ang_vel_frd.zero_()
+        else:
+            vals = torch.tensor(
+                list(ang_vel_frd),
+                dtype=torch.float32,
+                device=self.device,
+            ).reshape(3)
+            self._runtime_reset_ang_vel_frd.copy_(vals)
+
+    def _reset_quat_from_frd_tilt(
+        self,
+        n: int,
+        *,
+        roll_rad: float,
+        pitch_rad: float,
+    ) -> torch.Tensor:
+        """Build Isaac wxyz quaternions from FRD roll/pitch perturbations."""
+        half_roll = 0.5 * float(roll_rad)
+        half_pitch = -0.5 * float(pitch_rad)
+        cr = math.cos(half_roll)
+        sr = math.sin(half_roll)
+        cp = math.cos(half_pitch)
+        sp = math.sin(half_pitch)
+        quat = torch.zeros((n, 4), device=self.device)
+        quat[:, 0] = cr * cp
+        quat[:, 1] = sr * cp
+        quat[:, 2] = cr * sp
+        quat[:, 3] = -sr * sp
+        return quat
 
     def _resolve_single_body_id(self, body_name: str) -> int:
         """Resolve a single articulation body by name."""
@@ -459,10 +553,20 @@ class EdfLandingTask(DirectRLEnv):
         self.fin_deflections_actual[env_ids] = 0.0
         self._episode_step[env_ids] = 0
         self._prev_action[env_ids] = 0.0
+        self._current_action[env_ids] = 0.0
         self._tau_anti_b[env_ids] = 0.0
         self._tau_ramp_b[env_ids] = 0.0
         self._omega_fan[env_ids] = 0.0
         self._thrust_dot[env_ids] = 0.0
+        self._prev_speed[env_ids] = 0.0
+        self._last_landed[env_ids] = False
+        self._last_crashed[env_ids] = False
+        self._last_out_of_bounds[env_ids] = False
+        self._last_ground_hit[env_ids] = False
+        self._last_h_agl[env_ids] = 0.0
+        self._last_speed[env_ids] = 0.0
+        self._last_impact_speed[env_ids] = 0.0
+        self._last_lateral_dist[env_ids] = 0.0
         # T022: Reset wind model for selected environments
         if self._wind_model is not None:
             self._wind_model.reset(env_ids)
@@ -471,8 +575,13 @@ class EdfLandingTask(DirectRLEnv):
         alt = torch.zeros(n, device=self.device).uniform_(
             self.cfg.spawn_altitude_min, self.cfg.spawn_altitude_max
         )
+        alt += float(self._runtime_reset_altitude_offset_m)
+        alt.clamp_(min=0.0)
         vel_mag = torch.zeros(n, device=self.device).uniform_(
             self.cfg.spawn_vel_mag_min, self.cfg.spawn_vel_mag_max
+        )
+        self._was_airborne[env_ids] = (
+            alt > (self.cfg.ground_contact_height + self.cfg.ground_contact_hysteresis)
         )
 
         # Random velocity direction
@@ -490,12 +599,27 @@ class EdfLandingTask(DirectRLEnv):
         # Identity quaternion in wxyz format (IsaacLab convention: w, x, y, z)
         quat = torch.zeros((n, 4), device=self.device)
         quat[:, 0] = 1.0  # w=1 -> identity (wxyz: [1, 0, 0, 0])
+        if (
+            abs(float(self._runtime_reset_roll_offset_rad)) > 1e-9
+            or abs(float(self._runtime_reset_pitch_offset_rad)) > 1e-9
+        ):
+            quat = self._reset_quat_from_frd_tilt(
+                n,
+                roll_rad=float(self._runtime_reset_roll_offset_rad),
+                pitch_rad=float(self._runtime_reset_pitch_offset_rad),
+            )
 
         # Add env origins for multi-env support
         root_pose = torch.cat([pos, quat], dim=-1)  # (n, 7)
         root_pose[:, :3] += self.scene.env_origins[env_ids]
 
-        root_vel = torch.cat([vel, torch.zeros((n, 3), device=self.device)], dim=-1)
+        ang_vel = torch.zeros((n, 3), device=self.device)
+        if torch.linalg.norm(self._runtime_reset_ang_vel_frd).item() > 0.0:
+            ang_vel[:, 0] = self._runtime_reset_ang_vel_frd[0]
+            ang_vel[:, 1] = -self._runtime_reset_ang_vel_frd[1]
+            ang_vel[:, 2] = -self._runtime_reset_ang_vel_frd[2]
+
+        root_vel = torch.cat([vel, ang_vel], dim=-1)
 
         self.robot.write_root_pose_to_sim(root_pose, env_ids=env_ids)
         self.robot.write_root_velocity_to_sim(root_vel, env_ids=env_ids)
@@ -516,7 +640,7 @@ class EdfLandingTask(DirectRLEnv):
         # Clip and store actions for use in _apply_action
         # Expand to (num_envs, 5) in case a (1, 5) action is broadcast from the wrapper
         self.actions = actions.expand(self.num_envs, -1).clamp(-1.0, 1.0)
-        self._prev_action.copy_(self.actions)
+        self._current_action.copy_(self.actions)
 
         # Unpack: [thrust_cmd, d1, d2, d3, d4]
         thrust_cmd_norm = self.actions[:, 0]
@@ -628,7 +752,7 @@ class EdfLandingTask(DirectRLEnv):
         # Gyro precession torque: τ_gyro = −ω_body × h_fan  (body frame → world frame)
         # PhysX handles ω×(I·ω) internally; we only inject the fan angular momentum term.
         # h_fan = [0, 0, I_fan·ω_fan] in body FRD frame (fan spins about body +Z = down).
-        if self._gyro_enabled:
+        if self._gyro_enabled and not self._runtime_disable_gyro:
             omega_b   = self.robot.data.root_ang_vel_b                       # (N, 3) body frame
             h_fan_b   = torch.zeros((num_envs, 3), device=self.device)
             h_fan_b[:, 2] = self._I_fan * self._omega_fan                    # body +Z (FRD down)
@@ -639,7 +763,7 @@ class EdfLandingTask(DirectRLEnv):
         # Steady-state EDF anti-torque: τ_anti = -k_torque * ω_fan² about body +Z.
         self._tau_anti_b.zero_()
         self._tau_ramp_b.zero_()
-        if self._anti_torque_enabled:
+        if self._anti_torque_enabled and not self._runtime_disable_anti_torque:
             self._tau_anti_b[:, 2] = -self._k_torque * self._omega_fan.square()
             tau_anti_w = rotate_body_to_world_wxyz(quat_w, self._tau_anti_b)
             torques[:, 0, :] += tau_anti_w
@@ -651,7 +775,7 @@ class EdfLandingTask(DirectRLEnv):
             torques[:, 0, :] += tau_ramp_w
 
         # T021: Wind drag force -- added if wind model is active
-        if self._wind_model is not None:
+        if self._wind_model is not None and not self._runtime_disable_wind:
             wind_vec    = self._wind_model.step(self._dt)   # (num_envs, 3) world frame
             body_vel_w  = self.robot.data.root_lin_vel_w    # (num_envs, 3) world frame
             F_wind      = self._wind_model.compute_drag_force(wind_vec, body_vel_w)
@@ -689,6 +813,11 @@ class EdfLandingTask(DirectRLEnv):
         g_world = torch.zeros((self.num_envs, 3), device=self.device)
         g_world[:, 2] = -1.0  # unit vector pointing down in Z-up
         g_b = rotate_world_to_body_wxyz(g_world, quat_w)  # (num_envs, 3)
+        # Isaac's FRD/Z-up convention yields gravity-vector angle signs opposite
+        # to the body-rate conventions used by the shared PID controller. Flip
+        # g_b.x/g_b.y so pitch_est and roll_est stay consistent with omega_y/x.
+        g_b[:, 0] = -g_b[:, 0]
+        g_b[:, 1] = -g_b[:, 1]
 
         # --- Thrust-to-weight ratio ---
         twr = (self.thrust_actual / self._weight).unsqueeze(-1)  # (num_envs, 1)
@@ -727,6 +856,48 @@ class EdfLandingTask(DirectRLEnv):
     # ------------------------------------------------------------------
     # T019: Rewards -- port from reward.py
     # ------------------------------------------------------------------
+    def _compute_terminal_metrics(self) -> dict[str, torch.Tensor]:
+        """Compute touchdown / crash metrics shared by reward and done logic."""
+        data = self.robot.data
+        pos_w = data.root_pos_w
+        vel_b = data.root_lin_vel_b
+
+        h_agl = pos_w[:, 2]
+        speed = vel_b.norm(dim=-1)
+
+        target = self._target_pos_w
+        lateral_dist = (
+            (pos_w[:, 0] - target[:, 0]).pow(2)
+            + (pos_w[:, 1] - target[:, 1]).pow(2)
+        ).sqrt()
+
+        contact_height = self.cfg.ground_contact_height
+        airborne_height = contact_height + self.cfg.ground_contact_hysteresis
+        was_airborne = self._was_airborne | (h_agl > airborne_height)
+        near_ground = h_agl <= contact_height
+        ground_hit = was_airborne & near_ground
+        impact_speed = torch.maximum(speed, self._prev_speed)
+
+        crashed = ground_hit & (impact_speed > self.cfg.crash_velocity_threshold)
+        landed = (
+            ground_hit
+            & (impact_speed <= self.cfg.crash_velocity_threshold)
+            & (lateral_dist <= self.cfg.landing_pad_radius)
+        )
+        out_of_bounds = torch.zeros_like(landed)
+
+        return {
+            "h_agl": h_agl,
+            "speed": speed,
+            "lateral_dist": lateral_dist,
+            "was_airborne": was_airborne,
+            "ground_hit": ground_hit,
+            "impact_speed": impact_speed,
+            "landed": landed,
+            "crashed": crashed,
+            "out_of_bounds": out_of_bounds,
+        }
+
     def _get_rewards(self) -> torch.Tensor:
         """Compute shaped + terminal rewards. Returns (num_envs,) float32 tensor."""
         cfg = self._reward_cfg
@@ -737,8 +908,9 @@ class EdfLandingTask(DirectRLEnv):
         omega_b = data.root_ang_vel_b
         quat_w  = data.root_quat_w
 
-        h_agl = pos_w[:, 2].clamp(min=0.0)
-        speed = vel_b.norm(dim=-1)
+        term = self._compute_terminal_metrics()
+        h_agl = term["h_agl"].clamp(min=0.0)
+        speed = term["speed"]
 
         # Distance to target
         dist = (self._target_pos_w - pos_w).norm(dim=-1)
@@ -760,10 +932,32 @@ class EdfLandingTask(DirectRLEnv):
         r -= cfg.orientation_weight * tilt_penalty
 
         # Action smoothness penalty
-        delta_action = (self._prev_action - torch.zeros_like(self._prev_action)).norm(dim=-1)
+        delta_action = (self._current_action - self._prev_action).norm(dim=-1)
         r -= cfg.action_smooth_weight * delta_action
 
-        # Terminal rewards are handled in _get_dones / caller
+        sigma = max(float(cfg.precision_sigma), 1e-9)
+        v_touch_max = max(float(self.cfg.crash_velocity_threshold), 1e-9)
+        landed = term["landed"]
+        crashed = term["crashed"]
+        out_of_bounds = term["out_of_bounds"]
+
+        precision_bonus = cfg.precision_bonus * torch.exp(
+            -(term["lateral_dist"].square()) / (2.0 * sigma * sigma)
+        )
+        soft_touch_bonus = cfg.soft_touchdown * torch.clamp(
+            1.0 - (term["impact_speed"] / v_touch_max),
+            min=0.0,
+        )
+        landing_bonus = (
+            cfg.landing_success
+            + precision_bonus
+            + soft_touch_bonus
+        )
+        r += landed.float() * landing_bonus
+        r -= crashed.float() * cfg.crash_penalty
+        r -= out_of_bounds.float() * cfg.oob_penalty
+
+        self._prev_action.copy_(self._current_action)
         return r
 
     # ------------------------------------------------------------------
@@ -771,30 +965,24 @@ class EdfLandingTask(DirectRLEnv):
     # ------------------------------------------------------------------
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         """Return (terminated, truncated) tensors."""
-        data = self.robot.data
-        pos_w = data.root_pos_w
-        vel_b = data.root_lin_vel_b
+        term = self._compute_terminal_metrics()
+        landed = term["landed"]
+        crashed = term["crashed"]
+        out_of_bounds = term["out_of_bounds"]
 
-        h_agl  = pos_w[:, 2]
-        speed  = vel_b.norm(dim=-1)
-
-        # Lateral distance from target (Z-up: horizontal plane = X, Y)
-        target = self._target_pos_w
-        lateral_dist = ((pos_w[:, 0] - target[:, 0]).pow(2)
-                        + (pos_w[:, 1] - target[:, 1]).pow(2)).sqrt()
-
-        # Crash: below ground with high speed
-        crashed = (h_agl < 0.05) & (speed > self.cfg.crash_velocity_threshold)
-
-        # Landed: near ground, low speed, within pad radius
-        landed = (
-            (h_agl < 0.05)
-            & (speed <= self.cfg.crash_velocity_threshold)
-            & (lateral_dist <= self.cfg.landing_pad_radius)
-        )
-
-        terminated = crashed | landed
+        terminated = crashed | landed | out_of_bounds
         truncated  = self._episode_step >= self._max_steps
+        self._prev_speed.copy_(term["speed"])
+        self._was_airborne.copy_(term["was_airborne"])
+        self._was_airborne[terminated] = False
+        self._last_landed.copy_(landed)
+        self._last_crashed.copy_(crashed)
+        self._last_out_of_bounds.copy_(out_of_bounds)
+        self._last_ground_hit.copy_(term["ground_hit"])
+        self._last_h_agl.copy_(term["h_agl"])
+        self._last_speed.copy_(term["speed"])
+        self._last_impact_speed.copy_(term["impact_speed"])
+        self._last_lateral_dist.copy_(term["lateral_dist"])
 
         return terminated, truncated
 

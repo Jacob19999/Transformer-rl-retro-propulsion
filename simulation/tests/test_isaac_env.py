@@ -26,6 +26,7 @@ sys.path.insert(0, str(REPO_ROOT))
 # Conditional skip — IsaacLab only available inside Isaac Sim Python env
 # ---------------------------------------------------------------------------
 isaaclab = pytest.importorskip("isaaclab", reason="IsaacLab not available; skipping Isaac tests")
+pytest.importorskip("carb", reason="Isaac Sim runtime not available; skipping Isaac tests")
 
 from simulation.isaac.envs.edf_isaac_env import EDFIsaacEnv  # noqa: E402
 
@@ -78,6 +79,34 @@ def test_observation_dimensions(single_env):
     assert obs.shape == (20,), f"Expected (20,), got {obs.shape}"
     assert obs.dtype == np.float32, f"Expected float32, got {obs.dtype}"
     assert np.all(np.isfinite(obs)), "Observation contains non-finite values"
+
+
+@pytest.mark.isaac
+def test_reset_seed_reproducible_initial_observation():
+    """reset(seed=...) should reproduce the same initial observation."""
+    env = EDFIsaacEnv(config_path=_SINGLE_CFG, seed=0)
+    try:
+        obs_a, _ = env.reset(seed=123)
+        obs_b, _ = env.reset(seed=123)
+        np.testing.assert_allclose(obs_a, obs_b, atol=1e-6)
+    finally:
+        env.close()
+
+
+@pytest.mark.isaac
+def test_step_info_exposes_terminal_diagnostics(single_env):
+    """step() info should expose landing diagnostics needed by PID tuning."""
+    single_env.reset(seed=7)
+    zero_action = np.zeros(5, dtype=np.float32)
+    _, _, _, _, info = single_env.step(zero_action)
+
+    assert {"landed", "crashed", "out_of_bounds", "impact_speed", "lateral_dist", "h_agl"} <= set(info)
+    assert isinstance(info["landed"], bool)
+    assert isinstance(info["crashed"], bool)
+    assert isinstance(info["out_of_bounds"], bool)
+    assert np.isfinite(info["impact_speed"])
+    assert np.isfinite(info["lateral_dist"])
+    assert np.isfinite(info["h_agl"])
 
 
 # ---------------------------------------------------------------------------

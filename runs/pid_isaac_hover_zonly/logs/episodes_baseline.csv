@@ -1,0 +1,2 @@
+episode_idx,seed,total_reward,steps,landed,crashed,truncated,out_of_bounds,impact_speed,lateral_dist,final_h_agl,mean_abs_alt_error,mean_speed,mean_ang_speed,mean_lateral,max_abs_roll_deg,max_abs_pitch_deg,max_abs_omega_xy
+0,0,-533.4574220975538,600,True,False,True,False,nan,0.0,5.0,0.4094364321231842,2.6911796075819683,0.1273380717872682,1.554762516302767,24.68342174639364,24.76628507490597,0.24103332095389454

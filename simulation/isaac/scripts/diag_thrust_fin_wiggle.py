@@ -33,6 +33,7 @@ Usage::
     python -m simulation.isaac.scripts.diag_thrust_fin_wiggle --fixed-altitude
     python -m simulation.isaac.scripts.diag_thrust_fin_wiggle --thrust 0.75 --max-deflection 0.5 --fixed-altitude
     python -m simulation.isaac.scripts.diag_thrust_fin_wiggle --hold-secs 2.0 --fixed-altitude
+    python -m simulation.isaac.scripts.diag_thrust_fin_wiggle --fixed-altitude --disable-wind --disable-gyro --disable-anti-torque
 """
 
 from __future__ import annotations
@@ -190,8 +191,9 @@ def build_episode_sequence(
 ) -> tuple[list[np.ndarray], list[str]]:
     """Build step-hold episode sequence (no sine wiggle).
 
-    For each axis (Yaw → Roll → Pitch):
-      settle | <axis>- hold | settle | <axis>+ hold | settle
+    Uses the same routine for every axis:
+      settle | <axis>- hold | settle | <axis>+ hold
+    and appends one final settle at the end.
 
     Fin commands per axis (FRD body frame):
       Yaw  τ_z = 0.055·k·(−d1+d2+d3−d4)
@@ -226,28 +228,20 @@ def build_episode_sequence(
             actions.append(a)
             labels.append("settle")
 
-    # ── Yaw ────────────────────────────────────────────────────────────────
-    # τ_z = 0.055·k·(−d1+d2+d3−d4)
-    _settle()
-    _hold([+v, -v, -v, +v], "Yaw-")   # τ_z < 0  (yaw left)
-    _settle()
-    _hold([-v, +v, +v, -v], "Yaw+")   # τ_z > 0  (yaw right)
-    _settle()
+    axis_routine: list[tuple[str, list[float], list[float]]] = [
+        # τ_z = 0.055·k·(−d1+d2+d3−d4)
+        ("Yaw",   [+v, -v, -v, +v], [-v, +v, +v, -v]),
+        # τ_x = −Z·k·(d3+d4) [Fin_3(left)+Fin_4(right)]
+        ("Roll",  [0.0, 0.0, +v, +v], [0.0, 0.0, -v, -v]),
+        # τ_y = +Z·k·(d1+d2) [Fin_1(fwd)+Fin_2(aft)]
+        ("Pitch", [-v, -v, 0.0, 0.0], [+v, +v, 0.0, 0.0]),
+    ]
 
-    # ── Roll ───────────────────────────────────────────────────────────────
-    # τ_x = −Z·k·(d3+d4)  [Fin_3(left) at −Y, Fin_4(right) at +Y, lift +Y]
-    _settle()
-    _hold([0.0, 0.0, +v, +v], "Roll-")  # τ_x < 0
-    _settle()
-    _hold([0.0, 0.0, -v, -v], "Roll+")  # τ_x > 0
-    _settle()
-
-    # ── Pitch ──────────────────────────────────────────────────────────────
-    # τ_y = +Z·k·(d1+d2)  [Fin_1(fwd) at +X, Fin_2(aft) at −X, lift +X]
-    _settle()
-    _hold([-v, -v, 0.0, 0.0], "Pitch-")  # τ_y < 0
-    _settle()
-    _hold([+v, +v, 0.0, 0.0], "Pitch+")  # τ_y > 0
+    for axis_name, neg_cmd, pos_cmd in axis_routine:
+        _settle()
+        _hold(neg_cmd, f"{axis_name}-")
+        _settle()
+        _hold(pos_cmd, f"{axis_name}+")
     _settle()
 
     return actions, labels
@@ -340,6 +334,24 @@ def main() -> None:
         help="Disable gravity and lock drone position at 1.0 m altitude (rotation free)",
     )
     parser.add_argument(
+        "--disable-wind",
+        action="store_true",
+        default=False,
+        help="Disable Isaac wind disturbance model for this run (default: False)",
+    )
+    parser.add_argument(
+        "--disable-gyro",
+        action="store_true",
+        default=False,
+        help="Disable gyro-precession torque injection for this run (default: False)",
+    )
+    parser.add_argument(
+        "--disable-anti-torque",
+        action="store_true",
+        default=False,
+        help="Disable EDF reaction/anti-torque injection for this run (default: False)",
+    )
+    parser.add_argument(
         "--override-inertia",
         type=float,
         nargs=3,
@@ -389,18 +401,24 @@ def main() -> None:
     except Exception as exc:
         print(f"[thrust_fin_wiggle] WARNING: could not print fin hinge configuration: {exc}")
 
-    # Disable gyro precession / wind for clean fin-only measurement
+    # Optional runtime effect toggles (layered on top of YAML config)
     if hasattr(env, "_task"):
         try:
-            env._task._gyro_enabled = False
-            print("[thrust_fin_wiggle] Gyro precession: DISABLED")
+            env._task.set_runtime_overrides(
+                disable_wind=args.disable_wind,
+                disable_gyro=args.disable_gyro,
+                disable_anti_torque=args.disable_anti_torque,
+                disable_gravity=False,
+            )
         except Exception as exc:
-            print(f"[thrust_fin_wiggle] WARNING: could not disable gyro effects: {exc}")
-        try:
-            env._task._wind_model = None
-            print("[thrust_fin_wiggle] Wind model:      DISABLED")
-        except Exception as exc:
-            print(f"[thrust_fin_wiggle] WARNING: could not disable wind model: {exc}")
+            print(f"[thrust_fin_wiggle] WARNING: could not apply runtime overrides: {exc}")
+
+        if args.disable_gyro:
+            print("[thrust_fin_wiggle] Gyro precession: DISABLED (runtime override)")
+        if args.disable_wind:
+            print("[thrust_fin_wiggle] Wind model:      DISABLED (runtime override)")
+        if args.disable_anti_torque:
+            print("[thrust_fin_wiggle] Reaction torque: DISABLED (runtime override)")
 
     if args.fixed_altitude:
         _disable_gravity(env)
@@ -509,6 +527,10 @@ def main() -> None:
                         f"\n  ── settle ({_STEPS_SETTLE/120:.2f} s, orientation reset) ──"
                     )
                 elif label in HOLD_LABELS:
+                    # Enforce deterministic "zero angular velocity -> hold" sequence.
+                    _reset_orientation(env)
+                    if args.fixed_altitude:
+                        _lock_position_at_altitude(env, altitude_m=1.0)
                     _print_phase_header(label, action, args.hold_secs)
 
                 prev_label = label

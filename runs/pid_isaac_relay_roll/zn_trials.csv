@@ -1,0 +1,2 @@
+method,loop,kp_tested,estimated_Ku,oscillation_detected,Tu_s,median_amplitude,max_abs_signal,rms_signal,final_abs_signal,zero_crossings,steps,crashed,truncated
+relay-autotune,roll,0.2,nan,False,nan,nan,0.6634647942890086,0.29825095594435896,0.6634647942890086,2,409,False,False

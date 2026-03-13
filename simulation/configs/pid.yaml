@@ -1,6 +1,6 @@
 pid:
-  dt: 0.025
-  delta_max: 0.349
+  dt: 0.008333333333333333
+  delta_max: 0.2618
   thrust_rate_limit: 0.1
   outer_loop:
     altitude:
@@ -19,11 +19,11 @@ pid:
     max_tilt_cmd_deg: 15.0
   inner_loop:
     roll:
-      Kp: 0.175
-      Kd: 0.06999999999999999
+      Kp: 0.35
+      Kd: 0.13999999999999999
     pitch:
-      Kp: 0.25
-      Kd: 0.1
+      Kp: 0.5
+      Kd: 0.2
     gyro_ff: 0.02
     yaw_Kd: 0.5
     yaw_lp_hz: 0.0

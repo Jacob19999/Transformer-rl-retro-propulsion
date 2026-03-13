@@ -1,0 +1,48 @@
+pid:
+  dt: 0.008333333333333333
+  delta_max: 0.2618
+  thrust_rate_limit: 0.1
+  outer_loop:
+    altitude:
+      Kp: 0.65
+      Ki: 0.22749999999999998
+      Kd: 0.52
+      max_error: 2.0
+      integral_limit: 1.0
+      target_h_agl: 5.0
+    lateral_x:
+      Kp: 0.0
+      Kd: 0.0
+    lateral_y:
+      Kp: 0.0
+      Kd: 0.0
+    max_tilt_cmd_deg: 15.0
+  inner_loop:
+    roll:
+      Kp: 0.175
+      Kd: 0.06999999999999999
+    pitch:
+      Kp: 0.25
+      Kd: 0.1
+    gyro_ff: 0.02
+    yaw_Kd: 0.0
+    yaw_lp_hz: 0.0
+    max_yaw_frac: 0.0
+  gain_schedule:
+    enabled: true
+    phases:
+    - name: descent
+      altitude_range:
+      - 2.0
+      - 100.0
+      gain_scale: 1.0
+    - name: approach
+      altitude_range:
+      - 0.5
+      - 2.0
+      gain_scale: 0.85
+    - name: terminal
+      altitude_range:
+      - 0.0
+      - 0.5
+      gain_scale: 0.7

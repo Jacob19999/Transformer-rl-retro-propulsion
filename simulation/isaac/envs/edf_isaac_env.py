@@ -58,6 +58,11 @@ class EDFIsaacEnv(gym.Env):
         config_path: str | Path = "simulation/isaac/configs/isaac_env_single.yaml",
         render_mode: str | None = None,
         seed: int | None = None,
+        *,
+        disable_wind: bool = False,
+        disable_gyro: bool = False,
+        disable_anti_torque: bool = False,
+        disable_gravity: bool = False,
     ) -> None:
         super().__init__()
 
@@ -69,6 +74,10 @@ class EDFIsaacEnv(gym.Env):
         self._num_envs = int(self._cfg_raw.get("num_envs", 1))
         self._render_mode = render_mode
         self._seed = seed
+        self._runtime_disable_wind = bool(disable_wind)
+        self._runtime_disable_gyro = bool(disable_gyro)
+        self._runtime_disable_anti_torque = bool(disable_anti_torque)
+        self._runtime_disable_gravity = bool(disable_gravity)
 
         # VRAM guard (T031)
         self._check_vram()
@@ -119,6 +128,14 @@ class EDFIsaacEnv(gym.Env):
         # Instantiate IsaacLab task
         self._task = EdfLandingTask(cfg=task_cfg, render_mode=render_mode)
 
+        # Apply runtime overrides (PID tuning / evaluation scripts).
+        self._task.set_runtime_overrides(
+            disable_wind=self._runtime_disable_wind,
+            disable_gyro=self._runtime_disable_gyro,
+            disable_anti_torque=self._runtime_disable_anti_torque,
+            disable_gravity=self._runtime_disable_gravity,
+        )
+
         # Gymnasium spaces
         obs_dim = 20
         act_dim = 5
@@ -149,6 +166,10 @@ class EDFIsaacEnv(gym.Env):
     ) -> tuple[np.ndarray, dict[str, Any]]:
         if seed is not None:
             self._seed = seed
+            torch.manual_seed(int(seed))
+            np.random.seed(int(seed))
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(int(seed))
 
         obs_dict, _ = self._task.reset()
         obs = self._to_numpy(obs_dict["policy"])
@@ -189,10 +210,13 @@ class EDFIsaacEnv(gym.Env):
         info = {
             "episode_step": self._task._episode_step.cpu().numpy(),
             "h_agl": h_agl,
-            "is_success": term & ~(
-                self._task.robot.data.root_lin_vel_b.norm(dim=-1)
-                > self._task.cfg.crash_velocity_threshold
-            ).cpu().numpy(),
+            "is_success": self._task._last_landed.cpu().numpy(),
+            "landed": self._task._last_landed.cpu().numpy(),
+            "crashed": self._task._last_crashed.cpu().numpy(),
+            "out_of_bounds": self._task._last_out_of_bounds.cpu().numpy(),
+            "ground_hit": self._task._last_ground_hit.cpu().numpy(),
+            "impact_speed": self._task._last_impact_speed.cpu().numpy(),
+            "lateral_dist": self._task._last_lateral_dist.cpu().numpy(),
         }
 
         if self._num_envs == 1:
@@ -200,6 +224,17 @@ class EDFIsaacEnv(gym.Env):
             rew   = float(rew[0])
             term  = bool(term[0])
             trunc = bool(trunc[0])
+            info = {
+                "episode_step": int(np.asarray(info["episode_step"]).reshape(-1)[0]),
+                "h_agl": float(np.asarray(info["h_agl"]).reshape(-1)[0]),
+                "is_success": bool(np.asarray(info["is_success"]).reshape(-1)[0]),
+                "landed": bool(np.asarray(info["landed"]).reshape(-1)[0]),
+                "crashed": bool(np.asarray(info["crashed"]).reshape(-1)[0]),
+                "out_of_bounds": bool(np.asarray(info["out_of_bounds"]).reshape(-1)[0]),
+                "ground_hit": bool(np.asarray(info["ground_hit"]).reshape(-1)[0]),
+                "impact_speed": float(np.asarray(info["impact_speed"]).reshape(-1)[0]),
+                "lateral_dist": float(np.asarray(info["lateral_dist"]).reshape(-1)[0]),
+            }
 
         return obs, rew, term, trunc, info
 
@@ -208,6 +243,22 @@ class EDFIsaacEnv(gym.Env):
     # ------------------------------------------------------------------
     def close(self) -> None:
         self._task.close()
+
+    def set_reset_perturbation(
+        self,
+        *,
+        altitude_offset_m: float = 0.0,
+        roll_offset_rad: float = 0.0,
+        pitch_offset_rad: float = 0.0,
+        ang_vel_frd: tuple[float, float, float] | list[float] | None = None,
+    ) -> None:
+        """Forward deterministic hover perturbations to the underlying task."""
+        self._task.set_reset_perturbation(
+            altitude_offset_m=altitude_offset_m,
+            roll_offset_rad=roll_offset_rad,
+            pitch_offset_rad=pitch_offset_rad,
+            ang_vel_frd=ang_vel_frd,
+        )
 
     # ------------------------------------------------------------------
     # Helpers
