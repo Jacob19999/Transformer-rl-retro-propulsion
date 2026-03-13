@@ -1,8 +1,7 @@
 .\env_isaaclab\Scripts\activate
 
-# USD validation / info (requires pxr — use Isaac Sim Python)
-.\env_isaaclab\Scripts\python.exe -m simulation.isaac.usd.drone_builder validate --usd simulation/isaac/usd/drone.usdc
-.\env_isaaclab\Scripts\python.exe -m simulation.isaac.usd.drone_builder info --usd simulation/isaac/usd/drone.usdc
+# Add physics
+python -m simulation.isaac.scripts.diag_thrust_fin_wiggle --thrust 0.75 --max-deflection 0.1 --fixed-altitude --override-inertia 0.1 0.1 0.1 --hold-secs 1.0
 
 # Diagnostics
 .\env_isaaclab\Scripts\python.exe -m simulation.isaac.scripts.diag_isaac_single --config simulation/isaac/configs/isaac_env_single.yaml
@@ -33,4 +32,4 @@ python -m simulation.isaac.scripts.validate_mass_props --usd simulation/isaac/us
 # Launch Isaac Sim GUI
 .\env_isaaclab\Scripts\isaacsim.exe
 
-python -m simulation.isaac.scripts.diag_thrust_fin_wiggle --thrust 0.75 --max-deflection 0.1 --fixed-altitude --override-inertia 0.1 0.1 0.1 --hold-secs 1.0
+

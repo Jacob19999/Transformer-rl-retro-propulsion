@@ -31,7 +31,7 @@ Confirms anti-torque math: `τ = -k_torque × ω²` for 5+ thrust levels.
 python -m simulation.isaac.scripts.diag_reaction_torque --mode constant --thrust 0.68 --duration 3.0
 ```
 
-Expected: drone yaws monotonically at ~139 °/s² (≈418 °/s after 3s). PASS if yaw rate matches predicted value within 10%.
+Expected: drone yaws monotonically, and the measured yaw-rate build-up matches the `((k_torque × ω²) / I_zz) × t` prediction from the live Isaac asset within 10%.
 
 ### 3. RPM-ramp diagnostic
 
@@ -39,7 +39,7 @@ Expected: drone yaws monotonically at ~139 °/s² (≈418 °/s after 3s). PASS i
 python -m simulation.isaac.scripts.diag_reaction_torque --mode ramp --ramp-duration 1.0 --duration 3.0
 ```
 
-Expected: yaw rate spikes during ramp, then settles to steady-state. PASS if peak > 110% of steady-state.
+Expected: the ramp transient increases total yaw acceleration above the anti-torque-only value. PASS if end-of-ramp total yaw acceleration > 110% of the anti-torque-only yaw acceleration at matched thrust.
 
 ### 4. End-to-end liftoff with yaw
 
@@ -47,7 +47,7 @@ Expected: yaw rate spikes during ramp, then settles to steady-state. PASS if pea
 python -m simulation.isaac.scripts.diag_reaction_torque --mode liftoff --duration 2.0
 ```
 
-Expected: altitude > 5m AND yaw > 5°. Confirms anti-torque active in full pipeline.
+Expected: altitude > 5m AND yaw > 5°. Confirms anti-torque active in the full ground-contact + thrust + rigid-body pipeline.
 
 ### 5. A/B comparison (disabled baseline)
 
@@ -55,7 +55,7 @@ Expected: altitude > 5m AND yaw > 5°. Confirms anti-torque active in full pipel
 python -m simulation.isaac.scripts.diag_reaction_torque --mode constant --thrust 0.68 --disable-anti-torque
 ```
 
-Expected: yaw rate < 0.01 rad/s (no reaction torque).
+Expected: peak yaw rate < 0.5 °/s (baseline with both steady-state and ramp torque disabled).
 
 ## Config
 
@@ -66,6 +66,8 @@ edf:
   anti_torque:
     enabled: true   # set false for A/B diagnostics
 ```
+
+Isaac implementation note: body CoM/inertia and fin anchors are read from the live Isaac asset, not from the legacy YAML geometry fields. The diagnostic predictions therefore use the Isaac-derived body inertia, while the torque coefficient still comes from the vehicle YAML.
 
 ## Impact on Training
 

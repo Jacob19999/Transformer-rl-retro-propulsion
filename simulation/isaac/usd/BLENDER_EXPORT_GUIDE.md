@@ -25,10 +25,10 @@ Drone  (Empty — root, do NOT rotate)
 │   ├── imu                (Mesh — BNO085)
 │   └── camera             (Mesh — optical flow)
 │
-├── Fin_1  (Mesh — right fin,    origin at hinge)   ← ARTICULATED
-├── Fin_2  (Mesh — left fin,     origin at hinge)   ← ARTICULATED
-├── Fin_3  (Mesh — forward fin,  origin at hinge)   ← ARTICULATED
-├── Fin_4  (Mesh — aft fin,      origin at hinge)   ← ARTICULATED
+├── Fin_1  (Mesh — forward fin,  origin at hinge)   ← ARTICULATED
+├── Fin_2  (Mesh — aft fin,      origin at hinge)   ← ARTICULATED
+├── Fin_3  (Mesh — left fin,     origin at hinge)   ← ARTICULATED
+├── Fin_4  (Mesh — right fin,    origin at hinge)   ← ARTICULATED
 │
 └── Legs   (Mesh — single combined landing gear, rigid)
 ```
@@ -47,10 +47,10 @@ Drone  (Empty — root, do NOT rotate)
 |--------|----------------|---------------|-------|
 | **Required** | `Drone` | `/Drone` | Root empty |
 | **Required** | `Body` | `/Drone/Body` | Empty (rigid body group) |
-| **Required** | `Fin_1` | `/Drone/Fin_1` | Right fin — origin at hinge |
-| **Required** | `Fin_2` | `/Drone/Fin_2` | Left fin |
-| **Required** | `Fin_3` | `/Drone/Fin_3` | Forward fin |
-| **Required** | `Fin_4` | `/Drone/Fin_4` | Aft fin |
+| **Required** | `Fin_1` | `/Drone/Fin_1` | Forward fin — origin at hinge |
+| **Required** | `Fin_2` | `/Drone/Fin_2` | Aft fin |
+| **Required** | `Fin_3` | `/Drone/Fin_3` | Left fin |
+| **Required** | `Fin_4` | `/Drone/Fin_4` | Right fin |
 | Recommended | `edf` | `/Drone/Body/edf` | Combined duct + fan, child of Body |
 | Recommended | `Legs` | `/Drone/Legs` | Single mesh, direct child of Drone |
 

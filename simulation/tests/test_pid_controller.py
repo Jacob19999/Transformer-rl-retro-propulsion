@@ -62,15 +62,15 @@ def test_lateral_error_maps_to_expected_fin_signs() -> None:
     ctrl.reset()
 
     # Target is forward (+x): expect negative pitch command (nose down),
-    # which maps to fin1 negative, fin2 positive (pitch channel).
+    # which maps to common-mode negative deflection on Fin_1+Fin_2.
     a_fwd = ctrl.get_action(_obs(target_body=np.array([1.0, 0.0, 0.0]), h_agl=0.0))
     assert a_fwd[1] < 0.0
-    assert a_fwd[2] > 0.0
+    assert a_fwd[2] < 0.0
 
     # Target is right (+y): expect positive roll command,
-    # which maps to fin3 positive, fin4 negative (roll channel).
+    # which maps to common-mode negative deflection on Fin_3+Fin_4.
     a_right = ctrl.get_action(_obs(target_body=np.array([0.0, 1.0, 0.0]), h_agl=0.0))
-    assert a_right[3] > 0.0
+    assert a_right[3] < 0.0
     assert a_right[4] < 0.0
 
 

@@ -156,6 +156,11 @@ class VehicleDynamics:
         r_offset_thrust = r_thrust - self.com
         tau_thrust = np.cross(r_offset_thrust, F_thrust)
         tau_motor = self.thrust_model.motor_reaction_torque(T=T, T_dot=T_dot)
+        tau_anti = (
+            self.thrust_model.steady_state_anti_torque(T=T)
+            if self.thrust_model.config.anti_torque_enabled
+            else np.zeros(3, dtype=float)
+        )
 
         # Aero
         F_aero, tau_aero = self.aero_model.compute(v_b, R, v_wind, rho=rho)
@@ -164,7 +169,7 @@ class VehicleDynamics:
         F_fins, tau_fins = self.fin_model.compute(delta_actual, omega_fan, rho=rho)
 
         F_total = F_thrust + F_aero + F_fins
-        tau_total = tau_thrust + tau_aero + tau_fins + tau_motor
+        tau_total = tau_thrust + tau_aero + tau_fins + tau_motor + tau_anti
 
         # Position kinematics: p_dot = R @ v_b
         p_dot = R @ v_b

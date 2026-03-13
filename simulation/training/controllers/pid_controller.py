@@ -261,9 +261,9 @@ class PIDController(Controller):
         # Map to fin actions: common-mode deflection for pitch/roll torque,
         # differential deflection for yaw torque.
         #
-        # Pitch: fins 1/2 (right/left, lift in body-x) produce pitch torque
+        # Pitch: fins 1/2 (fwd/aft, lift in body-x) produce pitch torque
         #   via common-mode deflection.
-        # Roll:  fins 3/4 (fwd/aft, lift in body-y) produce roll torque
+        # Roll:  fins 3/4 (left/right, lift in body-y) produce roll torque
         #   via common-mode deflection (sign inverted per fin_model.compute).
         # Yaw:   the correct yaw-producing pattern is [-d,+d,+d,-d].
         #   Fins 1 at y>0 and fin 3 at x>0 must have *opposite* differential

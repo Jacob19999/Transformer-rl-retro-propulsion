@@ -131,7 +131,8 @@ class EdfSceneCfg(InteractiveSceneCfg):
         prim_path="{ENV_REGEX_NS}/Drone",
         spawn=sim_utils.UsdFileCfg(
             usd_path=str(REPO_ROOT / "simulation" / "isaac" / "usd" / "drone_v2_physics.usdc"),
-            # No rigid_props / articulation_props / collision_props -- preserve USD as-is
+            # No rigid_props / articulation_props / collision_props -- preserve USD as-is,
+            # including whatever lighting is authored in the source scene.
         ),
         init_state=ArticulationCfg.InitialStateCfg(
             pos=(0.0, 0.0, 7.5),  # Z-up: start 7.5 m above ground
@@ -148,27 +149,6 @@ class EdfSceneCfg(InteractiveSceneCfg):
                 effort_limit_sim=2.0,
             ),
         },
-    )
-
-    # Grey studio lighting -- neutral dome + soft key light
-    sky_light: AssetBaseCfg = AssetBaseCfg(
-        prim_path="/World/skyLight",
-        spawn=sim_utils.DomeLightCfg(
-            intensity=800.0,
-            color=(0.75, 0.75, 0.75),
-        ),
-    )
-
-    key_light: AssetBaseCfg = AssetBaseCfg(
-        prim_path="/World/keyLight",
-        spawn=sim_utils.DistantLightCfg(
-            intensity=2000.0,
-            color=(0.9, 0.9, 0.9),
-            angle=0.53,
-        ),
-        init_state=AssetBaseCfg.InitialStateCfg(
-            rot=(0.612, 0.354, 0.354, 0.612),  # ~45 deg elevation from front-right
-        ),
     )
 
     # Number of envs is set by the parent DirectRLEnvCfg
@@ -320,6 +300,13 @@ class EdfLandingTask(DirectRLEnv):
         gyro_cfg = edf_cfg.get("gyro_precession", {})
         self._gyro_enabled: bool = bool(gyro_cfg.get("enabled", True))
         self._I_fan: float = float(edf_cfg.get("I_fan", 3.0e-5))  # kg·m², fan rotor MoI
+        anti_torque_cfg = edf_cfg.get("anti_torque", {})
+        self._anti_torque_enabled: bool = bool(anti_torque_cfg.get("enabled", True))
+        self._k_torque: float = float(edf_cfg.get("k_torque", 0.0))
+        self._tau_anti_b = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
+        self._tau_ramp_b = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
+        self._omega_fan = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
+        self._thrust_dot = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
 
         # Previous action (for smoothness reward)
         self._prev_action = torch.zeros(
@@ -472,6 +459,10 @@ class EdfLandingTask(DirectRLEnv):
         self.fin_deflections_actual[env_ids] = 0.0
         self._episode_step[env_ids] = 0
         self._prev_action[env_ids] = 0.0
+        self._tau_anti_b[env_ids] = 0.0
+        self._tau_ramp_b[env_ids] = 0.0
+        self._omega_fan[env_ids] = 0.0
+        self._thrust_dot[env_ids] = 0.0
         # T022: Reset wind model for selected environments
         if self._wind_model is not None:
             self._wind_model.reset(env_ids)
@@ -541,6 +532,8 @@ class EdfLandingTask(DirectRLEnv):
             delta_cmd - self.fin_deflections_actual
         )
         self.fin_deflections_actual.clamp_(-_DELTA_MAX, _DELTA_MAX)
+        self._thrust_dot = (T_cmd - self.thrust_actual) / _TAU_MOTOR
+        self._omega_fan = (self.thrust_actual / _K_THRUST).clamp(min=0.0).sqrt()
 
         # Increment episode step counter
         self._episode_step += 1
@@ -637,12 +630,25 @@ class EdfLandingTask(DirectRLEnv):
         # h_fan = [0, 0, I_fan·ω_fan] in body FRD frame (fan spins about body +Z = down).
         if self._gyro_enabled:
             omega_b   = self.robot.data.root_ang_vel_b                       # (N, 3) body frame
-            omega_fan = (self.thrust_actual / _K_THRUST).clamp(min=0).sqrt() # (N,) rad/s
             h_fan_b   = torch.zeros((num_envs, 3), device=self.device)
-            h_fan_b[:, 2] = self._I_fan * omega_fan                          # body +Z (FRD down)
+            h_fan_b[:, 2] = self._I_fan * self._omega_fan                    # body +Z (FRD down)
             tau_gyro_b = -torch.linalg.cross(omega_b, h_fan_b)              # (N, 3)
             tau_gyro_w = rotate_body_to_world_wxyz(self.robot.data.root_quat_w, tau_gyro_b)
             torques[:, 0, :] += tau_gyro_w
+
+        # Steady-state EDF anti-torque: τ_anti = -k_torque * ω_fan² about body +Z.
+        self._tau_anti_b.zero_()
+        self._tau_ramp_b.zero_()
+        if self._anti_torque_enabled:
+            self._tau_anti_b[:, 2] = -self._k_torque * self._omega_fan.square()
+            tau_anti_w = rotate_body_to_world_wxyz(quat_w, self._tau_anti_b)
+            torques[:, 0, :] += tau_anti_w
+
+            omega_safe = self._omega_fan.clamp(min=1e-6)
+            domega_dt = self._thrust_dot / (2.0 * _K_THRUST * omega_safe)
+            self._tau_ramp_b[:, 2] = -self._I_fan * domega_dt
+            tau_ramp_w = rotate_body_to_world_wxyz(quat_w, self._tau_ramp_b)
+            torques[:, 0, :] += tau_ramp_w
 
         # T021: Wind drag force -- added if wind model is active
         if self._wind_model is not None:

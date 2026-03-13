@@ -18,23 +18,26 @@ python -m simulation.isaac.scripts.diag_reaction_torque [OPTIONS]
 | `--thrust` | float (0.0–1.0) | `0.68` | Normalized thrust command (constant mode) |
 | `--ramp-duration` | float (s) | `1.0` | Time to ramp 0→100% (ramp mode) |
 | `--duration` | float (s) | `3.0` | Total test duration |
-| `--config` | path | `simulation/isaac/configs/isaac_env_gyro_test.yaml` | Isaac Sim env config |
+| `--config` | path | auto | Isaac Sim env config. Defaults to `simulation/isaac/configs/isaac_env_gyro_test.yaml` for `constant`/`ramp` and `simulation/isaac/configs/isaac_env_single.yaml` for `liftoff` |
 | `--vehicle-config` | path | `simulation/configs/default_vehicle.yaml` | Vehicle YAML (k_torque source) |
 | `--disable-anti-torque` | flag | false | Run with anti-torque disabled for A/B comparison |
-| `--output` | path | stdout | Write structured log to file (CSV) |
+| `--output` | path | temp CSV | Write structured log to file (CSV). If omitted, the script creates a temporary CSV and prints its path |
 
 ### Modes
 
-**`constant`**: Zero-gravity, hold thrust at `--thrust` level for `--duration`. Measures steady-state yaw rate.
+**`constant`**: Zero-gravity, hold thrust at `--thrust` level for `--duration`. Measures yaw-rate build-up from steady-state anti-torque.
 - Default config uses zero gravity (`isaac_env_gyro_test.yaml`)
-- Pass criterion: yaw rate matches `k_torque × ω² / I_zz` within 10%
+- Pass criterion: measured yaw rate for `t > 1s` matches `((k_torque × ω²) / I_zz) × t` within 10%, where `I_zz` comes from the live Isaac asset
+- When `--disable-anti-torque` is set: PASS if peak yaw rate remains < 0.5 °/s
 
-**`ramp`**: Zero-gravity, ramp from 0 to 100% thrust over `--ramp-duration`, then hold. Measures yaw spike.
-- Pass criterion: peak yaw rate during ramp > 110% of steady-state yaw rate at full thrust
+**`ramp`**: Zero-gravity, ramp from 0 to 100% thrust over `--ramp-duration`, then hold. Measures transient yaw-torque overshoot.
+- Pass criterion: end-of-ramp total yaw acceleration > 110% of the anti-torque-only yaw acceleration at matched thrust
+- When `--disable-anti-torque` is set: PASS if peak yaw rate remains < 0.5 °/s
 
 **`liftoff`**: Normal gravity, full thrust from ground (~0.4m). End-to-end pipeline validation.
 - Uses `isaac_env_single.yaml` (or override via `--config`)
 - Pass criterion: altitude > 5m AND yaw > 5° after `--duration` seconds
+- When `--disable-anti-torque` is set: PASS if final yaw remains < 0.5°
 
 ### Output Format
 

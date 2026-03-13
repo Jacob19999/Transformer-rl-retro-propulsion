@@ -19,8 +19,8 @@
 
 **Purpose**: Extend YAML configs with anti-torque toggle. `k_torque: 1.0e-8` already exists in both configs — only the new `anti_torque.enabled` key is added.
 
-- [ ] T001 Add `anti_torque: { enabled: true }` section under `edf` in `simulation/configs/default_vehicle.yaml`
-- [ ] T002 [P] Add `anti_torque: { enabled: true }` section under `edf` in `simulation/configs/test_vehicle.yaml`
+- [x] T001 Add `anti_torque: { enabled: true }` section under `edf` in `simulation/configs/default_vehicle.yaml`
+- [x] T002 [P] Add `anti_torque: { enabled: true }` section under `edf` in `simulation/configs/test_vehicle.yaml`
 
 **Checkpoint**: Both YAML configs parseable with new key. Existing tests still pass (`pytest`).
 
@@ -32,10 +32,10 @@
 
 **CRITICAL**: No Isaac Sim user story work can begin until this phase is complete.
 
-- [ ] T003 Extend `ThrustModelConfig` dataclass with `k_torque: float` and `anti_torque_enabled: bool` fields, and load both from config dict in `from_edf_config()` in `simulation/dynamics/thrust_model.py`
-- [ ] T004 Add `steady_state_anti_torque(self, *, T: float) -> np.ndarray` method to `ThrustModel` that returns `[0, 0, -k_torque * omega_fan²]` using `omega_from_thrust(T)` in `simulation/dynamics/thrust_model.py`
-- [ ] T005 Include steady-state anti-torque in `ThrustModel.outputs()` return, gated on `self.config.anti_torque_enabled`, adding to the existing `tau_offset + tau_reaction` sum in `simulation/dynamics/thrust_model.py`
-- [ ] T006 [P] Create unit tests for anti-torque and ramp-torque math in `simulation/tests/test_reaction_torque.py`: (1) `test_anti_torque_at_hover` — T=30.5N → τ_z ≈ −0.670 N·m, (2) `test_anti_torque_at_zero` — T=0 → τ=[0,0,0], (3) `test_anti_torque_proportional` — 3 thrust levels, verify τ ratio matches ω² ratio, (4) `test_anti_torque_disabled` — enabled=false → τ=[0,0,0], (5) `test_ramp_torque_sign` — T_dot>0 → τ_z<0, (6) `test_ramp_torque_at_constant_thrust` — T_dot=0 → τ_ramp=[0,0,0], (7) `test_combined_torque` — both terms non-zero simultaneously
+- [x] T003 Extend `ThrustModelConfig` dataclass with `k_torque: float` and `anti_torque_enabled: bool` fields, and load both from config dict in `from_edf_config()` in `simulation/dynamics/thrust_model.py`
+- [x] T004 Add `steady_state_anti_torque(self, *, T: float) -> np.ndarray` method to `ThrustModel` that returns `[0, 0, -k_torque * omega_fan²]` using `omega_from_thrust(T)` in `simulation/dynamics/thrust_model.py`
+- [x] T005 Include steady-state anti-torque in `ThrustModel.outputs()` return, gated on `self.config.anti_torque_enabled`, adding to the existing `tau_offset + tau_reaction` sum in `simulation/dynamics/thrust_model.py`
+- [x] T006 [P] Create unit tests for anti-torque and ramp-torque math in `simulation/tests/test_reaction_torque.py`: (1) `test_anti_torque_at_hover` — T=30.5N → τ_z ≈ −0.670 N·m, (2) `test_anti_torque_at_zero` — T=0 → τ=[0,0,0], (3) `test_anti_torque_proportional` — 3 thrust levels, verify τ ratio matches ω² ratio, (4) `test_anti_torque_disabled` — enabled=false → τ=[0,0,0], (5) `test_ramp_torque_sign` — T_dot>0 → τ_z<0, (6) `test_ramp_torque_at_constant_thrust` — T_dot=0 → τ_ramp=[0,0,0], (7) `test_combined_torque` — both terms non-zero simultaneously
 
 **Checkpoint**: `pytest simulation/tests/test_reaction_torque.py` passes. Existing tests still pass. Custom sim now applies steady-state anti-torque.
 
@@ -49,11 +49,11 @@
 
 ### Implementation for User Story 1
 
-- [ ] T007 [US1] Load `anti_torque` config (enabled flag + `k_torque`) at `__init__()` alongside existing gyro config loading (~line 290) in `simulation/isaac/tasks/edf_landing_task.py`
-- [ ] T008 [US1] Add steady-state anti-torque computation block in `_apply_action()` after gyro precession block (~line 552): compute `ω_fan = sqrt(T_actual / k_thrust)`, `τ_anti_b = [0, 0, -k_torque × ω²]`, rotate body→world, accumulate into torques tensor, gated on `_anti_torque_enabled` in `simulation/isaac/tasks/edf_landing_task.py`
-- [ ] T009 [US1] Create `simulation/isaac/scripts/diag_reaction_torque.py` scaffold: argparse CLI with `--mode {constant,ramp,liftoff}`, `--thrust`, `--ramp-duration`, `--duration`, `--config`, `--vehicle-config`, `--disable-anti-torque`, `--output` arguments per contracts/cli-contracts.md
-- [ ] T010 [US1] Implement `--mode constant` test logic: spawn drone in zero-gravity, apply constant thrust for `--duration`, log per-step CSV (step, time, altitude, yaw_deg, yaw_rate_dps, thrust_N, tau_anti_Nm, tau_ramp_Nm) in `simulation/isaac/scripts/diag_reaction_torque.py`
-- [ ] T011 [US1] Add constant-mode pass/fail: compute expected yaw rate from `k_torque × ω² / I_zz`, compare measured yaw rate at t>1s, PASS if within 10%, print result and exit with code 0/1 in `simulation/isaac/scripts/diag_reaction_torque.py`
+- [x] T007 [US1] Load `anti_torque` config (enabled flag + `k_torque`) at `__init__()` alongside existing gyro config loading (~line 290) in `simulation/isaac/tasks/edf_landing_task.py`
+- [x] T008 [US1] Add steady-state anti-torque computation block in `_apply_action()` after gyro precession block (~line 552): compute `ω_fan = sqrt(T_actual / k_thrust)`, `τ_anti_b = [0, 0, -k_torque × ω²]`, rotate body→world, accumulate into torques tensor, gated on `_anti_torque_enabled` in `simulation/isaac/tasks/edf_landing_task.py`
+- [x] T009 [US1] Create `simulation/isaac/scripts/diag_reaction_torque.py` scaffold: argparse CLI with `--mode {constant,ramp,liftoff}`, `--thrust`, `--ramp-duration`, `--duration`, `--config`, `--vehicle-config`, `--disable-anti-torque`, `--output` arguments per contracts/cli-contracts.md
+- [x] T010 [US1] Implement `--mode constant` test logic: spawn drone in zero-gravity, apply constant thrust for `--duration`, log per-step CSV (step, time, altitude, yaw_deg, yaw_rate_dps, thrust_N, tau_anti_Nm, tau_ramp_Nm) in `simulation/isaac/scripts/diag_reaction_torque.py`
+- [x] T011 [US1] Add constant-mode pass/fail: compute expected yaw rate from `k_torque × ω² / I_zz`, compare measured yaw rate at t>1s, PASS if within 10%, print result and exit with code 0/1 in `simulation/isaac/scripts/diag_reaction_torque.py`
 
 **Checkpoint**: `diag_reaction_torque --mode constant` reports PASS. Drone yaws monotonically at predicted rate. SC-001 and SC-003 validated.
 
@@ -61,17 +61,17 @@
 
 ## Phase 4: User Story 2 — RPM-Ramp Transient Torque Validation (Priority: P1)
 
-**Goal**: During a thrust ramp, peak yaw rate exceeds the steady-state value, confirming the transient `τ_ramp = -I_fan × dω/dt` is applied in Isaac Sim alongside the steady-state anti-torque.
+**Goal**: During a thrust ramp, transient yaw **acceleration / torque** exceeds the anti-torque-only value at matched thrust, confirming `τ_ramp = -I_fan × dω/dt` is applied in Isaac Sim alongside the steady-state anti-torque.
 
-**Independent Test**: Run `python -m simulation.isaac.scripts.diag_reaction_torque --mode ramp --ramp-duration 1.0 --duration 3.0` and confirm peak yaw rate during ramp > 110% of steady-state yaw rate at full thrust.
+**Independent Test**: Run `python -m simulation.isaac.scripts.diag_reaction_torque --mode ramp --ramp-duration 1.0 --duration 3.0` and confirm end-of-ramp yaw acceleration exceeds the anti-torque-only yaw acceleration at the same thrust by >10%.
 
 ### Implementation for User Story 2
 
-- [ ] T012 [US2] Add RPM-ramp reaction torque computation block in `_apply_action()` after anti-torque block: compute `T_dot = (T_cmd_clipped - T_actual) / tau_motor`, `dω/dt = T_dot / (2 × k_thrust × ω_safe)`, `τ_ramp_b = [0, 0, -I_fan × dω/dt]`, rotate body→world, accumulate into torques tensor, gated on `_anti_torque_enabled` in `simulation/isaac/tasks/edf_landing_task.py`
-- [ ] T013 [US2] Implement `--mode ramp` test logic: ramp thrust from 0 to 100% over `--ramp-duration`, then hold constant for remaining `--duration`, track yaw rate time-series for peak detection in `simulation/isaac/scripts/diag_reaction_torque.py`
-- [ ] T014 [US2] Add ramp-mode pass/fail: compute steady-state yaw rate at full thrust, find peak yaw rate during ramp interval, PASS if peak > 110% of steady-state, print comparison and exit with code 0/1 in `simulation/isaac/scripts/diag_reaction_torque.py`
+- [x] T012 [US2] Add RPM-ramp reaction torque computation block in `_apply_action()` after anti-torque block: compute `T_dot = (T_cmd_clipped - T_actual) / tau_motor`, `dω/dt = T_dot / (2 × k_thrust × ω_safe)`, `τ_ramp_b = [0, 0, -I_fan × dω/dt]`, rotate body→world, accumulate into torques tensor, gated on `_anti_torque_enabled` in `simulation/isaac/tasks/edf_landing_task.py`
+- [x] T013 [US2] Implement `--mode ramp` test logic: ramp thrust from 0 to 100% over `--ramp-duration`, then hold constant for remaining `--duration`, track yaw rate time-series for peak detection in `simulation/isaac/scripts/diag_reaction_torque.py`
+- [x] T014 [US2] Add ramp-mode pass/fail: compare total yaw acceleration at ramp end against the anti-torque-only yaw acceleration at matched thrust, PASS if total > 110%, print comparison and exit with code 0/1 in `simulation/isaac/scripts/diag_reaction_torque.py`
 
-**Checkpoint**: `diag_reaction_torque --mode ramp` reports PASS. Peak yaw rate during ramp exceeds steady-state by >10%. SC-002 validated.
+**Checkpoint**: `diag_reaction_torque --mode ramp` reports PASS. End-of-ramp yaw acceleration exceeds the anti-torque-only reference by >10%. SC-002 validated.
 
 ---
 
@@ -83,8 +83,8 @@
 
 ### Implementation for User Story 3
 
-- [ ] T015 [US3] Implement `--mode liftoff` test logic: use `isaac_env_single.yaml` (normal gravity), spawn on ground at ~0.4m, apply full thrust for `--duration`, log altitude + yaw alongside existing CSV fields in `simulation/isaac/scripts/diag_reaction_torque.py`
-- [ ] T016 [US3] Add liftoff-mode pass/fail: PASS if altitude > 5m AND yaw > 5° after `--duration` seconds; when `--disable-anti-torque` is set (already in T009 argparse), PASS if yaw < 0.5° (baseline confirmation) in `simulation/isaac/scripts/diag_reaction_torque.py`
+- [x] T015 [US3] Implement `--mode liftoff` test logic: use `isaac_env_single.yaml` (normal gravity), spawn on ground at ~0.4m, apply full thrust for `--duration`, log altitude + yaw alongside existing CSV fields in `simulation/isaac/scripts/diag_reaction_torque.py`
+- [x] T016 [US3] Add liftoff-mode pass/fail: PASS if altitude > 5m AND yaw > 5° after `--duration` seconds; when `--disable-anti-torque` is set (already in T009 argparse), PASS if yaw < 0.5° (baseline confirmation) in `simulation/isaac/scripts/diag_reaction_torque.py`
 
 **Checkpoint**: `diag_reaction_torque --mode liftoff` reports PASS with both altitude and yaw criteria. `diag_reaction_torque --mode liftoff --disable-anti-torque` shows < 0.5° yaw. SC-004, SC-005 validated. `diag_thrust_test.py` is NOT modified — it remains a pure thrust/altitude diagnostic.
 
@@ -94,7 +94,7 @@
 
 **Purpose**: Documentation, regression check, and full validation sequence.
 
-- [ ] T018 Update `CLAUDE.md` commands section with `diag_reaction_torque` invocations (all 3 modes + disable flag) following existing diagnostic command documentation pattern
+- [x] T018 Update `CLAUDE.md` commands section with `diag_reaction_torque` invocations (all 3 modes + disable flag) following existing diagnostic command documentation pattern
 - [ ] T019 Run full test suite (`pytest`) to verify no regressions in existing tests
 - [ ] T020 Run quickstart.md validation sequence end-to-end: unit test → constant mode → ramp mode → liftoff mode → A/B comparison
 
@@ -179,3 +179,4 @@ Task T011: "Add constant-mode pass/fail criteria"
 - Research notes `k_torque` may be ~2× the power-derived estimate. Use config value; flag for future hardware calibration.
 - The diagnostic reuses `isaac_env_gyro_test.yaml` (zero gravity) for constant/ramp modes and `isaac_env_single.yaml` for liftoff mode.
 - `diag_thrust_test.py` is NOT modified by this feature — it remains a pure thrust/altitude diagnostic with no yaw torque effects.
+- Isaac Sim implementation note: keep the live-asset path already in `edf_landing_task.py` — body CoM/inertia and fin anchors come from the loaded USD/PhysX data, not the legacy YAML geometry fields.

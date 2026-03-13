@@ -78,6 +78,7 @@ class ThrustModel:
 
     @classmethod
     def from_edf_config(cls, edf: Mapping[str, Any]) -> "ThrustModel":
+        anti_torque_cfg = edf.get("anti_torque", {})
         cfg = ThrustModelConfig(
             k_thrust=float(edf["k_thrust"]),
             tau_motor=float(edf["tau_motor"]),
@@ -86,6 +87,8 @@ class ThrustModel:
             I_fan=float(edf["I_fan"]),
             rho_ref=1.225,
             T_max=float(edf["max_static_thrust"]) if "max_static_thrust" in edf else None,
+            k_torque=float(edf.get("k_torque", 0.0)),
+            anti_torque_enabled=bool(anti_torque_cfg.get("enabled", True)),
         )
         return cls(cfg)
 
@@ -151,6 +154,12 @@ class ThrustModel:
         omega_dot = float(T_dot) / (2.0 * float(self.config.k_thrust) * omega_safe)
         return np.array([0.0, 0.0, -float(self.config.I_fan) * omega_dot], dtype=float)
 
+    def steady_state_anti_torque(self, *, T: float) -> np.ndarray:
+        """Steady-state fan anti-torque about body +z."""
+        omega = self.omega_from_thrust(T)
+        tau_z = -float(self.config.k_torque) * omega * omega
+        return np.array([0.0, 0.0, tau_z], dtype=float)
+
     def outputs(self, *, T: float, T_cmd: float, h: float, rho: float) -> tuple[np.ndarray, np.ndarray, float]:
         """Compute thrust force, total torque, and T_dot.
 
@@ -163,5 +172,10 @@ class ThrustModel:
         F = self.thrust_force(T_eff=T_eff)
         tau_offset = self.thrust_torque(r_offset=self.config.r_thrust, F_thrust=F)
         tau_reaction = self.motor_reaction_torque(T=T, T_dot=T_dot)
-        return F, (tau_offset + tau_reaction), float(T_dot)
+        tau_anti = (
+            self.steady_state_anti_torque(T=T)
+            if self.config.anti_torque_enabled
+            else np.zeros(3, dtype=float)
+        )
+        return F, (tau_offset + tau_reaction + tau_anti), float(T_dot)
 
