@@ -26,44 +26,20 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
-from isaacsim import SimulationApp  # noqa: E402
+from simulation.isaac.conventions import OBS_H_AGL  # noqa: E402
+from simulation.isaac.scripts._shared import (  # noqa: E402
+    any_done,
+    create_sim_app,
+    make_action,
+    obs_scalar,
+    resolve_repo_path,
+    set_gravity,
+)
 
-_SIM_APP: SimulationApp | None = None
+_SIM_APP = None
 
-_T_MAX = 45.0
-_K_THRUST = 4.55e-7
-_TAU_MOTOR = 0.10
-_DT = 1.0 / 120.0
 _ZERO_G_CONFIG = "simulation/isaac/configs/isaac_env_gyro_test.yaml"
 _LIFTOFF_CONFIG = "simulation/isaac/configs/isaac_env_single.yaml"
-
-_OBS_ALTITUDE = 16
-_OBS_OMEGA_Z = 11
-
-
-def _resolve_path(path_str: str | Path) -> Path:
-    path = Path(path_str)
-    return path if path.is_absolute() else REPO_ROOT / path
-
-
-def _obs_val(obs: np.ndarray, idx: int) -> float:
-    if obs.ndim == 2:
-        return float(obs[0, idx])
-    return float(obs[idx])
-
-
-def _is_done(done) -> bool:
-    return bool(np.any(done))
-
-
-def _make_action(
-    thrust_norm: float,
-    fin_deflections: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0),
-) -> np.ndarray:
-    action = np.zeros(5, dtype=np.float32)
-    action[0] = float(np.clip(thrust_norm, -1.0, 1.0))
-    action[1:5] = [float(v) for v in fin_deflections]
-    return action
 
 
 def _quat_wxyz_to_yaw_rad(quat_wxyz: np.ndarray) -> float:
@@ -80,27 +56,12 @@ def _unwrap_angle(prev: float | None, current: float) -> float:
     delta = math.atan2(math.sin(delta), math.cos(delta))
     return prev + delta
 
-
-def _set_gravity(env, magnitude: float) -> None:
-    try:
-        from pxr import UsdPhysics
-
-        stage = env._task.sim.stage
-        for prim in stage.Traverse():
-            if prim.IsA(UsdPhysics.Scene):
-                UsdPhysics.Scene(prim).GetGravityMagnitudeAttr().Set(float(magnitude))
-                return
-    except Exception as exc:  # pragma: no cover - Isaac-only path
-        raise RuntimeError(f"failed to set gravity magnitude to {magnitude}: {exc}") from exc
-    raise RuntimeError("physics scene not found while setting gravity")
-
-
 def _prepare_env_config(args) -> tuple[Path, Path | None]:
-    cfg_path = _resolve_path(args.config or (_LIFTOFF_CONFIG if args.mode == "liftoff" else _ZERO_G_CONFIG))
+    cfg_path = resolve_repo_path(args.config or (_LIFTOFF_CONFIG if args.mode == "liftoff" else _ZERO_G_CONFIG))
     with cfg_path.open("r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
 
-    cfg["vehicle_config_path"] = str(_resolve_path(args.vehicle_config))
+    cfg["vehicle_config_path"] = str(resolve_repo_path(args.vehicle_config))
     cfg["spawn_velocity_magnitude_range"] = [0.0, 0.0]
 
     if args.mode == "liftoff":
@@ -115,7 +76,7 @@ def _prepare_env_config(args) -> tuple[Path, Path | None]:
 
 def _output_csv_path(mode: str, output: str | None) -> Path:
     if output:
-        path = _resolve_path(output)
+        path = resolve_repo_path(output)
         path.parent.mkdir(parents=True, exist_ok=True)
         return path
     with tempfile.NamedTemporaryFile(
@@ -159,13 +120,15 @@ def _write_csv(path: Path, rows: list[list[float]]) -> None:
 def _run_constant_mode(env, args, csv_path: Path) -> bool:
     obs, _ = env.reset()
     task = env._task
-    action = _make_action(args.thrust)
-    steps = max(1, int(round(args.duration / _DT)))
+    params = task.vehicle_params
+    dt = float(task._dt)
+    action = make_action(args.thrust)
+    steps = max(1, int(round(args.duration / dt)))
     yaw_unwrapped: float | None = None
     rows: list[list[float]] = []
 
     izz = float(task._body_inertia_default[2, 2].item())
-    omega_fan_cmd = math.sqrt((max(args.thrust, 0.0) * _T_MAX) / _K_THRUST)
+    omega_fan_cmd = math.sqrt((max(args.thrust, 0.0) * params.t_max) / params.k_thrust)
     tau_anti_pred = -task._k_torque * omega_fan_cmd * omega_fan_cmd
     yaw_accel_pred = tau_anti_pred / izz
 
@@ -176,9 +139,9 @@ def _run_constant_mode(env, args, csv_path: Path) -> bool:
         obs, _, done, _, _ = env.step(action)
         yaw_raw = _quat_wxyz_to_yaw_rad(task.robot.data.root_quat_w[0].detach().cpu().numpy())
         yaw_unwrapped = _unwrap_angle(yaw_unwrapped, yaw_raw)
-        time_s = (step + 1) * _DT
+        time_s = (step + 1) * dt
         yaw_rate = float(task.robot.data.root_ang_vel_b[0, 2].item())
-        altitude = _obs_val(obs, _OBS_ALTITUDE)
+        altitude = obs_scalar(obs, OBS_H_AGL)
         tau_anti = float(task._tau_anti_b[0, 2].item())
         tau_ramp = float(task._tau_ramp_b[0, 2].item())
 
@@ -198,7 +161,7 @@ def _run_constant_mode(env, args, csv_path: Path) -> bool:
             pred_rates.append(math.degrees(yaw_accel_pred * time_s))
             meas_rates.append(math.degrees(yaw_rate))
 
-        if _is_done(done):
+        if any_done(done):
             break
 
     _write_csv(csv_path, rows)
@@ -237,8 +200,9 @@ def _run_constant_mode(env, args, csv_path: Path) -> bool:
 def _run_ramp_mode(env, args, csv_path: Path) -> bool:
     obs, _ = env.reset()
     task = env._task
-    total_steps = max(1, int(round(args.duration / _DT)))
-    ramp_steps = max(1, int(round(args.ramp_duration / _DT)))
+    dt = float(task._dt)
+    total_steps = max(1, int(round(args.duration / dt)))
+    ramp_steps = max(1, int(round(args.ramp_duration / dt)))
     yaw_unwrapped: float | None = None
     rows: list[list[float]] = []
 
@@ -251,11 +215,11 @@ def _run_ramp_mode(env, args, csv_path: Path) -> bool:
 
     for step in range(total_steps):
         thrust_cmd = min(1.0, (step + 1) / ramp_steps)
-        obs, _, done, _, _ = env.step(_make_action(thrust_cmd))
+        obs, _, done, _, _ = env.step(make_action(thrust_cmd))
         yaw_raw = _quat_wxyz_to_yaw_rad(task.robot.data.root_quat_w[0].detach().cpu().numpy())
         yaw_unwrapped = _unwrap_angle(yaw_unwrapped, yaw_raw)
         yaw_rate_dps = math.degrees(float(task.robot.data.root_ang_vel_b[0, 2].item()))
-        time_s = (step + 1) * _DT
+        time_s = (step + 1) * dt
         tau_anti_nm = float(task._tau_anti_b[0, 2].item())
         tau_ramp_nm = float(task._tau_ramp_b[0, 2].item())
         total_yaw_accel_dps2 = math.degrees((tau_anti_nm + tau_ramp_nm) / izz)
@@ -272,7 +236,7 @@ def _run_ramp_mode(env, args, csv_path: Path) -> bool:
             rows,
             step=step,
             time_s=time_s,
-            altitude_m=_obs_val(obs, _OBS_ALTITUDE),
+            altitude_m=obs_scalar(obs, OBS_H_AGL),
             yaw_deg=math.degrees(yaw_unwrapped),
             yaw_rate_dps=yaw_rate_dps,
             thrust_n=float(task.thrust_actual[0].item()),
@@ -280,7 +244,7 @@ def _run_ramp_mode(env, args, csv_path: Path) -> bool:
             tau_ramp_nm=tau_ramp_nm,
         )
 
-        if _is_done(done):
+        if any_done(done):
             break
 
     _write_csv(csv_path, rows)
@@ -310,8 +274,9 @@ def _run_ramp_mode(env, args, csv_path: Path) -> bool:
 def _run_liftoff_mode(env, args, csv_path: Path) -> bool:
     obs, _ = env.reset()
     task = env._task
-    action = _make_action(1.0)
-    steps = max(1, int(round(args.duration / _DT)))
+    dt = float(task._dt)
+    action = make_action(1.0)
+    steps = max(1, int(round(args.duration / dt)))
     yaw_unwrapped: float | None = None
     rows: list[list[float]] = []
     final_altitude = 0.0
@@ -321,13 +286,13 @@ def _run_liftoff_mode(env, args, csv_path: Path) -> bool:
         obs, _, done, _, _ = env.step(action)
         yaw_raw = _quat_wxyz_to_yaw_rad(task.robot.data.root_quat_w[0].detach().cpu().numpy())
         yaw_unwrapped = _unwrap_angle(yaw_unwrapped, yaw_raw)
-        final_altitude = _obs_val(obs, _OBS_ALTITUDE)
+        final_altitude = obs_scalar(obs, OBS_H_AGL)
         final_yaw_deg = abs(math.degrees(yaw_unwrapped))
 
         _log_row(
             rows,
             step=step,
-            time_s=(step + 1) * _DT,
+            time_s=(step + 1) * dt,
             altitude_m=final_altitude,
             yaw_deg=math.degrees(yaw_unwrapped),
             yaw_rate_dps=math.degrees(float(task.robot.data.root_ang_vel_b[0, 2].item())),
@@ -336,7 +301,7 @@ def _run_liftoff_mode(env, args, csv_path: Path) -> bool:
             tau_ramp_nm=float(task._tau_ramp_b[0, 2].item()),
         )
 
-        if _is_done(done):
+        if any_done(done):
             break
 
     _write_csv(csv_path, rows)
@@ -363,17 +328,20 @@ def _run_diagnostic(args) -> bool:
     env = EDFIsaacEnv(config_path=tmp_cfg_path)
     try:
         if args.mode in {"constant", "ramp"}:
-            _set_gravity(env, 0.0)
+            set_gravity(env, 0.0, prefix="diag_reaction_torque")
 
         task = env._task
-        task._gyro_enabled = False
+        task.set_runtime_overrides(
+            disable_wind=True,
+            disable_gyro=True,
+            disable_anti_torque=args.disable_anti_torque,
+            disable_gravity=False,
+        )
         task._wind_model = None
-        if args.disable_anti_torque:
-            task._anti_torque_enabled = False
 
         csv_path = _output_csv_path(args.mode, args.output)
         print(f"Config: {cfg_path_used}")
-        print(f"Vehicle config: {_resolve_path(args.vehicle_config)}")
+        print(f"Vehicle config: {resolve_repo_path(args.vehicle_config)}")
         print(f"Anti-torque: {'DISABLED' if args.disable_anti_torque else 'ENABLED'}")
 
         if args.mode == "constant":
@@ -424,7 +392,7 @@ def main() -> None:
     args = parser.parse_args()
 
     global _SIM_APP
-    _SIM_APP = SimulationApp({"headless": args.headless})
+    _SIM_APP = create_sim_app(headless=args.headless)
     try:
         passed = _run_diagnostic(args)
     except Exception as exc:

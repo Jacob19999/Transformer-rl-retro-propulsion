@@ -43,6 +43,10 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
 from simulation.config_loader import load_config                       # noqa: E402
+from simulation.isaac.conventions import (                             # noqa: E402
+    FIN_DRIVE_DAMPING,
+    FIN_DRIVE_STIFFNESS,
+)
 from simulation.isaac.usd.parts_registry import (                      # noqa: E402
     DRONE_ROOT,
     BODY_PRIM,
@@ -51,9 +55,6 @@ from simulation.isaac.usd.parts_registry import (                      # noqa: E
     load_fin_specs,
     FinSpec,
 )
-
-_DRIVE_STIFFNESS = 20.0
-_DRIVE_DAMPING   = 1.0
 # Negligible fin mass so runtime accepts the link; body carries effectively full vehicle mass.
 _FIN_MASS_KG = 1e-5
 
@@ -338,16 +339,9 @@ def _create_fin_joints(
 
         joint = UsdPhysics.RevoluteJoint.Define(stage, joint_path)
 
-        # Joint axis in fin-local frame:
-        #   - RightFin, LeftFin: rotate about local Y (pitch-dominant pair)
-        #   - FwdFin, AftFin: rotate about local X (roll-dominant pair)
-        if spec.prim_name in ("RightFin", "LeftFin"):
-            axis_token = "Y"
-        elif spec.prim_name in ("FwdFin", "AftFin"):
-            axis_token = "X"
-        else:
-            axis_token = getattr(spec, "joint_axis_local", spec.hinge_axis)
-        joint.GetAxisAttr().Set(axis_token)
+        # Use the shared fin spec axis directly so the task, diagnostics, and USD
+        # authoring all follow the same hinge convention.
+        joint.GetAxisAttr().Set(spec.hinge_axis)
         joint.GetLowerLimitAttr().Set(joint_lower_deg)
         joint.GetUpperLimitAttr().Set(joint_upper_deg)
 
@@ -359,8 +353,8 @@ def _create_fin_joints(
         joint.GetLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
 
         drive_api = UsdPhysics.DriveAPI.Apply(joint.GetPrim(), "angular")
-        drive_api.GetStiffnessAttr().Set(_DRIVE_STIFFNESS)
-        drive_api.GetDampingAttr().Set(_DRIVE_DAMPING)
+        drive_api.GetStiffnessAttr().Set(FIN_DRIVE_STIFFNESS)
+        drive_api.GetDampingAttr().Set(FIN_DRIVE_DAMPING)
         drive_api.GetTargetPositionAttr().Set(0.0)
 
 

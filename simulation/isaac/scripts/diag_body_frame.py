@@ -42,20 +42,14 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
-# SimulationApp MUST be created before any isaaclab / carb imports
-from isaacsim import SimulationApp  # noqa: E402
+from simulation.isaac.conventions import ACTION_DIM, OBS_H_AGL, OBS_OMEGA_X, OBS_OMEGA_Y, OBS_OMEGA_Z  # noqa: E402
 from simulation.isaac.quaternion_isaac import (  # noqa: E402
     identity_quat_wxyz,
     rotate_body_to_world_wxyz,
 )
+from simulation.isaac.scripts._shared import create_sim_app, disable_gravity, obs_scalar, resolve_repo_path  # noqa: E402
 
-_SIM_APP: SimulationApp | None = None
-
-# Observation indices (must match edf_landing_task.py _get_observations())
-_OBS_OMEGA_X  = 9     # angular rate about body X  → ROLL  (nose/forward axis)
-_OBS_OMEGA_Y  = 10    # angular rate about body Y  → PITCH (right/lateral axis)
-_OBS_OMEGA_Z  = 11    # angular rate about body Z  → YAW   (down axis)
-_OBS_ALTITUDE = 16    # h_agl (m)
+_SIM_APP = None
 
 _PRINT_EVERY  = 30    # print obs omega every 0.25 s during hold
 
@@ -79,27 +73,6 @@ _AXIS_INFO = {
 }
 
 _SEQUENCE = ["X+", "X-", "Y+", "Y-", "Z+", "Z-"]
-
-
-def _obs_val(obs: np.ndarray, idx: int) -> float:
-    if obs.ndim == 2:
-        return float(obs[0, idx])
-    return float(obs[idx])
-
-
-def _disable_gravity(env) -> None:
-    try:
-        from pxr import UsdPhysics
-        stage = env._task.sim.stage
-        for prim in stage.Traverse():
-            if prim.IsA(UsdPhysics.Scene):
-                UsdPhysics.Scene(prim).GetGravityMagnitudeAttr().Set(0.0)
-                print("[body_frame] Gravity DISABLED")
-                return
-        print("[body_frame] WARNING: physics scene not found; gravity still active")
-    except Exception as exc:
-        print(f"[body_frame] WARNING: could not disable gravity: {exc}")
-
 
 def _reset_to_identity(task, altitude_m: float = 3.0) -> None:
     """Reset drone to identity orientation, zero velocity, at given altitude."""
@@ -186,12 +159,10 @@ Body frame (FRD): +X=forward/nose, +Y=right, +Z=down
     )
     args = parser.parse_args()
 
-    config_path = Path(args.config)
-    if not config_path.is_absolute():
-        config_path = REPO_ROOT / config_path
+    config_path = resolve_repo_path(args.config)
 
     global _SIM_APP
-    _SIM_APP = SimulationApp({"headless": args.headless})
+    _SIM_APP = create_sim_app(headless=args.headless)
 
     from simulation.isaac.envs.edf_isaac_env import EDFIsaacEnv
     import torch
@@ -200,7 +171,7 @@ Body frame (FRD): +X=forward/nose, +Y=right, +Z=down
     task = env._task
 
     # Disable gravity and all aerodynamic / gyro effects for a clean test
-    _disable_gravity(env)
+    disable_gravity(env, prefix="body_frame")
     try:
         task._gyro_enabled = False
         print("[body_frame] Gyro precession: DISABLED")
@@ -257,12 +228,12 @@ Body frame (FRD): +X=forward/nose, +Y=right, +Z=down
 
             # Reset orientation to identity, zero velocity
             _reset_to_identity(task, altitude_m=args.altitude)
-            env.step(np.zeros(5, dtype=np.float32))  # flush reset into sim
+            env.step(np.zeros(ACTION_DIM, dtype=np.float32))  # flush reset into sim
 
             # Short settle with zero velocity
             for _ in range(settle_steps):
                 _reset_to_identity(task, altitude_m=args.altitude)
-                obs, _, done, _, _ = env.step(np.zeros(5, dtype=np.float32))
+                obs, _, done, _, _ = env.step(np.zeros(ACTION_DIM, dtype=np.float32))
 
             print(f"\n  {bar_thin}")
             print(f"  {'step':>6}  {'t(s)':>6}  {'obs ωx(roll)':>14}  "
@@ -272,23 +243,23 @@ Body frame (FRD): +X=forward/nose, +Y=right, +Z=down
             # Hold: inject body-frame omega each step
             for step in range(hold_steps):
                 _set_body_omega(task, omega_body)
-                obs, _, done, _, _ = env.step(np.zeros(5, dtype=np.float32))
+                obs, _, done, _, _ = env.step(np.zeros(ACTION_DIM, dtype=np.float32))
 
                 if step % _PRINT_EVERY == 0:
                     t_s   = step / 120.0
-                    ox    = _obs_val(obs, _OBS_OMEGA_X)
-                    oy    = _obs_val(obs, _OBS_OMEGA_Y)
-                    oz    = _obs_val(obs, _OBS_OMEGA_Z)
-                    h     = _obs_val(obs, _OBS_ALTITUDE)
+                    ox    = obs_scalar(obs, OBS_OMEGA_X)
+                    oy    = obs_scalar(obs, OBS_OMEGA_Y)
+                    oz    = obs_scalar(obs, OBS_OMEGA_Z)
+                    h     = obs_scalar(obs, OBS_H_AGL)
                     ox_s = f">>> {ox:+.4f} <<<" if axis_idx == 0 else f"    {ox:+.4f}    "
                     oy_s = f">>> {oy:+.4f} <<<" if axis_idx == 1 else f"    {oy:+.4f}    "
                     oz_s = f">>> {oz:+.4f} <<<" if axis_idx == 2 else f"    {oz:+.4f}    "
                     print(f"  {step:>6}  {t_s:>6.2f}  {ox_s}  {oy_s}  {oz_s}  {h:>7.3f}")
 
             # End-of-phase summary
-            ox = _obs_val(obs, _OBS_OMEGA_X)
-            oy = _obs_val(obs, _OBS_OMEGA_Y)
-            oz = _obs_val(obs, _OBS_OMEGA_Z)
+            ox = obs_scalar(obs, OBS_OMEGA_X)
+            oy = obs_scalar(obs, OBS_OMEGA_Y)
+            oz = obs_scalar(obs, OBS_OMEGA_Z)
             obs_commanded = [ox, oy, oz][axis_idx]
             match_str = "✓ MATCH" if (obs_commanded * sign) > (args.omega * 0.5) else "✗ MISMATCH"
             print(f"  {bar_thin}")

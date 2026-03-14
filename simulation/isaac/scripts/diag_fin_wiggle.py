@@ -26,12 +26,12 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
-# SimulationApp MUST be created before any isaaclab.sim / carb imports
-from isaacsim import SimulationApp  # noqa: E402
+from simulation.isaac.conventions import ACTION_DIM, FIN_DISPLAY_NAMES  # noqa: E402
+from simulation.isaac.scripts._shared import create_sim_app, disable_gravity, resolve_repo_path  # noqa: E402
 
-_SIM_APP: SimulationApp | None = None
+_SIM_APP = None
 
-FIN_NAMES = ["Fin_1 (right)", "Fin_2 (left)", "Fin_3 (forward)", "Fin_4 (aft)"]
+FIN_NAMES = list(FIN_DISPLAY_NAMES)
 
 # Timing (steps at 1/120 s each)
 _STEPS_PER_SWEEP = 120   # 1 s per sine cycle
@@ -53,21 +53,21 @@ def build_episode_sequence(n_sweeps: int) -> tuple[list[np.ndarray], list[str]]:
         name = FIN_NAMES[fin_idx]
 
         for v in sweep:
-            action = np.zeros(5, dtype=np.float32)
+            action = np.zeros(ACTION_DIM, dtype=np.float32)
             action[fin_idx + 1] = float(v)
             actions.append(action)
             labels.append(f"{name} sweep")
 
         # Settle to zero
         for _ in range(_STEPS_SETTLE):
-            actions.append(np.zeros(5, dtype=np.float32))
+            actions.append(np.zeros(ACTION_DIM, dtype=np.float32))
             labels.append("settle")
 
     # --- Phase 5: axis-aligned pairs (yaw, then pitch, then roll) ---
 
     # Yaw: all four fins in opposing pairs
     for v in sweep:
-        action = np.zeros(5, dtype=np.float32)
+        action = np.zeros(ACTION_DIM, dtype=np.float32)
         action[1] = float(+v)  # Fin_1 (right)
         action[2] = float(-v)  # Fin_2 (left)
         action[3] = float(+v)  # Fin_3 (forward)
@@ -76,42 +76,42 @@ def build_episode_sequence(n_sweeps: int) -> tuple[list[np.ndarray], list[str]]:
         labels.append("Yaw sweep (all 4 fins)")
 
     for _ in range(_STEPS_SETTLE):
-        actions.append(np.zeros(5, dtype=np.float32))
+        actions.append(np.zeros(ACTION_DIM, dtype=np.float32))
         labels.append("settle")
 
-    # Pitch: forward + aft fins together
+    # Pitch: side fins together
     for v in sweep:
-        action = np.zeros(5, dtype=np.float32)
-        action[3] = float(+v)  # Fin_3 (forward)
-        action[4] = float(+v)  # Fin_4 (aft)
-        actions.append(action)
-        labels.append("Pitch sweep (Fin_3 & Fin_4)")
-
-    for _ in range(_STEPS_SETTLE):
-        actions.append(np.zeros(5, dtype=np.float32))
-        labels.append("settle")
-
-    # Roll: side fins together in same direction
-    for v in sweep:
-        action = np.zeros(5, dtype=np.float32)
+        action = np.zeros(ACTION_DIM, dtype=np.float32)
         action[1] = float(+v)  # Fin_1 (right)
         action[2] = float(+v)  # Fin_2 (left)
         actions.append(action)
-        labels.append("Roll sweep (Fin_1 & Fin_2)")
+        labels.append("Pitch sweep (Fin_1 & Fin_2)")
 
     for _ in range(_STEPS_SETTLE):
-        actions.append(np.zeros(5, dtype=np.float32))
+        actions.append(np.zeros(ACTION_DIM, dtype=np.float32))
+        labels.append("settle")
+
+    # Roll: forward + aft fins together
+    for v in sweep:
+        action = np.zeros(ACTION_DIM, dtype=np.float32)
+        action[3] = float(+v)  # Fin_3 (forward)
+        action[4] = float(+v)  # Fin_4 (aft)
+        actions.append(action)
+        labels.append("Roll sweep (Fin_3 & Fin_4)")
+
+    for _ in range(_STEPS_SETTLE):
+        actions.append(np.zeros(ACTION_DIM, dtype=np.float32))
         labels.append("settle")
 
     # --- Phase 6: all fins full-min ---
-    all_min = np.zeros(5, dtype=np.float32)
+    all_min = np.zeros(ACTION_DIM, dtype=np.float32)
     all_min[1:] = -1.0
     for _ in range(_STEPS_HOLD):
         actions.append(all_min.copy())
         labels.append("All fins -1.0 (full min)")
 
     # --- Phase 7: all fins full-max ---
-    all_max = np.zeros(5, dtype=np.float32)
+    all_max = np.zeros(ACTION_DIM, dtype=np.float32)
     all_max[1:] = +1.0
     for _ in range(_STEPS_HOLD):
         actions.append(all_max.copy())
@@ -119,26 +119,10 @@ def build_episode_sequence(n_sweeps: int) -> tuple[list[np.ndarray], list[str]]:
 
     # --- Final settle ---
     for _ in range(_STEPS_SETTLE):
-        actions.append(np.zeros(5, dtype=np.float32))
+        actions.append(np.zeros(ACTION_DIM, dtype=np.float32))
         labels.append("settle")
 
     return actions, labels
-
-
-def disable_gravity(env) -> None:
-    """Zero gravity via USD so the drone holds position (matches test_fins.py)."""
-    try:
-        from pxr import UsdPhysics
-        stage = env._task.sim.stage
-        for prim in stage.Traverse():
-            if prim.IsA(UsdPhysics.Scene):
-                UsdPhysics.Scene(prim).GetGravityMagnitudeAttr().Set(0.0)
-                print("[fin_wiggle] Gravity disabled — drone will hold spawn position.")
-                return
-        print("[fin_wiggle] WARNING: Physics scene not found; gravity still active.")
-    except Exception as exc:
-        print(f"[fin_wiggle] WARNING: Could not disable gravity: {exc}")
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Isaac Sim fin wiggle diagnostic")
@@ -161,12 +145,10 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    config_path = Path(args.config)
-    if not config_path.is_absolute():
-        config_path = REPO_ROOT / config_path
+    config_path = resolve_repo_path(args.config)
 
     global _SIM_APP
-    _SIM_APP = SimulationApp({"headless": False})
+    _SIM_APP = create_sim_app(headless=False)
 
     from simulation.isaac.envs.edf_isaac_env import EDFIsaacEnv
 
@@ -180,7 +162,7 @@ def main() -> None:
 
     # Disable gravity so the drone floats in place during the test
     # (the done condition fires at h_agl < 0.05, which would cause constant resets)
-    disable_gravity(env)
+    disable_gravity(env, prefix="fin_wiggle")
 
     # Build the fixed action sequence
     sequence, phase_labels = build_episode_sequence(args.sweeps)

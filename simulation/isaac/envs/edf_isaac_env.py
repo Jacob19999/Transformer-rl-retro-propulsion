@@ -29,6 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
 from simulation.config_loader import load_config  # noqa: E402
+from simulation.isaac.conventions import ACTION_DIM, OBS_DIM, OBS_H_AGL  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +85,6 @@ class EDFIsaacEnv(gym.Env):
 
         # Build IsaacLab task config
         from simulation.isaac.tasks.edf_landing_task import EdfLandingTask, EdfLandingTaskCfg
-        from isaaclab.utils import configclass
 
         task_cfg = EdfLandingTaskCfg()
         task_cfg.scene.num_envs = self._num_envs
@@ -100,6 +100,9 @@ class EDFIsaacEnv(gym.Env):
         task_cfg.episode_length_s   = float(
             self._cfg_raw.get("episode_length_steps", 600)
         ) * task_cfg.sim.dt
+        target_pos = self._cfg_raw.get("target_position", None)
+        if target_pos is not None:
+            task_cfg.target_pos_world = tuple(float(v) for v in target_pos)
 
         vehicle_path = self._cfg_raw.get("vehicle_config_path", None)
         if vehicle_path:
@@ -137,8 +140,8 @@ class EDFIsaacEnv(gym.Env):
         )
 
         # Gymnasium spaces
-        obs_dim = 20
-        act_dim = 5
+        obs_dim = OBS_DIM
+        act_dim = ACTION_DIM
         if self._num_envs == 1:
             obs_shape = (obs_dim,)
             act_shape = (act_dim,)
@@ -206,7 +209,7 @@ class EDFIsaacEnv(gym.Env):
         self._done = done
 
         # Build info
-        h_agl = obs[:, 16] if obs.ndim == 2 else obs[16:17]
+        h_agl = obs[:, OBS_H_AGL] if obs.ndim == 2 else obs[OBS_H_AGL:OBS_H_AGL + 1]
         info = {
             "episode_step": self._task._episode_step.cpu().numpy(),
             "h_agl": h_agl,

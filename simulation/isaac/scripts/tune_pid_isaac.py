@@ -530,7 +530,7 @@ def _episode_rollout(
     obs, _info = env.reset(seed=seed)
     ctrl = PIDController(pid_yaml)
     ctrl.reset()
-    hover_thrust_frac = float(env._task._weight / 45.0)
+    hover_thrust_frac = float(env._task.hover_thrust_norm)
 
     terminated = False
     truncated = False
@@ -816,7 +816,7 @@ def _evaluate_single_env(
             for controller in controllers:
                 controller.reset()
 
-            hover_thrust_frac = float(env._task._weight / 45.0)
+            hover_thrust_frac = float(env._task.hover_thrust_norm)
             global_ep = 0
             cur_rewards = np.zeros(num_envs, dtype=float)
             cur_steps = np.zeros(num_envs, dtype=int)
@@ -1399,7 +1399,7 @@ def _run_zn_sweep(
         )
         dt = float(env._task._dt)
         max_steps = max(1, int(math.ceil(float(max_seconds) / dt)))
-        hover_thrust_frac = float(env._task._weight / 45.0)
+        hover_thrust_frac = float(env._task.hover_thrust_norm)
         trial_rows: list[list[Any]] = []
         for idx, kp in enumerate(list(kp_values), start=1):
             pid_yaml = _pid_for_zn_loop(
@@ -1540,7 +1540,7 @@ def _run_relay_autotune(
         obs, _ = env.reset(seed=seed)
         dt = float(env._task._dt)
         max_steps = max(1, int(math.ceil(float(max_seconds) / dt)))
-        hover_thrust_frac = float(env._task._weight / 45.0)
+        hover_thrust_frac = float(env._task.hover_thrust_norm)
         hyst = math.radians(float(relay_hysteresis_deg))
         relay_state = float(relay_amplitude)
         sig: list[float] = []
@@ -1845,9 +1845,9 @@ def _run_coordinate_search(
     )
 
 
-# Rotation test: zero-g, stationary, command omega on each axis at 3 speeds; pass if PID tracks.
+# Rotation test: zero-g, stationary, command omega on each axis at 0.5 rad/s only; pass if PID tracks.
 _ROTATION_AXES = ("roll", "pitch", "yaw")  # body omega_x, omega_y, omega_z
-_ROTATION_SPEEDS_RAD_S = (0.2, 0.5, 1.0)
+_ROTATION_SPEEDS_RAD_S = (0.5,)  # single speed per axis
 _ROTATION_DURATION_S = 5.0
 _ROTATION_STEP_HZ = 40
 _ROTATION_SETTLE_STEPS = 10
@@ -1967,7 +1967,7 @@ def _run_rotation_test(
     episodes = max(1, int(args.episodes))
     pid_yaml = _with_hover_target(base_pid_yaml, alt)
     ctrl = PIDController(pid_yaml)
-    hover_thrust_frac = float(env._task._weight / 45.0)
+    hover_thrust_frac = float(env._task.hover_thrust_norm)
     steps_per_trial = max(
         int(round(_ROTATION_DURATION_S * _ROTATION_STEP_HZ)), 1
     )

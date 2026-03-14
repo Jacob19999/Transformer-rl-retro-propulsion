@@ -30,16 +30,15 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
-from isaacsim import SimulationApp  # noqa: E402
+from simulation.isaac.conventions import (  # noqa: E402
+    ACTION_DIM,
+    OBS_WIND_X,
+    OBS_WIND_Y,
+    OBS_WIND_Z,
+)
+from simulation.isaac.scripts._shared import create_sim_app, resolve_repo_path  # noqa: E402
 
 _SIM_APP = None
-
-# Obs indices
-_OBS_WIND_X   = 13
-_OBS_WIND_Y   = 14
-_OBS_WIND_Z   = 15
-_OBS_ALTITUDE = 16
-_OBS_SPEED    = 17
 
 _DT = 1.0 / 120.0  # Isaac Sim timestep (s)
 
@@ -76,7 +75,7 @@ def main() -> None:
     args = parser.parse_args()
 
     global _SIM_APP
-    _SIM_APP = SimulationApp({"headless": False})
+    _SIM_APP = create_sim_app(headless=False)
 
     try:
         _run_diagnostic(args)
@@ -91,9 +90,7 @@ def _run_diagnostic(args) -> None:
     from simulation.isaac.envs.edf_isaac_env import EDFIsaacEnv
     from simulation.config_loader import load_config
 
-    config_path = Path(args.config)
-    if not config_path.is_absolute():
-        config_path = REPO_ROOT / config_path
+    config_path = resolve_repo_path(args.config)
 
     wind_xyz = (args.wind_x, args.wind_y, args.wind_z)
     wind_mag = (args.wind_x**2 + args.wind_y**2 + args.wind_z**2) ** 0.5
@@ -154,7 +151,7 @@ def _run_diagnostic(args) -> None:
         print(f"Episode {ep + 1}/{args.episodes}")
 
         # Zero thrust -- let drone fall freely under gravity + wind
-        action = np.zeros(5, dtype=np.float32)
+        action = np.zeros(ACTION_DIM, dtype=np.float32)
 
         lateral_vels: list[float] = []
         wind_obs_vals: list[float] = []
@@ -170,11 +167,14 @@ def _run_diagnostic(args) -> None:
             lat_v = (vx_b**2 + vy_b**2) ** 0.5
             lateral_vels.append(lat_v)
 
-            wind_obs_x = float(obs[_OBS_WIND_X])
-            wind_obs_vals.append(abs(wind_obs_x) + abs(float(obs[_OBS_WIND_Y])))
+            wind_obs_x = float(obs[OBS_WIND_X])
+            wind_obs_vals.append(abs(wind_obs_x) + abs(float(obs[OBS_WIND_Y])))
 
             if step % 30 == 0:
-                print(f"  step {step:4d}  lat_v={lat_v:.3f} m/s  wind_obs=({obs[13]:.3f},{obs[14]:.3f},{obs[15]:.3f})")
+                print(
+                    f"  step {step:4d}  lat_v={lat_v:.3f} m/s  "
+                    f"wind_obs=({obs[OBS_WIND_X]:.3f},{obs[OBS_WIND_Y]:.3f},{obs[OBS_WIND_Z]:.3f})"
+                )
 
             if done:
                 break

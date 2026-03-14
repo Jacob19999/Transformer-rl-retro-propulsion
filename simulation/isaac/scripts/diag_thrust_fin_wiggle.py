@@ -46,29 +46,39 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
-# SimulationApp MUST be created before any isaaclab.sim / carb imports
-from isaacsim import SimulationApp  # noqa: E402
+from simulation.isaac.conventions import (  # noqa: E402
+    ACTION_DIM,
+    FIN_DISPLAY_NAMES,
+    FRD_BODY_FRAME_TEXT,
+    OBS_H_AGL,
+    OBS_OMEGA_X,
+    OBS_OMEGA_Y,
+    OBS_OMEGA_Z,
+    OBS_SPEED,
+    fin_axis_command,
+    yaw_fin_command,
+)
+from simulation.isaac.scripts._shared import (  # noqa: E402
+    create_sim_app,
+    disable_gravity,
+    lock_position_at_altitude,
+    obs_scalar,
+    reset_orientation,
+    resolve_repo_path,
+)
 
-_SIM_APP: SimulationApp | None = None
+_SIM_APP = None
 
 # Physical drone body frame: FRD (+X=fwd/nose, +Y=right, +Z=down)
 # Fin physical positions (confirmed from Isaac Sim 3D model top-down view):
 #   Fin_1(right) at FRD +Y, Fin_2(left) at FRD -Y  — hinge Y, lift +X → τ_y → PITCH
 #   Fin_3(fwd)   at FRD +X, Fin_4(aft)  at FRD -X  — hinge X, lift -Y → τ_x → ROLL
-FIN_NAMES = ["Fin_1(right)", "Fin_2(left)", "Fin_3(fwd)", "Fin_4(aft)"]
+FIN_NAMES = [name.replace(" ", "") for name in FIN_DISPLAY_NAMES]
 
 # Timing (steps at 1/120 s each)
 _STEPS_HOLD   = 120   # 1.0 s hold per direction (overridden by --hold-secs)
 _STEPS_SETTLE = 30    # 0.25 s settle + orientation reset between phases
 _PRINT_EVERY  = 12    # print omega every 0.1 s during hold phases
-
-# Observation indices (match edf_landing_task.py observation layout)
-# Body frame: FRD (+X=fwd/nose, +Y=right, +Z=down)
-_OBS_OMEGA_X = 9     # body angular rate about X → ROLL  (forward/nose spin axis)
-_OBS_OMEGA_Y = 10    # body angular rate about Y → PITCH (right/lateral tilt axis)
-_OBS_OMEGA_Z = 11    # body angular rate about Z → YAW   (vertical spin axis)
-_OBS_ALTITUDE = 16   # h_agl (m)
-_OBS_SPEED = 17      # |v_body| (m/s)
 
 # Hold phase labels and their expected dominant axis + sign
 HOLD_LABELS = {"Yaw-", "Yaw+", "Roll-", "Roll+", "Pitch-", "Pitch+"}
@@ -80,61 +90,6 @@ _EXPECTED = {
     "Pitch-": ("ωy(pitch)",  "ωy < 0"),
     "Pitch+": ("ωy(pitch)",  "ωy > 0"),
 }
-
-
-def _disable_gravity(env) -> None:
-    """Zero gravity so thrust-only hover is easier to interpret."""
-    try:
-        from pxr import UsdPhysics
-        stage = env._task.sim.stage
-        for prim in stage.Traverse():
-            if prim.IsA(UsdPhysics.Scene):
-                UsdPhysics.Scene(prim).GetGravityMagnitudeAttr().Set(0.0)
-                print("[thrust_fin_wiggle] Gravity disabled — drone will not fall under weight.")
-                return
-        print("[thrust_fin_wiggle] WARNING: Physics scene not found; gravity still active.")
-    except Exception as exc:
-        print(f"[thrust_fin_wiggle] WARNING: Could not disable gravity: {exc}")
-
-
-def _lock_position_at_altitude(env, altitude_m: float = 1.0) -> None:
-    """Lock drone world position at given altitude, leaving rotation free."""
-    task = getattr(env, "_task", None)
-    if task is None or not hasattr(task, "robot"):
-        return
-
-    import torch
-
-    pos_w  = task.robot.data.root_pos_w.clone()
-    quat_w = task.robot.data.root_quat_w.clone()
-    pos_w[:, 2] = altitude_m
-    task.robot.write_root_pose_to_sim(torch.cat([pos_w, quat_w], dim=-1))
-
-    vel_w = task.robot.data.root_lin_vel_w.clone()
-    ang_w = task.robot.data.root_ang_vel_w.clone()
-    vel_w[:] = 0.0
-    task.robot.write_root_velocity_to_sim(torch.cat([vel_w, ang_w], dim=-1))
-
-
-def _reset_orientation(env) -> None:
-    """Reset drone orientation to identity and zero angular velocity, keep position."""
-    task = getattr(env, "_task", None)
-    if task is None or not hasattr(task, "robot"):
-        return
-
-    import torch
-    from simulation.isaac.quaternion_isaac import identity_quat_wxyz
-
-    pos_w  = task.robot.data.root_pos_w.clone()
-    quat_w = identity_quat_wxyz(pos_w.shape[0], device=pos_w.device)
-    task.robot.write_root_pose_to_sim(torch.cat([pos_w, quat_w], dim=-1))
-
-    vel_w = task.robot.data.root_lin_vel_w.clone()
-    ang_w = task.robot.data.root_ang_vel_w.clone()
-    vel_w[:] = 0.0
-    ang_w[:] = 0.0
-    task.robot.write_root_velocity_to_sim(torch.cat([vel_w, ang_w], dim=-1))
-
 
 def _override_inertia(env, ixx: float, iyy: float, izz: float) -> None:
     """Override the drone body inertia diagonal (kg·m²) via UsdPhysics.MassAPI.
@@ -173,14 +128,6 @@ def _override_inertia(env, ixx: float, iyy: float, izz: float) -> None:
     except Exception as exc:
         print(f"[thrust_fin_wiggle] WARNING: Could not override inertia: {exc}")
 
-
-def _obs_val(obs: np.ndarray, idx: int) -> float:
-    """Extract scalar obs[idx] from env 0, works for 1-D or 2-D arrays."""
-    if obs.ndim == 2:
-        return float(obs[0, idx])
-    return float(obs[idx])
-
-
 def build_episode_sequence(
     thrust_norm: float,
     max_deflection: float,
@@ -211,7 +158,7 @@ def build_episode_sequence(
 
     def _hold(fin_cmds: list[float], label: str) -> None:
         for _ in range(hold_steps):
-            a = np.zeros(5, dtype=np.float32)
+            a = np.zeros(ACTION_DIM, dtype=np.float32)
             a[0] = thrust_norm
             for i, cmd in enumerate(fin_cmds):
                 a[i + 1] = cmd
@@ -220,18 +167,18 @@ def build_episode_sequence(
 
     def _settle() -> None:
         for _ in range(_STEPS_SETTLE):
-            a = np.zeros(5, dtype=np.float32)
+            a = np.zeros(ACTION_DIM, dtype=np.float32)
             a[0] = thrust_norm
             actions.append(a)
             labels.append("settle")
 
     axis_routine: list[tuple[str, list[float], list[float]]] = [
         # Differential fin pattern excites the canted-fin yaw couple.
-        ("Yaw",   [+v, -v, +v, -v], [-v, +v, -v, +v]),
+        ("Yaw", list(yaw_fin_command(v)), list(yaw_fin_command(-v))),
         # Roll is dominant; a smaller pitch cross-couple is expected.
-        ("Roll",  [0.0, 0.0, -v, -v], [0.0, 0.0, +v, +v]),
+        ("Roll", list(fin_axis_command("roll", -v)), list(fin_axis_command("roll", +v))),
         # Pitch is dominant; a smaller roll cross-couple is expected.
-        ("Pitch", [-v, -v, 0.0, 0.0], [+v, +v, 0.0, 0.0]),
+        ("Pitch", list(fin_axis_command("pitch", -v)), list(fin_axis_command("pitch", +v))),
     ]
 
     for axis_name, neg_cmd, pos_cmd in axis_routine:
@@ -363,12 +310,10 @@ def main() -> None:
 
     hold_steps = max(1, round(args.hold_secs * 120))
 
-    config_path = Path(args.config)
-    if not config_path.is_absolute():
-        config_path = REPO_ROOT / config_path
+    config_path = resolve_repo_path(args.config)
 
     global _SIM_APP
-    _SIM_APP = SimulationApp({"headless": args.headless})
+    _SIM_APP = create_sim_app(headless=args.headless)
 
     from simulation.isaac.envs.edf_isaac_env import EDFIsaacEnv
 
@@ -378,7 +323,7 @@ def main() -> None:
     # Print fin geometry / hinge axes and body-frame convention
     # ------------------------------------------------------------------
     try:
-        print("\n[thrust_fin_wiggle] Body frame: Y-forward (+X=right, +Y=fwd/nose, +Z=up/EDF)")
+        print(f"\n[thrust_fin_wiggle] Body frame: {FRD_BODY_FRAME_TEXT}")
         print("[thrust_fin_wiggle] Axis semantics: ωx=ROLL  ωy=PITCH  ωz=YAW")
         print("[thrust_fin_wiggle] Fin hinge configuration from Isaac Sim asset:")
         for i, pos in enumerate(env._task._fin_anchor_pos_frd.tolist(), start=1):
@@ -418,7 +363,7 @@ def main() -> None:
             print("[thrust_fin_wiggle] Reaction torque: DISABLED (runtime override)")
 
     if args.fixed_altitude:
-        _disable_gravity(env)
+        disable_gravity(env, prefix="thrust_fin_wiggle")
 
     if args.override_inertia is not None:
         _override_inertia(env, *args.override_inertia)
@@ -455,28 +400,28 @@ def main() -> None:
         print(f"  EPISODE {ep + 1}/{args.episodes}")
         print(f"{'='*70}")
 
-        start_alt   = _obs_val(obs, _OBS_ALTITUDE)
+        start_alt   = obs_scalar(obs, OBS_H_AGL)
         target_alt  = start_alt + 0.2
         thrust_cmd  = float(np.clip(args.thrust, 0.0, 1.0))
 
-        print(f"  initial h_agl={start_alt:.3f} m  speed={_obs_val(obs, _OBS_SPEED):.3f} m/s")
+        print(f"  initial h_agl={start_alt:.3f} m  speed={obs_scalar(obs, OBS_SPEED):.3f} m/s")
         print(f"  pre-phase: thrust only until h_agl >= {target_alt:.3f} m")
 
         # Pre-phase: climb to target altitude, fins zeroed
         pre_steps = 0
         done = np.array(False)
-        while _obs_val(obs, _OBS_ALTITUDE) < target_alt:
-            action = np.zeros(5, dtype=np.float32)
+        while obs_scalar(obs, OBS_H_AGL) < target_alt:
+            action = np.zeros(ACTION_DIM, dtype=np.float32)
             action[0] = thrust_cmd
             obs, _, done, _, _ = env.step(action)
             if args.fixed_altitude:
-                _lock_position_at_altitude(env, altitude_m=1.0)
+                lock_position_at_altitude(env, altitude_m=1.0)
             pre_steps += 1
             if pre_steps % 30 == 0 or bool(np.any(done)):
                 print(
                     f"    pre step {pre_steps:4d}  "
-                    f"h={_obs_val(obs, _OBS_ALTITUDE):.3f} m  "
-                    f"speed={_obs_val(obs, _OBS_SPEED):.3f} m/s"
+                    f"h={obs_scalar(obs, OBS_H_AGL):.3f} m  "
+                    f"speed={obs_scalar(obs, OBS_SPEED):.3f} m/s"
                 )
             if bool(np.any(done)):
                 print("  [done] terminated before fin sequence.\n")
@@ -486,7 +431,7 @@ def main() -> None:
             continue
 
         print(
-            f"  reached h_agl={_obs_val(obs, _OBS_ALTITUDE):.3f} m "
+            f"  reached h_agl={obs_scalar(obs, OBS_H_AGL):.3f} m "
             "— starting step-hold sequence\n"
         )
 
@@ -499,13 +444,13 @@ def main() -> None:
         for _, (action, label) in enumerate(zip(sequence, phase_labels)):
             obs, _, done, _, _ = env.step(action)
             if args.fixed_altitude:
-                _lock_position_at_altitude(env, altitude_m=1.0)
+                lock_position_at_altitude(env, altitude_m=1.0)
 
-            omega_x = _obs_val(obs, _OBS_OMEGA_X)
-            omega_y = _obs_val(obs, _OBS_OMEGA_Y)
-            omega_z = _obs_val(obs, _OBS_OMEGA_Z)
-            h       = _obs_val(obs, _OBS_ALTITUDE)
-            speed   = _obs_val(obs, _OBS_SPEED)
+            omega_x = obs_scalar(obs, OBS_OMEGA_X)
+            omega_y = obs_scalar(obs, OBS_OMEGA_Y)
+            omega_z = obs_scalar(obs, OBS_OMEGA_Z)
+            h       = obs_scalar(obs, OBS_H_AGL)
+            speed   = obs_scalar(obs, OBS_SPEED)
 
             # ── Phase transition ────────────────────────────────────────
             if label != prev_label:
@@ -519,15 +464,15 @@ def main() -> None:
 
                 if label == "settle":
                     # Reset orientation at the start of every settle
-                    _reset_orientation(env)
+                    reset_orientation(env)
                     print(
                         f"\n  ── settle ({_STEPS_SETTLE/120:.2f} s, orientation reset) ──"
                     )
                 elif label in HOLD_LABELS:
                     # Enforce deterministic "zero angular velocity -> hold" sequence.
-                    _reset_orientation(env)
+                    reset_orientation(env)
                     if args.fixed_altitude:
-                        _lock_position_at_altitude(env, altitude_m=1.0)
+                        lock_position_at_altitude(env, altitude_m=1.0)
                     _print_phase_header(label, action, args.hold_secs)
 
                 prev_label = label

@@ -25,10 +25,10 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
-# SimulationApp MUST be created before any isaaclab.sim / carb imports
-from isaacsim import SimulationApp  # noqa: E402
+from simulation.isaac.conventions import ACTION_DIM, OBS_H_AGL  # noqa: E402
+from simulation.isaac.scripts._shared import create_sim_app, resolve_repo_path  # noqa: E402
 
-_SIM_APP: SimulationApp | None = None
+_SIM_APP = None
 
 
 def main() -> None:
@@ -52,15 +52,13 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    config_path = Path(args.config)
-    if not config_path.is_absolute():
-        config_path = REPO_ROOT / config_path
+    config_path = resolve_repo_path(args.config)
 
     print(f"[diag_isaac_single] Loading env from: {config_path}")
 
     # Launch Isaac Sim app before importing any isaaclab/carb modules
     global _SIM_APP
-    _SIM_APP = SimulationApp({"headless": False})
+    _SIM_APP = create_sim_app(headless=False)
 
     from simulation.isaac.envs.edf_isaac_env import EDFIsaacEnv
 
@@ -79,9 +77,9 @@ def main() -> None:
         x = np.asarray(x)
         return float(x.flat[0])
 
-    zero_action = np.zeros(5, dtype=np.float32)
+    zero_action = np.zeros(ACTION_DIM, dtype=np.float32)
     if multi_env:
-        zero_action = np.zeros((num_envs, 5), dtype=np.float32)
+        zero_action = np.zeros((num_envs, ACTION_DIM), dtype=np.float32)
     min_h_seen = float("inf")
     contacted_ground = False
     episodes_contacted = 0
@@ -90,12 +88,12 @@ def main() -> None:
         obs, _ = env.reset(seed=ep)
         obs0 = obs[0] if multi_env else obs
         print(f"\n[diag_isaac_single] Episode {ep + 1}/{args.episodes}  "
-              f"initial h_agl={float(obs0[16]):.2f} m")
+              f"initial h_agl={float(obs0[OBS_H_AGL]):.2f} m")
 
         for step in range(args.steps):
             obs, rew, terminated, truncated, _ = env.step(zero_action)
             obs0 = obs[0] if multi_env else obs
-            h_agl = float(obs0[16])
+            h_agl = float(obs0[OBS_H_AGL])
             min_h_seen = min(min_h_seen, h_agl)
 
             if h_agl < 0.1:

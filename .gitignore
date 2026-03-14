@@ -1,3 +1,7 @@
+# logs and training/tuning run outputs
+logs/
+runs/
+
 # pytest cache
 simulation/test_cache/
 .pytest_cache/

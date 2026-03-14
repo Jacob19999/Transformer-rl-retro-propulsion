@@ -1,0 +1,18 @@
+# Isaac Sim environment config — shared defaults for Isaac env wrappers.
+
+episode_length_steps: 600          # 5 s at 1/120 s per step
+
+# Spawn ranges
+spawn_altitude_range: [5.0, 10.0]
+spawn_velocity_magnitude_range: [0.0, 5.0]
+
+# Target
+target_position: [0.0, 0.0, 0.0]
+
+# Config paths
+vehicle_config_path: simulation/configs/default_vehicle.yaml
+reward_config_path: simulation/configs/reward.yaml
+environment_config_path: simulation/configs/default_environment.yaml
+
+# USD asset
+drone_usd_path: simulation/isaac/usd/drone_v2_physics.usd

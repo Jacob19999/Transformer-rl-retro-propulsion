@@ -9,16 +9,7 @@ thrust. Tests three flight phases in sequence:
   Phase 3 (zero thrust, 1 s): drone should descend (gravity wins)
 
 Also computes measured vertical acceleration during Phase 1 and compares
-against expected value: a_expected = T_max/mass - g ~ 4.56 m/s^2.
-
-Success Criteria (spec.md SC-002, SC-003):
-  SC-002: Drone reaches > 5 m altitude within 2 s under full thrust
-  SC-003: Hover thrust maintains altitude within ±0.5 m over 2 s
-
-Usage::
-    python -m simulation.isaac.scripts.diag_thrust_test
-    python -m simulation.isaac.scripts.diag_thrust_test --thrust 1.0 --duration 2.0
-    python -m simulation.isaac.scripts.diag_thrust_test --config simulation/isaac/configs/isaac_env_single.yaml
+against expected value using the shared Isaac vehicle parameters.
 """
 
 from __future__ import annotations
@@ -28,32 +19,21 @@ import sys
 import tempfile
 from pathlib import Path
 
-import numpy as np
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
-# SimulationApp MUST be created before any isaaclab.sim / carb imports
-from isaacsim import SimulationApp  # noqa: E402
+from simulation.isaac.conventions import OBS_H_AGL, OBS_SPEED  # noqa: E402
+from simulation.isaac.scripts._shared import (  # noqa: E402
+    any_done,
+    create_sim_app,
+    make_action,
+    obs_scalar,
+    resolve_repo_path,
+)
 
-_SIM_APP: SimulationApp | None = None
-
-# Physics constants (must match edf_landing_task.py)
-_T_MAX   = 45.0   # N
-_MASS    = 3.13   # kg (from default_vehicle.yaml, validated by SC-001)
-_GRAVITY = 9.81   # m/s^2
-
-# Obs indices
-_OBS_ALTITUDE   = 16   # h_agl (m)
-_OBS_SPEED      = 17   # |v_body| (m/s)
-
-
-def _make_action(thrust_norm: float) -> np.ndarray:
-    """Build 5-dim action array with given thrust, zero fin deflections."""
-    action = np.zeros(5, dtype=np.float32)
-    action[0] = float(np.clip(thrust_norm, -1.0, 1.0))
-    return action
+_SIM_APP = None
 
 
 def main() -> None:
@@ -81,7 +61,7 @@ def main() -> None:
         "--spawn-alt",
         type=float,
         default=0.32,
-        help="Spawn altitude above ground in meters (default: 0.32 — legs near ground)",
+        help="Spawn altitude above ground in meters (default: 0.32 -- legs near ground)",
     )
     parser.add_argument(
         "--episodes",
@@ -97,11 +77,8 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # ------------------------------------------------------------------
-    # Launch Isaac Sim
-    # ------------------------------------------------------------------
     global _SIM_APP
-    _SIM_APP = SimulationApp({"headless": args.headless})
+    _SIM_APP = create_sim_app(headless=args.headless)
 
     try:
         _run_diagnostic(args)
@@ -109,155 +86,129 @@ def main() -> None:
         _SIM_APP.close()
 
 
-def _obs_val(obs: np.ndarray, idx: int) -> float:
-    """Extract scalar obs[idx] from env 0, works for both 1-D and 2-D (batched) obs."""
-    if obs.ndim == 2:
-        return float(obs[0, idx])
-    return float(obs[idx])
-
-
-def _is_done(done) -> bool:
-    """Return True if any env is done (handles scalar bool or numpy bool array)."""
-    return bool(np.any(done))
-
-
 def _run_diagnostic(args) -> None:
     """Run thrust diagnostic; exits with code 0 (pass) or 1 (fail)."""
     from simulation.isaac.envs.edf_isaac_env import EDFIsaacEnv
 
-    print(f"\n{'='*60}")
-    print("EDF Thrust Application Diagnostic")
-    print(f"{'='*60}")
-    print(f"Config:      {args.config}")
-    print(f"Spawn alt:   {args.spawn_alt:.2f} m")
-    print(f"Full thrust: T_cmd = {args.thrust:.2f} ({args.thrust * _T_MAX:.1f} N)")
-    hover_norm = (_MASS * _GRAVITY) / _T_MAX
-    print(f"Hover norm:  T_cmd ~ {hover_norm:.3f} (weight/T_max)")
-    print(f"Expected a:  {(args.thrust * _T_MAX) / _MASS - _GRAVITY:.2f} m/s^2 (full thrust phase)")
-    print(f"Gyro precession: DISABLED (thrust isolation)")
-    print(f"{'='*60}\n")
+    config_path = resolve_repo_path(args.config)
 
-    # Load base config and force ground spawn (spawn_altitude_range: [0, 0])
-    with open(REPO_ROOT / args.config) as f:
+    with config_path.open("r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
-    cfg["spawn_altitude_range"] = [0.32, 0.32]
+    cfg["spawn_altitude_range"] = [args.spawn_alt, args.spawn_alt]
     cfg["spawn_velocity_magnitude_range"] = [0.0, 0.0]
 
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".yaml", delete=False
-    ) as tmp:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as tmp:
         yaml.dump(cfg, tmp)
         tmp_config_path = tmp.name
 
     env = EDFIsaacEnv(config_path=tmp_config_path)
+    env._task.set_runtime_overrides(
+        disable_wind=False,
+        disable_gyro=True,
+        disable_anti_torque=False,
+        disable_gravity=False,
+    )
 
-    # Disable gyro precession to isolate thrust dynamics
-    if hasattr(env, "_task"):
-        env._task._gyro_enabled = False
+    params = env._task.vehicle_params
+    mass = float(env._task._mass)
+    hover_norm = float(env._task.hover_thrust_norm)
 
-    dt = 1.0 / 120.0  # simulation timestep
-    full_steps  = int(args.duration / dt)
+    print(f"\n{'='*60}")
+    print("EDF Thrust Application Diagnostic")
+    print(f"{'='*60}")
+    print(f"Config:      {config_path}")
+    print(f"Spawn alt:   {args.spawn_alt:.2f} m")
+    print(f"Full thrust: T_cmd = {args.thrust:.2f} ({args.thrust * params.t_max:.1f} N)")
+    print(f"Hover norm:  T_cmd ~ {hover_norm:.3f} (weight/T_max)")
+    print(
+        f"Expected a:  {(args.thrust * params.t_max) / mass - params.gravity:.2f} m/s^2 "
+        "(full thrust phase)"
+    )
+    print("Gyro precession: DISABLED (thrust isolation)")
+    print(f"{'='*60}\n")
+
+    dt = 1.0 / 120.0
+    full_steps = int(args.duration / dt)
     hover_steps = int(2.0 / dt)
-    cut_steps   = int(1.0 / dt)
-
+    cut_steps = int(1.0 / dt)
     all_passed = True
 
     for ep in range(args.episodes):
         obs, _ = env.reset()
         print(f"Episode {ep + 1}/{args.episodes}")
-        print(f"  Initial altitude: {_obs_val(obs, _OBS_ALTITUDE):.3f} m")
+        print(f"  Initial altitude: {obs_scalar(obs, OBS_H_AGL):.3f} m")
+        start_alt = obs_scalar(obs, OBS_H_AGL)
 
-        # Patch spawn altitude if requested (override initial position)
-        # The env spawns at random altitude [5, 10] m by default.
-        # For ground-start test, we use spawn-alt as a reference; the actual
-        # spawn may be higher -- we note that and still check SC-002.
-        start_alt = _obs_val(obs, _OBS_ALTITUDE)
-
-        # ---------------------------------------------------------------
-        # Phase 1: Full thrust
-        # ---------------------------------------------------------------
         print(f"\n  Phase 1: Full thrust (T_cmd={args.thrust:.2f}) for {args.duration:.1f}s")
-        action_full = _make_action(args.thrust)
+        action_full = make_action(args.thrust)
         alt_history: list[float] = [start_alt]
-        v_history:   list[float] = []
 
         for step in range(full_steps):
             obs, _, done, _, _ = env.step(action_full)
-            alt = _obs_val(obs, _OBS_ALTITUDE)
+            alt = obs_scalar(obs, OBS_H_AGL)
             alt_history.append(alt)
 
             if step % 30 == 0:
-                print(f"    step {step:4d}  h={alt:.3f} m  speed={_obs_val(obs, _OBS_SPEED):.3f} m/s")
+                print(f"    step {step:4d}  h={alt:.3f} m  speed={obs_scalar(obs, OBS_SPEED):.3f} m/s")
 
-            if _is_done(done):
+            if any_done(done):
                 break
 
         peak_alt = max(alt_history)
         alt_gain = peak_alt - start_alt
-
-        # Compute approximate upward acceleration from first second of data
         steps_1s = int(1.0 / dt)
         if len(alt_history) > steps_1s + 1:
             h0 = alt_history[0]
             h1 = alt_history[min(steps_1s, len(alt_history) - 1)]
-            # Using h = h0 + 0.5*a*t^2 (starting from rest after lag settles)
             t = min(steps_1s, len(alt_history) - 1) * dt
             meas_acc = 2.0 * (h1 - h0) / (t ** 2) if t > 0 else 0.0
         else:
             meas_acc = 0.0
 
-        expected_acc = args.thrust * _T_MAX / _MASS - _GRAVITY
+        expected_acc = args.thrust * params.t_max / mass - params.gravity
         print(f"  Phase 1 result:  peak altitude = {peak_alt:.3f} m (gain {alt_gain:.3f} m)")
         print(f"  Measured accel ~ {meas_acc:.2f} m/s^2  (expected ~ {expected_acc:.2f} m/s^2)")
 
-        # SC-002: Drone must gain significant altitude under full thrust
-        sc002_pass = alt_gain > 1.0  # must ascend at least 1 m
+        sc002_pass = alt_gain > 1.0
         if not sc002_pass:
             print(f"  SC-002 FAIL: Altitude gain {alt_gain:.3f} m < 1.0 m")
             all_passed = False
         else:
             print(f"  SC-002 PASS: Altitude gain {alt_gain:.3f} m >= 1.0 m")
 
-        # ---------------------------------------------------------------
-        # Phase 2: Hover thrust
-        # ---------------------------------------------------------------
-        if _is_done(done):
+        if any_done(done):
             obs, _ = env.reset()
 
         print(f"\n  Phase 2: Hover thrust (T_cmd~{hover_norm:.3f}) for 2.0s")
-        action_hover = _make_action(hover_norm)
-        hover_start_alt = _obs_val(obs, _OBS_ALTITUDE)
+        action_hover = make_action(hover_norm)
         hover_alts: list[float] = []
 
         for step in range(hover_steps):
             obs, _, done, _, _ = env.step(action_hover)
-            hover_alts.append(_obs_val(obs, _OBS_ALTITUDE))
+            hover_alts.append(obs_scalar(obs, OBS_H_AGL))
             if step % 30 == 0:
-                print(f"    step {step:4d}  h={_obs_val(obs, _OBS_ALTITUDE):.3f} m")
-            if _is_done(done):
+                print(f"    step {step:4d}  h={obs_scalar(obs, OBS_H_AGL):.3f} m")
+            if any_done(done):
                 break
 
         if hover_alts:
             alt_drift = max(hover_alts) - min(hover_alts)
-            sc003_pass = alt_drift < 2.0  # generous bound given open-loop hover
+            sc003_pass = alt_drift < 2.0
             print(f"  Phase 2 result: altitude drift = {alt_drift:.3f} m")
             if sc003_pass:
                 print(f"  SC-003 PASS: Drift {alt_drift:.3f} m < 2.0 m")
             else:
                 print(f"  SC-003 INFO: Drift {alt_drift:.3f} m (open-loop hover is approximate)")
 
-        # ---------------------------------------------------------------
-        # Phase 3: Zero thrust -- should descend
-        # ---------------------------------------------------------------
-        print(f"\n  Phase 3: Zero thrust for 1.0s -- should descend")
-        action_zero = _make_action(0.0)
-        cut_start_alt = _obs_val(obs, _OBS_ALTITUDE)
+        print("\n  Phase 3: Zero thrust for 1.0s -- should descend")
+        action_zero = make_action(0.0)
+        cut_start_alt = obs_scalar(obs, OBS_H_AGL)
         cut_alts: list[float] = []
 
-        for step in range(cut_steps):
+        for _ in range(cut_steps):
             obs, _, done, _, _ = env.step(action_zero)
-            cut_alts.append(_obs_val(obs, _OBS_ALTITUDE))
-            if _is_done(done):
+            cut_alts.append(obs_scalar(obs, OBS_H_AGL))
+            if any_done(done):
                 break
 
         if cut_alts:
@@ -265,9 +216,9 @@ def _run_diagnostic(args) -> None:
             descends = final_alt < cut_start_alt
             print(f"  Phase 3 result: alt {cut_start_alt:.3f} -> {final_alt:.3f} m")
             if descends:
-                print(f"  Gravity PASS: drone descends after thrust cut")
+                print("  Gravity PASS: drone descends after thrust cut")
             else:
-                print(f"  Gravity NOTE: drone did not descend (may have been near ground)")
+                print("  Gravity NOTE: drone did not descend (may have been near ground)")
 
     env.close()
 
@@ -275,9 +226,8 @@ def _run_diagnostic(args) -> None:
     if all_passed:
         print("RESULT: PASS -- Thrust application validated")
         sys.exit(0)
-    else:
-        print("RESULT: FAIL -- See details above")
-        sys.exit(1)
+    print("RESULT: FAIL -- See details above")
+    sys.exit(1)
 
 
 if __name__ == "__main__":

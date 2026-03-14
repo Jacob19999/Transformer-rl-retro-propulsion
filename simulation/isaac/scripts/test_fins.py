@@ -24,12 +24,12 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
-# SimulationApp MUST be created before any isaaclab.sim / carb imports
-from isaacsim import SimulationApp  # noqa: E402
+from simulation.isaac.conventions import ACTION_DIM, FIN_DISPLAY_NAMES  # noqa: E402
+from simulation.isaac.scripts._shared import create_sim_app, disable_gravity, resolve_repo_path  # noqa: E402
 
-_SIM_APP: SimulationApp | None = None
+_SIM_APP = None
 
-FIN_NAMES = ["Fin_1 (right)", "Fin_2 (left)", "Fin_3 (forward)", "Fin_4 (aft)"]
+FIN_NAMES = list(FIN_DISPLAY_NAMES)
 _DT = 1.0 / 120.0
 
 # 5 sweep speeds: duration in seconds for a full min-to-max ramp
@@ -38,22 +38,6 @@ SWEEP_LABELS = ["very slow (2.0s)", "slow (1.0s)", "medium (0.5s)", "fast (0.25s
 
 # Settle period between sweeps (seconds)
 _SETTLE_S = 0.5
-
-
-def disable_gravity(env) -> None:
-    """Zero gravity via USD so the drone holds position."""
-    try:
-        from pxr import UsdPhysics
-        stage = env._task.sim.stage
-        for prim in stage.Traverse():
-            if prim.IsA(UsdPhysics.Scene):
-                UsdPhysics.Scene(prim).GetGravityMagnitudeAttr().Set(0.0)
-                print("[test_fins] Gravity disabled — drone will hold position.")
-                return
-        print("[test_fins] WARNING: Physics scene not found; gravity still active.")
-    except Exception as exc:
-        print(f"[test_fins] WARNING: Could not disable gravity: {exc}")
-
 
 def build_sweep(duration_s: float, fin_indices: list[int]) -> list[np.ndarray]:
     """Build action sequence for a min-to-max sweep on given fin indices.
@@ -65,7 +49,7 @@ def build_sweep(duration_s: float, fin_indices: list[int]) -> list[np.ndarray]:
     for i in range(n_steps):
         t = i / max(n_steps - 1, 1)  # 0..1
         cmd = -1.0 + 2.0 * t          # -1..+1
-        action = np.zeros(5, dtype=np.float32)
+        action = np.zeros(ACTION_DIM, dtype=np.float32)
         for fi in fin_indices:
             action[fi + 1] = cmd
         actions.append(action)
@@ -75,7 +59,7 @@ def build_sweep(duration_s: float, fin_indices: list[int]) -> list[np.ndarray]:
 def build_settle() -> list[np.ndarray]:
     """Build a settle-to-zero sequence."""
     n_steps = max(int(round(_SETTLE_S / _DT)), 1)
-    return [np.zeros(5, dtype=np.float32) for _ in range(n_steps)]
+    return [np.zeros(ACTION_DIM, dtype=np.float32) for _ in range(n_steps)]
 
 
 def main() -> None:
@@ -95,12 +79,10 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    config_path = Path(args.config)
-    if not config_path.is_absolute():
-        config_path = REPO_ROOT / config_path
+    config_path = resolve_repo_path(args.config)
 
     global _SIM_APP
-    _SIM_APP = SimulationApp({"headless": False})
+    _SIM_APP = create_sim_app(headless=False)
 
     from simulation.isaac.envs.edf_isaac_env import EDFIsaacEnv
 
@@ -112,7 +94,7 @@ def main() -> None:
     env._task.cfg.spawn_vel_mag_min = 0.0
     env._task.cfg.spawn_vel_mag_max = 0.0
 
-    disable_gravity(env)
+    disable_gravity(env, prefix="test_fins")
 
     # Pre-build action sequences for one epoch
     # Structure: for each fin individually (0-3), then all 4 together,

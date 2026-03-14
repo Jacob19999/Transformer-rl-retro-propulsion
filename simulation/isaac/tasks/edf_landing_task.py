@@ -79,28 +79,21 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from simulation.config_loader import load_config        # noqa: E402
 from simulation.training.reward import RewardConfig, RewardFunction  # noqa: E402
+from simulation.isaac.conventions import (  # noqa: E402
+    ACTION_FIN_SLICE,
+    FIN_DRIVE_DAMPING,
+    FIN_DRIVE_EFFORT_LIMIT,
+    FIN_DRIVE_STIFFNESS,
+    FIN_JOINT_VISUAL_SIGN,
+    OBS_DIM,
+)
 from simulation.isaac.usd.parts_registry import BODY_PRIM, DRONE_ROOT, load_fin_specs, zup_to_frd  # noqa: E402
+from simulation.isaac.vehicle_params import load_isaac_vehicle_params  # noqa: E402
 from simulation.isaac.wind.isaac_wind_model import IsaacWindModel  # noqa: E402
 from simulation.isaac.quaternion_isaac import (  # noqa: E402
     rotate_body_to_world_wxyz,
     rotate_world_to_body_wxyz,
 )
-
-# ---------------------------------------------------------------------------
-# Physical constants from vehicle YAML (loaded once at import)
-# ---------------------------------------------------------------------------
-_VEHICLE_YAML = REPO_ROOT / "simulation" / "configs" / "default_vehicle.yaml"
-_REWARD_YAML  = REPO_ROOT / "simulation" / "configs" / "reward.yaml"
-
-_T_MAX       = 45.0       # N, EDF max thrust
-_DELTA_MAX   = 0.2618     # rad, +/-15 deg fin control limit
-_TAU_MOTOR   = 0.10       # s, EDF first-order thrust lag
-_TAU_SERVO   = 0.04       # s, servo first-order position lag
-_K_THRUST    = 4.55e-7    # N/(rad/s)^2
-_V_EXHAUST   = 70.0       # m/s nominal
-_CL_ALPHA    = 6.283      # /rad, NACA0012 thin-airfoil
-_FIN_AREA    = 0.003575   # m^2 per fin, chord x span
-_GRAVITY     = 9.81       # m/s^2
 
 
 def _zup_to_frd_tensor(vec: torch.Tensor) -> torch.Tensor:
@@ -161,9 +154,9 @@ class EdfSceneCfg(InteractiveSceneCfg):
             # USD/postprocess uses FwdFin_Joint, AftFin_Joint, LeftFin_Joint, RightFin_Joint.
             "fins": ImplicitActuatorCfg(
                 joint_names_expr=[r"(FwdFin|AftFin|LeftFin|RightFin)_Joint"],
-                stiffness=20.0,
-                damping=1.0,
-                effort_limit_sim=2.0,
+                stiffness=FIN_DRIVE_STIFFNESS,
+                damping=FIN_DRIVE_DAMPING,
+                effort_limit_sim=FIN_DRIVE_EFFORT_LIMIT,
             ),
         },
     )
@@ -181,7 +174,7 @@ class EdfLandingTaskCfg(DirectRLEnvCfg):
     """Configuration for EDF landing task."""
 
     # RL spaces
-    observation_space: int = 20
+    observation_space: int = OBS_DIM
     action_space: int = 5
     state_space: int = 0
 
@@ -247,6 +240,9 @@ class EdfLandingTask(DirectRLEnv):
         reward_cfg_raw = load_config(cfg.reward_config_path)
         self._reward_cfg = RewardConfig.from_config(reward_cfg_raw.get("reward", reward_cfg_raw))
 
+        # Load Isaac-used scalar runtime parameters once from the vehicle YAML.
+        self.vehicle_params = load_isaac_vehicle_params(cfg.vehicle_config_path)
+
         # Target position tensor (Y-up world frame)
         tp = cfg.target_pos_world
         self._target_pos_w = torch.tensor(
@@ -268,6 +264,7 @@ class EdfLandingTask(DirectRLEnv):
         # Load vehicle config (lift directions + rotor properties only)
         vehicle_cfg  = load_config(cfg.vehicle_config_path)
         vehicle_data = vehicle_cfg.get("vehicle", vehicle_cfg)
+        self._vehicle_data = vehicle_data
 
         # Lift directions remain in config for now; fin anchor positions come from the USD asset.
         fin_specs = load_fin_specs(vehicle_data)
@@ -278,7 +275,7 @@ class EdfLandingTask(DirectRLEnv):
         # FwdFin/AftFin (roll pair) are mounted with opposite positive rotation sign
         # relative to control/aero convention. Order matches fin_specs: Right, Left, Fwd, Aft.
         self._fin_joint_visual_sign = torch.tensor(
-            [1.0, 1.0, -1.0, -1.0],
+            FIN_JOINT_VISUAL_SIGN,
             dtype=torch.float32,
             device=self.device,
         )
@@ -289,7 +286,8 @@ class EdfLandingTask(DirectRLEnv):
         self._fin_body_ids = self._resolve_body_ids(fin_names)
         self._fin_anchor_pos_frd = self._read_fin_anchor_positions_from_usd(fin_names)
         self._mass = float(self.robot.data.default_mass[0].sum().item())
-        self._weight = self._mass * _GRAVITY
+        self._weight = self._mass * self.vehicle_params.gravity
+        self.hover_thrust_norm = self._weight / self.vehicle_params.t_max
         self._body_com_default_frd = _zup_to_frd_tensor(self.robot.data.body_com_pos_b[0, self._body_id, :])
         self._body_inertia_default = self.robot.data.default_inertia[0, self._body_id, :].reshape(3, 3).clone()
         print(
@@ -319,10 +317,10 @@ class EdfLandingTask(DirectRLEnv):
         edf_cfg = vehicle_data.get("edf", {})
         gyro_cfg = edf_cfg.get("gyro_precession", {})
         self._gyro_enabled: bool = bool(gyro_cfg.get("enabled", True))
-        self._I_fan: float = float(edf_cfg.get("I_fan", 3.0e-5))  # kg·m², fan rotor MoI
+        self._I_fan: float = self.vehicle_params.i_fan
         anti_torque_cfg = edf_cfg.get("anti_torque", {})
         self._anti_torque_enabled: bool = bool(anti_torque_cfg.get("enabled", True))
-        self._k_torque: float = float(edf_cfg.get("k_torque", 0.0))
+        self._k_torque: float = self.vehicle_params.k_torque
         self._tau_anti_b = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
         self._tau_ramp_b = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
         self._omega_fan = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
@@ -659,20 +657,23 @@ class EdfLandingTask(DirectRLEnv):
 
         # Unpack: [thrust_cmd, d1, d2, d3, d4]
         thrust_cmd_norm = self.actions[:, 0]
-        fin_cmd_norm    = self.actions[:, 1:5]
+        fin_cmd_norm    = self.actions[:, ACTION_FIN_SLICE]
 
         # Map thrust: [-1,0] -> 0, [0,1] -> T_MAX
-        T_cmd     = thrust_cmd_norm.clamp(0.0, 1.0) * _T_MAX
-        delta_cmd = fin_cmd_norm * _DELTA_MAX
+        T_cmd     = thrust_cmd_norm.clamp(0.0, 1.0) * self.vehicle_params.t_max
+        delta_cmd = fin_cmd_norm * self.vehicle_params.delta_max
 
         # First-order lag update (once per policy step)
-        self.thrust_actual += (dt / _TAU_MOTOR) * (T_cmd - self.thrust_actual)
-        self.fin_deflections_actual += (dt / _TAU_SERVO) * (
+        self.thrust_actual += (dt / self.vehicle_params.tau_motor) * (T_cmd - self.thrust_actual)
+        self.fin_deflections_actual += (dt / self.vehicle_params.tau_servo) * (
             delta_cmd - self.fin_deflections_actual
         )
-        self.fin_deflections_actual.clamp_(-_DELTA_MAX, _DELTA_MAX)
-        self._thrust_dot = (T_cmd - self.thrust_actual) / _TAU_MOTOR
-        self._omega_fan = (self.thrust_actual / _K_THRUST).clamp(min=0.0).sqrt()
+        self.fin_deflections_actual.clamp_(
+            -self.vehicle_params.delta_max,
+            self.vehicle_params.delta_max,
+        )
+        self._thrust_dot = (T_cmd - self.thrust_actual) / self.vehicle_params.tau_motor
+        self._omega_fan = (self.thrust_actual / self.vehicle_params.k_thrust).clamp(min=0.0).sqrt()
 
         # Increment episode step counter
         self._episode_step += 1
@@ -695,9 +696,7 @@ class EdfLandingTask(DirectRLEnv):
             # PhysX joint names appear as "RevoluteJoint" (possibly de-duplicated
             # with index suffixes).  Try exact names first, then regex fallback.
             # Find fin joints by name: FwdFin_Joint, AftFin_Joint, LeftFin_Joint, RightFin_Joint
-            fin_specs = load_fin_specs(
-                load_config(self.cfg.vehicle_config_path).get("vehicle", {})
-            )
+            fin_specs = load_fin_specs(self._vehicle_data)
             joint_names_ordered = [f"{s.prim_name}_Joint" for s in fin_specs]
             try:
                 joint_ids, joint_names = self.robot.find_joints(
@@ -750,8 +749,8 @@ class EdfLandingTask(DirectRLEnv):
         # ----------------------------------------------------------------
         # Fin aerodynamic forces (NACA0012 in exhaust stream)
         # ----------------------------------------------------------------
-        omega_ratio  = (self.thrust_actual / _T_MAX).clamp(0.0, 1.0).sqrt()
-        V_ex         = omega_ratio * _V_EXHAUST
+        omega_ratio  = (self.thrust_actual / self.vehicle_params.t_max).clamp(0.0, 1.0).sqrt()
+        V_ex         = omega_ratio * self.vehicle_params.v_exhaust_nominal
         dyn_pressure = 0.5 * 1.225 * V_ex.pow(2)  # sea-level rho
 
         # Fin anchor points are authored in the USD asset. Convert them to live
@@ -760,7 +759,12 @@ class EdfLandingTask(DirectRLEnv):
 
         for i in range(4):
             delta_i = self.fin_deflections_actual[:, i]                  # (N,)
-            L_i     = dyn_pressure * _FIN_AREA * _CL_ALPHA * delta_i     # (N,)
+            L_i = (
+                dyn_pressure
+                * self.vehicle_params.fin_area
+                * self.vehicle_params.cl_alpha
+                * delta_i
+            )
 
             # Broadcast per-fin body-frame vectors to (N, 3)
             lift_dir_b = self._fin_lift[i].unsqueeze(0).expand(num_envs, -1)  # (N, 3)
@@ -797,7 +801,7 @@ class EdfLandingTask(DirectRLEnv):
             torques[:, 0, :] += tau_anti_w
 
             omega_safe = self._omega_fan.clamp(min=1e-6)
-            domega_dt = self._thrust_dot / (2.0 * _K_THRUST * omega_safe)
+            domega_dt = self._thrust_dot / (2.0 * self.vehicle_params.k_thrust * omega_safe)
             self._tau_ramp_b[:, 2] = -self._I_fan * domega_dt
             tau_ramp_w = rotate_body_to_world_wxyz(quat_w, self._tau_ramp_b)
             torques[:, 0, :] += tau_ramp_w

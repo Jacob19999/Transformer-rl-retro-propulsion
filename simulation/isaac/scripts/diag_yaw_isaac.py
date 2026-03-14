@@ -20,14 +20,17 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
-# SimulationApp MUST be created before any isaaclab.sim / carb imports
-from isaacsim import SimulationApp  # noqa: E402
+from simulation.isaac.conventions import OBS_H_AGL, OBS_OMEGA_Z, yaw_fin_command  # noqa: E402
+from simulation.isaac.scripts._shared import (  # noqa: E402
+    create_sim_app,
+    make_action,
+    resolve_repo_path,
+)
 
-_SIM_APP: SimulationApp | None = None
+_SIM_APP = None
 
-_YAW_FIN_ACTION = np.array([0.3, 0.5, -0.5, 0.5, -0.5], dtype=np.float32)
-# Fins 1,2 at +0.5/-0.5 and fins 3,4 at +0.5/-0.5 create a differential
-# torque about body Z (yaw). Partial thrust to stay airborne.
+_YAW_FIN_ACTION = make_action(0.3, yaw_fin_command(0.5))
+# Differential yaw fin pattern with partial thrust to stay airborne.
 
 
 def main() -> None:
@@ -39,31 +42,29 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=300, help="Steps to simulate")
     args = parser.parse_args()
 
-    config_path = Path(args.config)
-    if not config_path.is_absolute():
-        config_path = REPO_ROOT / config_path
+    config_path = resolve_repo_path(args.config)
 
     global _SIM_APP
-    _SIM_APP = SimulationApp({"headless": False})
+    _SIM_APP = create_sim_app(headless=False)
 
     from simulation.isaac.envs.edf_isaac_env import EDFIsaacEnv
 
     env = EDFIsaacEnv(config_path=config_path, render_mode="human")
     obs, _ = env.reset(seed=0)
 
-    print(f"[diag_yaw_isaac] Initial h_agl = {obs[16]:.2f} m")
+    print(f"[diag_yaw_isaac] Initial h_agl = {obs[OBS_H_AGL]:.2f} m")
     print(f"[diag_yaw_isaac] Applying yaw action: {_YAW_FIN_ACTION}")
     print(f"[diag_yaw_isaac] Monitoring omega_z (body yaw rate)...\n")
 
     yaw_rates = []
     for step in range(args.steps):
         obs, rew, term, trunc, info = env.step(_YAW_FIN_ACTION)
-        omega_z = float(obs[11])  # obs[9:12] = omega; index 11 = omega_z
+        omega_z = float(obs[OBS_OMEGA_Z])
         yaw_rates.append(omega_z)
 
         if step % 30 == 0:
             print(
-                f"  step={step:3d}  h_agl={obs[16]:.3f} m  "
+                f"  step={step:3d}  h_agl={obs[OBS_H_AGL]:.3f} m  "
                 f"omega_z={omega_z:+.3f} rad/s  reward={rew:.3f}"
             )
 

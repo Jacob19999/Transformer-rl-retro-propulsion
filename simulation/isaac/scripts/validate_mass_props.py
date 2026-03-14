@@ -24,7 +24,7 @@ from typing import Optional
 # ---------------------------------------------------------------------------
 # Repo-root helper
 # ---------------------------------------------------------------------------
-_REPO_ROOT = Path(__file__).resolve().parents[4]
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _repo_path(rel: str) -> Path:
