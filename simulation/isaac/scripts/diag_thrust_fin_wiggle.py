@@ -18,14 +18,13 @@ Body frame: FRD (+X=fwd/nose, +Y=right, +Z=down)
   ωz = YAW   (rotation about +Z = down axis)
 
 Fin physical layout (confirmed from Isaac Sim 3D model top-down view):
-  Fin_1(fwd)    at FRD +X  →  hinge X, pitch-dominant lift with small yaw cant
-  Fin_2(aft)    at FRD −X  →  hinge X, pitch-dominant lift with small yaw cant
-  Fin_3(left)   at FRD −Y  →  hinge Y, roll-dominant  lift with small yaw cant
-  Fin_4(right)  at FRD +Y  →  hinge Y, roll-dominant  lift with small yaw cant
-Note: YAML fins_config names (fin_1_right, fin_3_forward) are INCORRECT vs the 3D model.
+  Fin_1(right)  at FRD +Y  →  hinge Y, pitch-dominant lift with small yaw cant
+  Fin_2(left)   at FRD −Y  →  hinge Y, pitch-dominant lift with small yaw cant
+  Fin_3(fwd)    at FRD +X  →  hinge X, roll-dominant  lift with small yaw cant
+  Fin_4(aft)    at FRD −X  →  hinge X, roll-dominant  lift with small yaw cant
 
 Expected axis responses:
-  Yaw  (all 4 fins): ωz dominant  →  d1=∓v  d2=±v  d3=±v  d4=∓v
+  Yaw  (all 4 fins): ωz dominant  →  d1=∓v  d2=±v  d3=∓v  d4=±v
   Roll (Fin_3+Fin_4): ωx dominant with smaller ωy cross-couple
   Pitch(Fin_1+Fin_2): ωy dominant with smaller ωx cross-couple
 
@@ -54,11 +53,9 @@ _SIM_APP: SimulationApp | None = None
 
 # Physical drone body frame: FRD (+X=fwd/nose, +Y=right, +Z=down)
 # Fin physical positions (confirmed from Isaac Sim 3D model top-down view):
-#   Fin_1(fwd)  at FRD +X, Fin_2(aft)   at FRD -X  — hinge X, lift +X → τ_y → PITCH
-#   Fin_3(left) at FRD -Y, Fin_4(right) at FRD +Y  — hinge Y, lift +Y → τ_x → ROLL
-# NOTE: YAML fins_config names (fin_1_right, fin_3_forward) are INCORRECT;
-#       the actual USD geometry is: Fin_1=nose, Fin_2=aft, Fin_3=left, Fin_4=right.
-FIN_NAMES = ["Fin_1(fwd)", "Fin_2(aft)", "Fin_3(left)", "Fin_4(right)"]
+#   Fin_1(right) at FRD +Y, Fin_2(left) at FRD -Y  — hinge Y, lift +X → τ_y → PITCH
+#   Fin_3(fwd)   at FRD +X, Fin_4(aft)  at FRD -X  — hinge X, lift -Y → τ_x → ROLL
+FIN_NAMES = ["Fin_1(right)", "Fin_2(left)", "Fin_3(fwd)", "Fin_4(aft)"]
 
 # Timing (steps at 1/120 s each)
 _STEPS_HOLD   = 120   # 1.0 s hold per direction (overridden by --hold-secs)
@@ -196,13 +193,13 @@ def build_episode_sequence(
     and appends one final settle at the end.
 
     Fin commands per axis (FRD body frame):
-      Yaw  τ_z ∝ (−d1+d2+d3−d4)  from the fin cant
-        Yaw-: d1=+v  d2=−v  d3=−v  d4=+v  →  τ_z < 0
-        Yaw+: d1=−v  d2=+v  d3=+v  d4=−v  →  τ_z > 0
-      Roll  τ_x dominant, τ_y secondary   [Fin_3(left)+Fin_4(right)]
-        Roll-: d3=+v  d4=+v  →  τ_x < 0
-        Roll+: d3=−v  d4=−v  →  τ_x > 0
-      Pitch τ_y dominant, τ_x secondary   [Fin_1(fwd)+Fin_2(aft)]
+      Yaw  τ_z ∝ (−d1+d2−d3+d4)  from the fin cant
+        Yaw-: d1=+v  d2=−v  d3=+v  d4=−v  →  τ_z < 0
+        Yaw+: d1=−v  d2=+v  d3=−v  d4=+v  →  τ_z > 0
+      Roll  τ_x dominant, τ_y secondary   [Fin_3(fwd)+Fin_4(aft)]
+        Roll-: d3=−v  d4=−v  →  τ_x < 0
+        Roll+: d3=+v  d4=+v  →  τ_x > 0
+      Pitch τ_y dominant, τ_x secondary   [Fin_1(right)+Fin_2(left)]
         Pitch-: d1=−v  d2=−v  →  τ_y < 0
         Pitch+: d1=+v  d2=+v  →  τ_y > 0
     """
@@ -230,9 +227,9 @@ def build_episode_sequence(
 
     axis_routine: list[tuple[str, list[float], list[float]]] = [
         # Differential fin pattern excites the canted-fin yaw couple.
-        ("Yaw",   [+v, -v, -v, +v], [-v, +v, +v, -v]),
+        ("Yaw",   [+v, -v, +v, -v], [-v, +v, -v, +v]),
         # Roll is dominant; a smaller pitch cross-couple is expected.
-        ("Roll",  [0.0, 0.0, +v, +v], [0.0, 0.0, -v, -v]),
+        ("Roll",  [0.0, 0.0, -v, -v], [0.0, 0.0, +v, +v]),
         # Pitch is dominant; a smaller roll cross-couple is expected.
         ("Pitch", [-v, -v, 0.0, 0.0], [+v, +v, 0.0, 0.0]),
     ]

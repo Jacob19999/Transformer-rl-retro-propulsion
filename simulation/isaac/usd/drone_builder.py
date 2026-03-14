@@ -54,6 +54,13 @@ _SIM_APP = None  # keeps SimulationApp alive for the process lifetime
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
+from simulation.isaac.usd.parts_registry import (
+    DRONE_ROOT,
+    FIN_PRIM_NAMES,
+    expected_fin_prim_paths,
+)
+
+
 def open_usd_stage(usd_path: str | Path):  # -> Usd.Stage
     _bootstrap_pxr()
     usd_path = Path(usd_path)
@@ -68,12 +75,10 @@ def open_usd_stage(usd_path: str | Path):  # -> Usd.Stage
 
 
 def _iter_expected_paths() -> Iterable[str]:
-    yield "/Drone"
-    yield "/Drone/Body"
-    yield "/Drone/Fin_1"
-    yield "/Drone/Fin_2"
-    yield "/Drone/Fin_3"
-    yield "/Drone/Fin_4"
+    yield DRONE_ROOT
+    yield f"{DRONE_ROOT}/Body"
+    for p in expected_fin_prim_paths():
+        yield p
 
 
 def validate_drone_usd(stage) -> list[str]:  # stage: Usd.Stage
@@ -92,8 +97,8 @@ def validate_drone_usd(stage) -> list[str]:  # stage: Usd.Stage
     default_prim = stage.GetDefaultPrim()
     if not default_prim or not default_prim.IsValid():
         issues.append("Stage defaultPrim is not set.")
-    elif default_prim.GetPath() != "/Drone":
-        issues.append(f"defaultPrim is '{default_prim.GetPath()}', expected '/Drone'.")
+    elif default_prim.GetPath() != DRONE_ROOT:
+        issues.append(f"defaultPrim is '{default_prim.GetPath()}', expected '{DRONE_ROOT}'.")
 
     # Expected prims exist.
     for p in _iter_expected_paths():
@@ -102,28 +107,28 @@ def validate_drone_usd(stage) -> list[str]:  # stage: Usd.Stage
             issues.append(f"Missing prim at '{p}'.")
 
     # Physics schemas (soft requirements; warn instead of hard-fail).
-    drone = stage.GetPrimAtPath("/Drone")
+    drone = stage.GetPrimAtPath(DRONE_ROOT)
     if drone and drone.IsValid():
         if not UsdPhysics.ArticulationRootAPI(drone):
             issues.append("'/Drone' is missing UsdPhysics.ArticulationRootAPI.")
 
-    body = stage.GetPrimAtPath("/Drone/Body")
+    body = stage.GetPrimAtPath(f"{DRONE_ROOT}/Body")
     if body and body.IsValid():
         if not UsdPhysics.RigidBodyAPI(body):
             issues.append("'/Drone/Body' is missing UsdPhysics.RigidBodyAPI.")
 
-    for fin_name in ("Fin_1", "Fin_2", "Fin_3", "Fin_4"):
-        fin = stage.GetPrimAtPath(f"/Drone/{fin_name}")
+    for fin_name in FIN_PRIM_NAMES:
+        fin = stage.GetPrimAtPath(f"{DRONE_ROOT}/{fin_name}")
         if fin and fin.IsValid():
             if not UsdPhysics.RigidBodyAPI(fin):
-                issues.append(f"'/Drone/{fin_name}' is missing UsdPhysics.RigidBodyAPI.")
+                issues.append(f"'{DRONE_ROOT}/{fin_name}' is missing UsdPhysics.RigidBodyAPI.")
 
-    # Joints: check multiple naming conventions used across authoring tools.
-    for fin_name in ("Fin_1", "Fin_2", "Fin_3", "Fin_4"):
+    # Joints: postprocess_usd uses /Drone/<name>/<name>_Joint; also allow RevoluteJoint, legacy flat.
+    for fin_name in FIN_PRIM_NAMES:
         candidates = [
-            f"/Drone/{fin_name}/RevoluteJoint",    # postprocess_usd.py convention
-            f"/Drone/{fin_name}/{fin_name}_Joint",  # Isaac Sim hand-authored convention
-            f"/Drone/{fin_name}_Joint",             # legacy flat convention
+            f"{DRONE_ROOT}/{fin_name}/RevoluteJoint",
+            f"{DRONE_ROOT}/{fin_name}/{fin_name}_Joint",
+            f"{DRONE_ROOT}/{fin_name}_Joint",
         ]
         found = False
         for c in candidates:
@@ -153,11 +158,11 @@ def print_stage_info(stage) -> None:  # stage: Usd.Stage
         print(f"[drone_usd] {p} type={t}")
 
     # Print joint info
-    for fin_name in ("Fin_1", "Fin_2", "Fin_3", "Fin_4"):
+    for fin_name in FIN_PRIM_NAMES:
         candidates = [
-            f"/Drone/{fin_name}/RevoluteJoint",
-            f"/Drone/{fin_name}/{fin_name}_Joint",
-            f"/Drone/{fin_name}_Joint",
+            f"{DRONE_ROOT}/{fin_name}/RevoluteJoint",
+            f"{DRONE_ROOT}/{fin_name}/{fin_name}_Joint",
+            f"{DRONE_ROOT}/{fin_name}_Joint",
         ]
         for jp in candidates:
             prim = stage.GetPrimAtPath(jp)
@@ -165,7 +170,7 @@ def print_stage_info(stage) -> None:  # stage: Usd.Stage
                 print(f"[drone_usd] {jp} type={prim.GetTypeName()}")
                 break
         else:
-            print(f"[drone_usd] /Drone/{fin_name} — no joint found")
+            print(f"[drone_usd] {DRONE_ROOT}/{fin_name} — no joint found")
 
 
 # ---------------------------------------------------------------------------

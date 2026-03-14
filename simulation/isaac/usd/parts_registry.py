@@ -9,7 +9,7 @@ Blender object name → USD prim path mapping:
 
   Articulated parts (direct children of Drone — get joints from postprocess_usd):
     Drone        →  /Drone             (root empty)
-    Fin_1..4     →  /Drone/Fin_N       (fin mesh, origin at hinge point)
+    FwdFin, AftFin, LeftFin, RightFin →  /Drone/<name>  (fin Xform + Mesh, origin at hinge)
 
   Rigid body parts (children of Body — no joints, grouped for rigid physics):
     Body         →  /Drone/Body
@@ -114,29 +114,33 @@ BODY_PARTS_MVP = ["edf_drone"]
 
 
 # ---------------------------------------------------------------------------
-# Fin paths
+# Fin paths — names match Blender/USD: FwdFin, AftFin, LeftFin, RightFin
+# Order here matches fins_config in YAML: [right, left, fwd, aft] → action indices 0..3
 # ---------------------------------------------------------------------------
+FIN_PRIM_NAMES = ["RightFin", "LeftFin", "FwdFin", "AftFin"]
+
+
 def fin_prim_path(index: int) -> str:
     """USD prim path for fin at 1-based index (1–4)."""
-    return f"/Drone/Fin_{index}"
+    return f"{DRONE_ROOT}/{FIN_PRIM_NAMES[index - 1]}"
 
 
 def fin_joint_path(index: int) -> str:
     """USD prim path for fin joint at 1-based index (1–4).
 
-    In the manual Isaac Sim scene, joints are children of each fin Xform:
-      /Drone/Fin_1/Fin_1_Joint
-    IsaacLab resolves joints by the leaf name: find_joints(["Fin_1_Joint", ...])
+    Joints are children of each fin Xform: /Drone/FwdFin/FwdFin_Joint etc.
+    IsaacLab resolves by leaf name: find_joints(["FwdFin_Joint", ...]).
     """
-    return f"/Drone/Fin_{index}/Fin_{index}_Joint"
+    name = FIN_PRIM_NAMES[index - 1]
+    return f"{DRONE_ROOT}/{name}/{name}_Joint"
 
 
 def expected_fin_prim_paths(n: int = 4) -> list[str]:
-    return [fin_prim_path(i) for i in range(1, n + 1)]
+    return [f"{DRONE_ROOT}/{FIN_PRIM_NAMES[i]}" for i in range(n)]
 
 
 def expected_joint_paths(n: int = 4) -> list[str]:
-    return [fin_joint_path(i) for i in range(1, n + 1)]
+    return [f"{DRONE_ROOT}/{FIN_PRIM_NAMES[i]}/{FIN_PRIM_NAMES[i]}_Joint" for i in range(n)]
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +172,7 @@ def expected_mvp_prim_paths(num_fins: int = 4) -> dict[str, list[str]]:
 class FinSpec:
     """Configuration for one fin control surface."""
 
-    prim_name: str                             # "Fin_1", "Fin_2", etc.
+    prim_name: str                             # "FwdFin", "AftFin", "LeftFin", "RightFin"
     hinge_pos_frd: tuple[float, float, float]  # hinge position in FRD body frame (m)
     hinge_axis: str                            # USD joint axis token: "X", "Y", or "Z" (fin-prim local)
     lift_direction: tuple[float, float, float] # unit vector in FRD body frame
@@ -233,7 +237,7 @@ def load_fin_specs(vehicle_cfg: dict) -> list[FinSpec]:
         vehicle_cfg: The 'vehicle' section of default_vehicle.yaml (already extracted).
 
     Returns:
-        List of FinSpec, one per fin in order (Fin_1 … Fin_N).
+        List of FinSpec, one per fin in YAML order (RightFin, LeftFin, FwdFin, AftFin).
 
     Hinge axis: If ``hinge_axis_usd`` is set per fin (string "X", "Y", or "Z"), it is
     used as the RevoluteJoint axis in USD (fin-prim local frame). Otherwise the axis
@@ -244,9 +248,14 @@ def load_fin_specs(vehicle_cfg: dict) -> list[FinSpec]:
     fins_cfg = vehicle_cfg.get("fins", {})
     fins_config = fins_cfg.get("fins_config", [])
 
+    if len(fins_config) > len(FIN_PRIM_NAMES):
+        raise ValueError(
+            f"fins_config has {len(fins_config)} fins but FIN_PRIM_NAMES has {len(FIN_PRIM_NAMES)}. "
+            "Add names to parts_registry.FIN_PRIM_NAMES or reduce fins_config."
+        )
     specs: list[FinSpec] = []
     for i, fin in enumerate(fins_config):
-        prim_name = f"Fin_{i + 1}"
+        prim_name = FIN_PRIM_NAMES[i]
         pos = tuple(float(v) for v in fin["position"])
         axis_token = fin.get("hinge_axis_usd", "").strip().upper()
         if axis_token not in ("X", "Y", "Z"):

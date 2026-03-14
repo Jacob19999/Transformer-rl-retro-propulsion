@@ -206,8 +206,8 @@ vehicle:
     max_rpm: 95000             # RPM
     max_omega: 9948.0          # rad/s (= 95000 × 2π / 60)
     k_thrust: 4.55e-7          # N/(rad/s)², from T_max / ω_max² (calibrate from static test)
-    k_torque: 1.0e-8           # N·m/(rad/s)², reaction torque coefficient (calibrate from test)
-    I_fan: 3.0e-5              # kg·m², fan+motor-rotor MoI about spin axis (90mm EDF)
+    k_torque: 1.0e-10           # N·m/(rad/s)², reaction torque coefficient (calibrate from test)
+    I_fan: 3.0e-7              # kg·m², fan+motor-rotor MoI about spin axis (90mm EDF)
                                # Estimated as 0.5*m*r² for ~60 g rotating at r≈35 mm
     tau_motor: 0.10            # s, 1st-order thrust lag time constant
     r_thrust: [0, 0, 0.08]    # m, thrust application point (body frame)
@@ -284,43 +284,43 @@ vehicle:
 
     # ── Per-Fin Configuration (body frame: FRD, +X=fwd/nose, +Y=right, +Z=down) ──
     # Fin layout confirmed from Isaac Sim 3D model top-down view:
-    #   Fin_1 = nose/forward  (FRD +X)   Fin_2 = aft        (FRD −X)
-    #   Fin_3 = left          (FRD −Y)   Fin_4 = right      (FRD +Y)
+    #   Fin_1 = right         (FRD +Y)   Fin_2 = left       (FRD −Y)
+    #   Fin_3 = nose/forward  (FRD +X)   Fin_4 = aft        (FRD −X)
     # Torque authority:
-    #   Fin_1+Fin_2 (fwd+aft): τ_y → PITCH   (dominant)
-    #   Fin_3+Fin_4 (left+right): τ_x → ROLL (dominant)
+    #   Fin_1+Fin_2 (right+left): τ_y → PITCH (dominant)
+    #   Fin_3+Fin_4 (fwd+aft):    τ_x → ROLL (dominant)
     #   Yaw: a mild in-plane cant gives the differential fin pattern
-    #        [-,+,+,-] a secondary τ_z contribution while keeping pitch/roll dominant.
+    #        [-,+,-,+] a secondary τ_z contribution while keeping pitch/roll dominant.
     # Lift vectors below use a 3 deg cant from the principal pitch/roll directions.
     # angular_offset_deg: azimuthal position, 0° = FRD +Y (starboard/right).
     fins_config:
-      - name: "fin_1_fwd"
-        position: [0.055, 0, 0.14]    # m, FRD +X = nose/forward
-        hinge_axis: [1, 0, 0]         # deflection rotates about body x-axis (fwd)
+      - name: "fin_1_right"
+        position: [0, 0.055, 0.14]    # m, FRD +Y = right/starboard
+        hinge_axis: [0, 1, 0]         # deflection rotates about body y-axis (right)
         lift_direction: [0.998630, -0.052336, 0.0]  # pitch-dominant with yaw cant
         drag_direction: [0, 0, 1]     # drag opposes exhaust (body z)
-        angular_offset_deg: 90        # azimuthal position (90° = forward)
+        angular_offset_deg: 0         # azimuthal position (0° = starboard/right)
 
-      - name: "fin_2_aft"
-        position: [-0.055, 0, 0.14]   # m, FRD -X = aft
-        hinge_axis: [1, 0, 0]
-        lift_direction: [0.998630, -0.052336, 0.0]
-        drag_direction: [0, 0, 1]
-        angular_offset_deg: 270       # azimuthal position (270° = aft)
-
-      - name: "fin_3_left"
+      - name: "fin_2_left"
         position: [0, -0.055, 0.14]   # m, FRD -Y = left
-        hinge_axis: [0, 1, 0]         # deflection rotates about body y-axis (right)
-        lift_direction: [0.052336, 0.998630, 0.0]  # roll-dominant with yaw cant
+        hinge_axis: [0, 1, 0]
+        lift_direction: [0.998630, -0.052336, 0.0]
         drag_direction: [0, 0, 1]
         angular_offset_deg: 180       # azimuthal position (180° = left/port)
 
-      - name: "fin_4_right"
-        position: [0, 0.055, 0.14]    # m, FRD +Y = right/starboard
-        hinge_axis: [0, 1, 0]
-        lift_direction: [0.052336, 0.998630, 0.0]
+      - name: "fin_3_fwd"
+        position: [0.055, 0, 0.14]    # m, FRD +X = nose/forward
+        hinge_axis: [1, 0, 0]         # deflection rotates about body x-axis (fwd)
+        lift_direction: [0.052336, -0.998630, 0.0]  # roll-dominant with yaw cant
         drag_direction: [0, 0, 1]
-        angular_offset_deg: 0         # azimuthal position (0° = starboard/right)
+        angular_offset_deg: 90        # azimuthal position (90° = forward)
+
+      - name: "fin_4_aft"
+        position: [-0.055, 0, 0.14]   # m, FRD -X = aft
+        hinge_axis: [1, 0, 0]
+        lift_direction: [0.052336, -0.998630, 0.0]
+        drag_direction: [0, 0, 1]
+        angular_offset_deg: 270       # azimuthal position (270° = aft)
 
   # ─── Explicit Mass Properties ────────────────────────────────────
   # Primary source for Isaac Sim / IsaacLab.

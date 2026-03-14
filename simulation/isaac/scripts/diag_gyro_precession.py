@@ -102,8 +102,8 @@ def _fin_hold_action(thrust_norm: float, torque_axis: str, fin_deflection: float
     if torque_axis == "pitch":
         # Positive d1=d2 produces positive pitch rate with current fin convention.
         return _make_action(thrust_norm, (d, d, 0.0, 0.0))
-    # Positive roll is produced by negative common-mode on Fin_3+Fin_4.
-    return _make_action(thrust_norm, (0.0, 0.0, -d, -d))
+    # Positive roll is produced by positive common-mode on Fin_3+Fin_4.
+    return _make_action(thrust_norm, (0.0, 0.0, d, d))
 
 
 def main() -> None:

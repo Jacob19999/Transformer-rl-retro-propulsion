@@ -68,10 +68,10 @@ def test_lateral_error_maps_to_expected_fin_signs() -> None:
     assert a_fwd[2] < 0.0
 
     # Target is right (+y): expect positive roll command,
-    # which maps to common-mode negative deflection on Fin_3+Fin_4.
+    # which maps to common-mode positive deflection on Fin_3+Fin_4.
     a_right = ctrl.get_action(_obs(target_body=np.array([0.0, 1.0, 0.0]), h_agl=0.0))
-    assert a_right[3] < 0.0
-    assert a_right[4] < 0.0
+    assert a_right[3] > 0.0
+    assert a_right[4] > 0.0
 
 
 def test_actions_are_clipped_to_unit_box() -> None:
@@ -135,17 +135,18 @@ def test_debug_sign_conventions_match_existing_tests() -> None:
     assert a_fwd[1] < 0.0 and a_fwd[2] < 0.0
     assert dbg_fwd["pitch_cmd"] < 0.0
 
-    # Right (+y) target should still drive positive roll_cmd and negative Fin_3/Fin_4.
+    # Right (+y) target should still drive positive roll_cmd and positive Fin_3/Fin_4.
     o_right = _obs(target_body=np.array([0.0, 1.0, 0.0]), h_agl=0.0)
     a_right, dbg_right = ctrl.get_action_with_debug(o_right)
-    assert a_right[3] < 0.0 and a_right[4] < 0.0
+    assert a_right[3] > 0.0 and a_right[4] > 0.0
     assert dbg_right["roll_cmd"] > 0.0
 
-    # Yaw damping pattern [-d, +d, +d, -d] should appear for pure yaw-rate input.
+    # Yaw damping pattern [-d, +d, -d, +d] should appear for pure yaw-rate input.
     o_yaw = _obs(omega=np.array([0.0, 0.0, 1.0]), h_agl=0.0)
     a_yaw, dbg_yaw = ctrl.get_action_with_debug(o_yaw)
     d = dbg_yaw["yaw_total"]
     # Fin pattern implied by yaw_total sign:
-    # fin1 = pitch_cmd - d, fin2 = pitch_cmd + d, fin3 = -roll_cmd + d, fin4 = -roll_cmd - d
+    # fin1 = pitch_cmd - d, fin2 = pitch_cmd + d, fin3 = roll_cmd - d, fin4 = roll_cmd + d
     assert np.sign(a_yaw[1] - a_yaw[2]) == -np.sign(d) or d == 0.0
+    assert np.sign(a_yaw[3] - a_yaw[4]) == -np.sign(d) or d == 0.0
 

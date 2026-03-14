@@ -158,9 +158,9 @@ class EdfSceneCfg(InteractiveSceneCfg):
         ),
         actuators={
             # Drive the four fin revolute joints via implicit PD (targets set in task).
-            # Manual scene: joints live at /Drone/Fin_N/Fin_N_Joint
+            # USD/postprocess uses FwdFin_Joint, AftFin_Joint, LeftFin_Joint, RightFin_Joint.
             "fins": ImplicitActuatorCfg(
-                joint_names_expr=["Fin_.*_Joint"],
+                joint_names_expr=[r"(FwdFin|AftFin|LeftFin|RightFin)_Joint"],
                 stiffness=20.0,
                 damping=1.0,
                 effort_limit_sim=2.0,
@@ -275,21 +275,19 @@ class EdfLandingTask(DirectRLEnv):
             [list(s.lift_direction) for s in fin_specs],
             dtype=torch.float32, device=self.device,
         )  # (4, 3)
-        # Front/aft fin joints are mounted with the opposite positive rotation
-        # sign relative to the control/aero convention. Keep the force model as-is
-        # and only flip the rendered/actuated joint targets for those fins.
+        # FwdFin/AftFin (roll pair) are mounted with opposite positive rotation sign
+        # relative to control/aero convention. Order matches fin_specs: Right, Left, Fwd, Aft.
         self._fin_joint_visual_sign = torch.tensor(
-            [-1.0, -1.0, 1.0, 1.0],
+            [1.0, 1.0, -1.0, -1.0],
             dtype=torch.float32,
             device=self.device,
         )
 
         # Vehicle mass, CoM, and fin anchors come from the live Isaac asset.
+        fin_names = [s.prim_name for s in fin_specs]
         self._body_id = self._resolve_single_body_id("Body")
-        self._fin_body_ids = self._resolve_body_ids([f"Fin_{i}" for i in range(1, 5)])
-        self._fin_anchor_pos_frd = self._read_fin_anchor_positions_from_usd(
-            [f"Fin_{i}" for i in range(1, 5)]
-        )
+        self._fin_body_ids = self._resolve_body_ids(fin_names)
+        self._fin_anchor_pos_frd = self._read_fin_anchor_positions_from_usd(fin_names)
         self._mass = float(self.robot.data.default_mass[0].sum().item())
         self._weight = self._mass * _GRAVITY
         self._body_com_default_frd = _zup_to_frd_tensor(self.robot.data.body_com_pos_b[0, self._body_id, :])
@@ -301,7 +299,7 @@ class EdfLandingTask(DirectRLEnv):
         )
         print(
             "[EdfLandingTask] Joint visual sign correction: "
-            "Fin_1=-1, Fin_2=-1, Fin_3=+1, Fin_4=+1"
+            "RightFin/LeftFin=+1, FwdFin/AftFin=-1"
         )
 
         # T020: Wind model -- instantiate if isaac_wind.enabled: true in environment config
@@ -544,7 +542,7 @@ class EdfLandingTask(DirectRLEnv):
             if not live_mat.IsValid():
                 continue
             # Find the corresponding prim in each env clone
-            rel_path = str(src_prim.GetPath()).lstrip("/")  # e.g. "Drone/Fin_1/Cube_006"
+            rel_path = str(src_prim.GetPath()).lstrip("/")  # e.g. "Drone/FwdFin/Mesh"
             for env_id in range(self.num_envs):
                 env_prim_path = f"/World/envs/env_{env_id}/{rel_path}"
                 live_prim = live_stage.GetPrimAtPath(env_prim_path)
@@ -696,15 +694,19 @@ class EdfLandingTask(DirectRLEnv):
             # Manual scene: joints are /Drone/Fin_N/RevoluteJoint.
             # PhysX joint names appear as "RevoluteJoint" (possibly de-duplicated
             # with index suffixes).  Try exact names first, then regex fallback.
-            # Find fin joints by ordered name: Fin_1_Joint .. Fin_4_Joint
+            # Find fin joints by name: FwdFin_Joint, AftFin_Joint, LeftFin_Joint, RightFin_Joint
+            fin_specs = load_fin_specs(
+                load_config(self.cfg.vehicle_config_path).get("vehicle", {})
+            )
+            joint_names_ordered = [f"{s.prim_name}_Joint" for s in fin_specs]
             try:
                 joint_ids, joint_names = self.robot.find_joints(
-                    [f"Fin_{i}_Joint" for i in range(1, 5)],
+                    joint_names_ordered,
                     preserve_order=True,
                 )
-                print(f"[EdfLandingTask] find_joints(Fin_N_Joint) -> ids={joint_ids}, names={joint_names}")
+                print(f"[EdfLandingTask] find_joints({joint_names_ordered}) -> ids={joint_ids}, names={joint_names}")
             except Exception as e:
-                print(f"[EdfLandingTask] find_joints(Fin_N_Joint) FAILED: {e}")
+                print(f"[EdfLandingTask] find_joints({joint_names_ordered}) FAILED: {e}")
                 joint_ids, joint_names = [], []
 
             if len(joint_ids) == 4:
@@ -770,7 +772,9 @@ class EdfLandingTask(DirectRLEnv):
             r_w        = rotate_body_to_world_wxyz(quat_w, r_b)         # (N, 3)
 
             F_i = L_i.unsqueeze(-1) * lift_dir_w  # (N, 3)
-            forces[:, 0, :] += F_i
+            # Use fin lift only to generate attitude torque. Omitting the net
+            # translational force keeps lateral motion dominated by tilt+thrust
+            # instead of direct side-force from the control surfaces.
             torques[:, 0, :] += torch.linalg.cross(r_w, F_i)
 
         # Gyro precession torque: τ_gyro = −ω_body × h_fan  (body frame → world frame)

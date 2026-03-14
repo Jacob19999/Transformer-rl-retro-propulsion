@@ -110,6 +110,26 @@ class PIDController(Controller):
             )
         self._phases: tuple[_PidPhase, ...] = tuple(phases)
 
+        # Optional rate setpoints (rad/s) for rotation-response tests; None = use angle loop.
+        self._omega_cmd: tuple[float | None, float | None, float | None] = (
+            None,
+            None,
+            None,
+        )
+
+    def set_omega_cmd(
+        self,
+        roll_rad_s: float | None = None,
+        pitch_rad_s: float | None = None,
+        yaw_rad_s: float | None = None,
+    ) -> None:
+        """Set target body rates (rad/s) for rate-hold tests; None keeps angle loop."""
+        self._omega_cmd = (roll_rad_s, pitch_rad_s, yaw_rad_s)
+
+    def clear_omega_cmd(self) -> None:
+        """Clear rate setpoints and resume normal attitude/altitude control."""
+        self._omega_cmd = (None, None, None)
+
     def reset(self) -> None:
         self.alt_integral = 0.0
         self.prev_alt_error = 0.0
@@ -213,16 +233,23 @@ class PIDController(Controller):
         Kp_i = dict(self.inner.get("pitch", {}))
 
         Kff = float(self.inner.get("gyro_ff", 0.0))
-        roll_cmd = (
-            s * float(Kr.get("Kp", 0.0)) * roll_error
-            - s * float(Kr.get("Kd", 0.0)) * float(omega[0])
-            + s * Kff * float(omega[1])
-        )
-        pitch_cmd = (
-            s * float(Kp_i.get("Kp", 0.0)) * pitch_error
-            - s * float(Kp_i.get("Kd", 0.0)) * float(omega[1])
-            - s * Kff * float(omega[0])
-        )
+        oc_roll, oc_pitch, oc_yaw = self._omega_cmd
+        if oc_roll is not None:
+            roll_cmd = s * float(Kr.get("Kp", 0.0)) * (oc_roll - float(omega[0]))
+        else:
+            roll_cmd = (
+                s * float(Kr.get("Kp", 0.0)) * roll_error
+                - s * float(Kr.get("Kd", 0.0)) * float(omega[0])
+                + s * Kff * float(omega[1])
+            )
+        if oc_pitch is not None:
+            pitch_cmd = s * float(Kp_i.get("Kp", 0.0)) * (oc_pitch - float(omega[1]))
+        else:
+            pitch_cmd = (
+                s * float(Kp_i.get("Kp", 0.0)) * pitch_error
+                - s * float(Kp_i.get("Kd", 0.0)) * float(omega[1])
+                - s * Kff * float(omega[0])
+            )
 
         omega_z_raw = float(omega[2])
         self._omega_z_filt = (
@@ -233,14 +260,26 @@ class PIDController(Controller):
         Kyaw = float(self.inner.get("yaw_Kd", 0.0))
         max_yaw_frac = float(self.inner.get("max_yaw_frac", 0.30))
         yaw_limit = max_yaw_frac * self.delta_max
-        yaw_total = float(
-            np.clip(-Kyaw * self._omega_z_filt, -yaw_limit, yaw_limit)
-        )
+        if oc_yaw is not None:
+            yaw_total = float(
+                np.clip(
+                    Kyaw * (oc_yaw - self._omega_z_filt), -yaw_limit, yaw_limit
+                )
+            )
+        else:
+            yaw_total = float(
+                np.clip(-Kyaw * self._omega_z_filt, -yaw_limit, yaw_limit)
+            )
 
+        # Isaac/USD fin numbering:
+        #   Fin_1 = right, Fin_2 = left, Fin_3 = forward, Fin_4 = aft.
+        # With the current fin lift directions, pitch authority is dominant on
+        # Fin_1/Fin_2 and roll authority is dominant on Fin_3/Fin_4.
+        # Positive yaw uses the differential pattern [-,+,-,+].
         fin1 = float(np.clip((+pitch_cmd - yaw_total) / self.delta_max, -1.0, 1.0))
         fin2 = float(np.clip((+pitch_cmd + yaw_total) / self.delta_max, -1.0, 1.0))
-        fin3 = float(np.clip((-roll_cmd + yaw_total) / self.delta_max, -1.0, 1.0))
-        fin4 = float(np.clip((-roll_cmd - yaw_total) / self.delta_max, -1.0, 1.0))
+        fin3 = float(np.clip((+roll_cmd - yaw_total) / self.delta_max, -1.0, 1.0))
+        fin4 = float(np.clip((+roll_cmd + yaw_total) / self.delta_max, -1.0, 1.0))
 
         action = np.array(
             [thrust_action, fin1, fin2, fin3, fin4], dtype=np.float32

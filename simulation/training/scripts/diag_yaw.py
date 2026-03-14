@@ -61,25 +61,25 @@ def main():
     run_ep(env, lambda obs: np.array([-1.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
            "ZERO FINS, min thrust (a0=-1)")
 
-    # Test 3: full positive pitch (common mode fins 1/2)
-    run_ep(env, lambda obs: np.array([0.0, 1.0, 1.0, 0.0, 0.0], dtype=np.float32),
-           "PITCH ONLY: fins 1/2 = +1")
+    # Test 3: full positive pitch (common mode fins 3/4)
+    run_ep(env, lambda obs: np.array([0.0, 0.0, 0.0, 1.0, 1.0], dtype=np.float32),
+           "PITCH ONLY: fins 3/4 = +1")
 
-    # Test 4: full negative roll (common mode fins 3/4)
-    run_ep(env, lambda obs: np.array([0.0, 0.0, 0.0, -1.0, -1.0], dtype=np.float32),
-           "ROLL ONLY: fins 3/4 = -1")
+    # Test 4: full negative roll (common mode fins 1/2)
+    run_ep(env, lambda obs: np.array([0.0, -1.0, -1.0, 0.0, 0.0], dtype=np.float32),
+           "ROLL ONLY: fins 1/2 = -1")
 
-    # Test 5: old differential yaw pattern [+1, -1, +1, -1] (zero net yaw)
-    run_ep(env, lambda obs: np.array([0.0, 1.0, -1.0, 1.0, -1.0], dtype=np.float32),
-           "OLD YAW: [+1,-1,+1,-1] (zero net yaw)")
-
-    # Test 6: corrected yaw pattern [+1, -1, -1, +1] (should produce yaw)
+    # Test 5: old differential yaw pattern [+1, -1, -1, +1] from the legacy numbering
     run_ep(env, lambda obs: np.array([0.0, 1.0, -1.0, -1.0, 1.0], dtype=np.float32),
-           "NEW YAW: [+1,-1,-1,+1] (should create yaw torque)")
+           "OLD YAW: [+1,-1,-1,+1] (wrong for current numbering)")
 
-    # Test 7: combined pitch+roll [+1,+1,-1,-1] (what PID does at step 0)
-    run_ep(env, lambda obs: np.array([1.0, 1.0, 1.0, -1.0, -1.0], dtype=np.float32),
-           "PITCH+ROLL: [+1,+1,-1,-1], a0=+1")
+    # Test 6: corrected yaw pattern [+1, -1, +1, -1] (should produce yaw)
+    run_ep(env, lambda obs: np.array([0.0, 1.0, -1.0, 1.0, -1.0], dtype=np.float32),
+           "NEW YAW: [+1,-1,+1,-1] (should create yaw torque)")
+
+    # Test 7: combined pitch+roll [-1,-1,+1,+1] in the current numbering
+    run_ep(env, lambda obs: np.array([1.0, -1.0, -1.0, 1.0, 1.0], dtype=np.float32),
+           "PITCH+ROLL: [-1,-1,+1,+1], a0=+1")
 
 
 if __name__ == "__main__":

@@ -117,8 +117,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--episodes",
         type=int,
-        default=16,
-        help="Episodes per candidate for evaluation (default: 16).",
+        default=10,
+        help="Episodes per candidate for evaluation (default: 10).",
     )
     parser.add_argument(
         "--seed",
@@ -199,6 +199,18 @@ def _parse_args() -> argparse.Namespace:
         help="Disable gravity in the Isaac scene during tuning episodes.",
     )
     parser.add_argument(
+        "--isolate-pid-axis",
+        action="store_true",
+        default=True,
+        help="In rotation test, zero fin commands for axes not under test (default: True). Roll=FwdFin+AftFin, Pitch=RightFin+LeftFin, Yaw=all.",
+    )
+    parser.add_argument(
+        "--no-isolate-pid-axis",
+        action="store_false",
+        dest="isolate_pid_axis",
+        help="Disable axis isolation in rotation test; all fins follow full PID output.",
+    )
+    parser.add_argument(
         "--headless",
         action="store_true",
         help="Run Isaac Sim headless for tuning/verification.",
@@ -220,8 +232,8 @@ def _parse_args() -> argparse.Namespace:
         "--test",
         type=str,
         default="landing",
-        choices=["landing", "hover"],
-        help="Evaluation objective (default: landing).",
+        choices=["landing", "hover", "rotation"],
+        help="Evaluation objective (default: landing). Use 'rotation' for zero-g rate-tracking test.",
     )
     parser.add_argument(
         "--hover-altitude",
@@ -346,7 +358,7 @@ def _configure_env_for_test(
     test_mode: str,
     hover_altitude: float,
 ) -> None:
-    if test_mode != "hover":
+    if test_mode not in ("hover", "rotation"):
         return
     env._task.cfg.spawn_altitude_min = float(hover_altitude)
     env._task.cfg.spawn_altitude_max = float(hover_altitude)
@@ -607,7 +619,7 @@ def _episode_rollout(
                 f" ff={dbg.get('gyro_ff', float('nan')):+.3f}"
                 f" omy_used={dbg.get('omega_y', float('nan')):+.3f}]"
                 f" roll_cmd={dbg['roll_cmd']:+6.3f}"
-                f" yaw={dbg['yaw_total']:+6.3f}"
+                f" yaw_cmd={dbg['yaw_total']:+6.3f}"
                 f" reward={rew_scalar:+7.3f}"
             )
         if terminated or truncated:
@@ -1833,6 +1845,227 @@ def _run_coordinate_search(
     )
 
 
+# Rotation test: zero-g, stationary, command omega on each axis at 3 speeds; pass if PID tracks.
+_ROTATION_AXES = ("roll", "pitch", "yaw")  # body omega_x, omega_y, omega_z
+_ROTATION_SPEEDS_RAD_S = (0.2, 0.5, 1.0)
+_ROTATION_DURATION_S = 5.0
+_ROTATION_STEP_HZ = 40
+_ROTATION_SETTLE_STEPS = 10
+_ROTATION_TOL_ABS_RAD_S = 0.15
+_ROTATION_TOL_FRAC = 0.25  # allow up to 25% of |cmd| as mean abs error
+_ROTATION_LOG_INTERVAL_STEPS = 40  # log every 1 s at 40 Hz
+# Fin order matches task/parts_registry: RightFin, LeftFin, FwdFin, AftFin → action[1:5]
+_ROTATION_FIN_LABELS = ("RightFin", "LeftFin", "FwdFin", "AftFin")
+# When isolating: zero these 0-based fin indices so only the tested axis has fin authority.
+# Roll=FwdFin+AftFin (2,3), Pitch=RightFin+LeftFin (0,1), Yaw=all four.
+_ROTATION_FIN_INDICES_TO_ZERO = {"roll": (0, 1), "pitch": (2, 3), "yaw": ()}
+
+
+def _disable_gravity_rotation(env) -> None:
+    """Set physics scene gravity to 0 so rotation test is zero-g."""
+    try:
+        from pxr import UsdPhysics
+        stage = env._task.sim.stage
+        for prim in stage.Traverse():
+            if prim.IsA(UsdPhysics.Scene):
+                UsdPhysics.Scene(prim).GetGravityMagnitudeAttr().Set(0.0)
+                print("[rotation] Gravity disabled (physics scene).", flush=True)
+                return
+        print("[rotation] WARNING: Physics scene not found; gravity still active.", flush=True)
+    except Exception as exc:
+        print(f"[rotation] WARNING: Could not disable gravity: {exc}", flush=True)
+
+
+def _lock_drone_position_xyz(env, x: float, y: float, z: float) -> None:
+    """Lock drone root position at (x,y,z), zero linear velocity; leave orientation and angular velocity unchanged."""
+    import torch
+    task = getattr(env, "_task", None)
+    if task is None or not hasattr(task, "robot"):
+        return
+    robot = task.robot
+    pos_w = robot.data.root_pos_w.clone()
+    quat_w = robot.data.root_quat_w.clone()
+    ang_w = robot.data.root_ang_vel_w.clone()
+    pos_w[:, 0] = x
+    pos_w[:, 1] = y
+    pos_w[:, 2] = z
+    robot.write_root_pose_to_sim(torch.cat([pos_w, quat_w], dim=-1))
+    vel_w = torch.zeros_like(robot.data.root_lin_vel_w)
+    robot.write_root_velocity_to_sim(torch.cat([vel_w, ang_w], dim=-1))
+
+
+def _log_rotation_reset_pose(env, axis_name: str, speed: float) -> None:
+    """Log reset pose (position + orientation) after lock so we can verify one reset per (axis, speed)."""
+    task = getattr(env, "_task", None)
+    if task is None or not hasattr(task, "robot"):
+        return
+    robot = task.robot
+    pos = robot.data.root_pos_w[0].cpu().numpy()
+    quat = robot.data.root_quat_w[0].cpu().numpy()  # wxyz from IsaacLab
+    rpy_deg = _quat_wxyz_to_rpy_deg(quat)
+    print(
+        f"[rotation] reset pose  axis={axis_name} speed={speed:.2f}  "
+        f"pos=({pos[0]:.3f},{pos[1]:.3f},{pos[2]:.3f})  "
+        f"quat_wxyz=({quat[0]:.4f},{quat[1]:.4f},{quat[2]:.4f},{quat[3]:.4f})  "
+        f"rpy_deg=({rpy_deg[0]:.2f},{rpy_deg[1]:.2f},{rpy_deg[2]:.2f})",
+        flush=True,
+    )
+
+
+def _quat_wxyz_to_rpy_deg(quat_wxyz: np.ndarray) -> np.ndarray:
+    """Convert quaternion (w,x,y,z) to roll, pitch, yaw in degrees."""
+    w, x, y, z = quat_wxyz[0], quat_wxyz[1], quat_wxyz[2], quat_wxyz[3]
+    sinr_cosp = 2 * (w * x + y * z)
+    cosr_cosp = 1 - 2 * (x * x + y * y)
+    roll = math.atan2(sinr_cosp, cosr_cosp)
+    sinp = 2 * (w * y - z * x)
+    sinp = max(-1.0, min(1.0, sinp))
+    pitch = math.asin(sinp)
+    siny_cosp = 2 * (w * z + x * y)
+    cosy_cosp = 1 - 2 * (y * y + z * z)
+    yaw = math.atan2(siny_cosp, cosy_cosp)
+    return np.array([math.degrees(roll), math.degrees(pitch), math.degrees(yaw)])
+
+
+def _run_rotation_test(
+    *,
+    config_path: Path,
+    base_pid_yaml: Mapping[str, Any],
+    args: argparse.Namespace,
+) -> bool:
+    """Run zero-g rate-tracking test: each axis at 3 speeds; pass iff all track within tolerance."""
+    _ensure_sim_app(headless=bool(args.headless))
+    from simulation.isaac.envs.edf_isaac_env import EDFIsaacEnv
+
+    env = EDFIsaacEnv(
+        config_path=str(config_path),
+        seed=int(args.seed),
+        disable_wind=True,
+        disable_gyro=bool(args.disable_gyro),
+        disable_anti_torque=bool(args.disable_anti_torque),
+        disable_gravity=True,
+    )
+    alt = float(args.hover_altitude)
+    _configure_env_for_test(env, test_mode="rotation", hover_altitude=alt)
+    _set_env_reset_perturbation(env, altitude_offset_m=0.0, roll_offset_rad=0.0, pitch_offset_rad=0.0)
+
+    if env.num_envs != 1:
+        print(
+            "[tune_pid_isaac][rotation] requires single env; reconfigure and rerun.",
+            flush=True,
+        )
+        env.close()
+        return False
+
+    _disable_gravity_rotation(env)
+    # Lock position at (0, 0, alt) so test is purely rotational; max thrust so no thrust modulation.
+    lock_x, lock_y, lock_z = 0.0, 0.0, alt
+
+    isolate = getattr(args, "isolate_pid_axis", True)
+    print(f"[rotation] isolate_pid_axis={isolate} (only tested axis fins active)", flush=True)
+
+    episodes = max(1, int(args.episodes))
+    pid_yaml = _with_hover_target(base_pid_yaml, alt)
+    ctrl = PIDController(pid_yaml)
+    hover_thrust_frac = float(env._task._weight / 45.0)
+    steps_per_trial = max(
+        int(round(_ROTATION_DURATION_S * _ROTATION_STEP_HZ)), 1
+    )
+    axis_idx = {"roll": 0, "pitch": 1, "yaw": 2}
+    all_passed = True
+
+    try:
+        for axis_name in _ROTATION_AXES:
+            idx = axis_idx[axis_name]
+            for speed in _ROTATION_SPEEDS_RAD_S:
+                omega_cmd = [0.0, 0.0, 0.0]
+                omega_cmd[idx] = speed
+                ctrl.clear_omega_cmd()
+                ctrl.reset()
+                ctrl.set_omega_cmd(
+                    roll_rad_s=omega_cmd[0] if omega_cmd[0] != 0 else None,
+                    pitch_rad_s=omega_cmd[1] if omega_cmd[1] != 0 else None,
+                    yaw_rad_s=omega_cmd[2] if omega_cmd[2] != 0 else None,
+                )
+                # One reset per (axis, speed), then one continuous run for episodes * duration (no mid-run resets).
+                total_steps = episodes * steps_per_trial
+                obs, _ = env.reset(seed=int(args.seed))
+                _lock_drone_position_xyz(env, lock_x, lock_y, lock_z)
+                # Log reset orientation once so we can verify it
+                _log_rotation_reset_pose(env, axis_name, speed)
+                print(
+                    f"\n[rotation] -------- axis={axis_name} speed={speed:.2f} rad/s (1 run, {total_steps} steps = {total_steps / _ROTATION_STEP_HZ:.1f} s) --------",
+                    flush=True,
+                )
+                print(
+                    "  (labeled: target_omega x=roll y=pitch z=yaw rad/s; fins; omega_act; rpy_deg world)",
+                    flush=True,
+                )
+                errors: list[float] = []
+                for step in range(total_steps):
+                    action_pid = ctrl.get_action(obs)
+                    action_isaac = map_pid_action_to_isaac(
+                        action_pid, hover_thrust_frac=hover_thrust_frac
+                    )
+                    action_isaac[0] = 1.0  # max thrust; position locked so purely rotational
+                    if getattr(args, "isolate_pid_axis", True):
+                        for fi in _ROTATION_FIN_INDICES_TO_ZERO.get(axis_name, ()):
+                            action_isaac[1 + fi] = 0.0
+                    obs, _rew, term, trunc, _info = env.step(
+                        np.asarray(action_isaac, dtype=np.float32)
+                    )
+                    _lock_drone_position_xyz(env, lock_x, lock_y, lock_z)
+                    if step >= _ROTATION_SETTLE_STEPS and not (term or trunc):
+                        o = np.asarray(obs, dtype=float).reshape(-1)
+                        if o.size >= 12:
+                            errors.append(
+                                float(np.abs(o[9 + idx] - omega_cmd[idx]))
+                            )
+                            if (step - _ROTATION_SETTLE_STEPS) % _ROTATION_LOG_INTERVAL_STEPS == 0:
+                                t_s = (step + 1) * (1.0 / _ROTATION_STEP_HZ)
+                                quat = env._task.robot.data.root_quat_w[0].cpu().numpy()
+                                rpy_deg = _quat_wxyz_to_rpy_deg(quat)
+                                print(
+                                    f"  t={t_s:.2f} s",
+                                    flush=True,
+                                )
+                                print(
+                                    f"    target_omega -> (x={omega_cmd[0]:+.2f}, y={omega_cmd[1]:+.2f}, z={omega_cmd[2]:+.2f})",
+                                    flush=True,
+                                )
+                                fin_parts = " ".join(
+                                    f"{short}={action_isaac[1 + i]:+.3f}"
+                                    for i, short in enumerate(("R", "L", "Fwd", "Aft"))
+                                )
+                                print(f"    Fin -> ({fin_parts}", flush=True)
+                                print(
+                                    f"    omega_act    -> (x={o[9]:+.3f}, y={o[10]:+.3f}, z={o[11]:+.3f})",
+                                    flush=True,
+                                )
+                                print(
+                                    f"    rpy_deg      -> (roll={rpy_deg[0]:+.2f}, pitch={rpy_deg[1]:+.2f}, yaw={rpy_deg[2]:+.2f})",
+                                    flush=True,
+                                )
+                ctrl.clear_omega_cmd()
+                mean_err = float(np.mean(errors)) if errors else float("inf")
+                tol = max(_ROTATION_TOL_ABS_RAD_S, _ROTATION_TOL_FRAC * abs(speed))
+                passed = mean_err <= tol
+                all_passed = all_passed and passed
+                print(
+                    f"[rotation] axis={axis_name} speed={speed:.2f} rad/s "
+                    f"duration={total_steps / _ROTATION_STEP_HZ:.1f}s mean_|error|={mean_err:.3f} tol={tol:.3f} {'PASS' if passed else 'FAIL'}",
+                    flush=True,
+                )
+    finally:
+        env.close()
+
+    print(
+        f"[rotation] overall {'PASS' if all_passed else 'FAIL'}",
+        flush=True,
+    )
+    return all_passed
+
+
 def _run_zn_mode(
     *,
     args: argparse.Namespace,
@@ -2047,6 +2280,7 @@ def _run_zn_mode(
 
 
 def main() -> None:
+    global _SIM_APP
     args = _parse_args()
     config_path = Path(args.config)
     pid_path = Path(args.pid_config)
@@ -2060,6 +2294,17 @@ def main() -> None:
     if str(args.test) == "hover":
         base_pid_yaml = _with_hover_target(base_pid_yaml, float(args.hover_altitude))
     base_pid_yaml = _apply_runtime_pid_overrides(base_pid_yaml, args=args)
+
+    if str(args.test) == "rotation":
+        passed = _run_rotation_test(
+            config_path=config_path,
+            base_pid_yaml=base_pid_yaml,
+            args=args,
+        )
+        if _SIM_APP is not None:
+            _SIM_APP.close()
+            _SIM_APP = None
+        raise SystemExit(0 if passed else 1)
 
     if str(args.zn_loop) != "none":
         _run_zn_mode(
@@ -2079,7 +2324,6 @@ def main() -> None:
             base_pid_yaml=base_pid_yaml,
         )
 
-    global _SIM_APP
     if _SIM_APP is not None:
         _SIM_APP.close()
         _SIM_APP = None
