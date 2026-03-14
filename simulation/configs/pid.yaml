@@ -25,9 +25,9 @@ pid:
       Kp: 0.5
       Kd: 0.2
     gyro_ff: 0.02
-    yaw_Kd: 0
+    yaw_Kd: 0.1
     yaw_lp_hz: 1.5
-    max_yaw_frac: 0.8
+    max_yaw_frac: 0.25
   gain_schedule:
     enabled: true
     phases:

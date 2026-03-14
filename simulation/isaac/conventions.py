@@ -45,9 +45,10 @@ FIN_AXIS_LABELS = (
     "AftFin",
 )
 
-# FwdFin/AftFin are mounted with opposite positive rotation sign relative to the
-# control/aero convention used by the task and diagnostics.
-FIN_JOINT_VISUAL_SIGN = (1.0, 1.0, -1.0, -1.0)
+# Visual-mesh joint sign correction (Right, Left, Fwd, Aft) applied only when
+# writing joint position targets for Isaac articulation drives.
+# This does not change controller/aero torque conventions.
+FIN_JOINT_VISUAL_SIGN = (-1.0, -1.0, -1.0, -1.0)
 
 # Fin joint drive constants are authored in the USD postprocessor and mirrored
 # by the runtime actuator config.

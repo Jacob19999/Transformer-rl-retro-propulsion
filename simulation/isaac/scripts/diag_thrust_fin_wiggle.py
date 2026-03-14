@@ -337,7 +337,8 @@ def main() -> None:
         )
         print(
             "[thrust_fin_wiggle] Joint visual sign correction:"
-            f" {tuple(int(x) for x in env._task._fin_joint_visual_sign.tolist())}"
+            " RightFin<- -LeftFin, LeftFin<- -RightFin, "
+            "FwdFin<- -AftFin, AftFin<- -FwdFin"
         )
         print()
     except Exception as exc:

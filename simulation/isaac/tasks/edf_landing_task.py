@@ -84,7 +84,10 @@ from simulation.isaac.conventions import (  # noqa: E402
     FIN_DRIVE_DAMPING,
     FIN_DRIVE_EFFORT_LIMIT,
     FIN_DRIVE_STIFFNESS,
-    FIN_JOINT_VISUAL_SIGN,
+    FIN_AFT_IDX,
+    FIN_FWD_IDX,
+    FIN_LEFT_IDX,
+    FIN_RIGHT_IDX,
     OBS_DIM,
 )
 from simulation.isaac.usd.parts_registry import BODY_PRIM, DRONE_ROOT, load_fin_specs, zup_to_frd  # noqa: E402
@@ -272,14 +275,6 @@ class EdfLandingTask(DirectRLEnv):
             [list(s.lift_direction) for s in fin_specs],
             dtype=torch.float32, device=self.device,
         )  # (4, 3)
-        # FwdFin/AftFin (roll pair) are mounted with opposite positive rotation sign
-        # relative to control/aero convention. Order matches fin_specs: Right, Left, Fwd, Aft.
-        self._fin_joint_visual_sign = torch.tensor(
-            FIN_JOINT_VISUAL_SIGN,
-            dtype=torch.float32,
-            device=self.device,
-        )
-
         # Vehicle mass, CoM, and fin anchors come from the live Isaac asset.
         fin_names = [s.prim_name for s in fin_specs]
         self._body_id = self._resolve_single_body_id("Body")
@@ -297,7 +292,7 @@ class EdfLandingTask(DirectRLEnv):
         )
         print(
             "[EdfLandingTask] Joint visual sign correction: "
-            "RightFin/LeftFin=+1, FwdFin/AftFin=-1"
+            "RightFin<- -LeftFin, LeftFin<- -RightFin, FwdFin<- -AftFin, AftFin<- -FwdFin"
         )
 
         # T020: Wind model -- instantiate if isaac_wind.enabled: true in environment config
@@ -726,11 +721,20 @@ class EdfLandingTask(DirectRLEnv):
                 print("[EdfLandingTask] WARNING: Could not find 4 fin joints! Fins will not move.")
 
         if self._fin_joint_ids:
-            fin_target_deg = (
-                self.fin_deflections_actual
-                * self._fin_joint_visual_sign.unsqueeze(0)
-                * (180.0 / math.pi)
+            # Visual/joint-drive mapping differs from the controller/aero deflection
+            # convention on both fin pairs. Each pair needs swap+negate so that
+            # common-mode pitch/roll motion looks correct while preserving the yaw
+            # differential pattern visually.
+            fin_target_rad = torch.stack(
+                (
+                    -self.fin_deflections_actual[:, FIN_LEFT_IDX],
+                    -self.fin_deflections_actual[:, FIN_RIGHT_IDX],
+                    -self.fin_deflections_actual[:, FIN_AFT_IDX],
+                    -self.fin_deflections_actual[:, FIN_FWD_IDX],
+                ),
+                dim=-1,
             )
+            fin_target_deg = fin_target_rad * (180.0 / math.pi)
             self.robot.set_joint_position_target(fin_target_deg, joint_ids=self._fin_joint_ids)
 
         quat_w = self.robot.data.root_quat_w  # (N, 4) IsaacLab wxyz [qw, qx, qy, qz]

@@ -211,6 +211,24 @@ def _parse_args() -> argparse.Namespace:
         help="Disable axis isolation in rotation test; all fins follow full PID output.",
     )
     parser.add_argument(
+        "--rotation-zero-yaw-when-isolated",
+        action="store_true",
+        default=True,
+        help="In rotation test, when axis isolation is enabled and axis is roll/pitch, force yaw damping off (yaw_Kd=0, max_yaw_frac=0).",
+    )
+    parser.add_argument(
+        "--no-rotation-zero-yaw-when-isolated",
+        action="store_false",
+        dest="rotation_zero_yaw_when_isolated",
+        help="Keep yaw damping active during isolated roll/pitch rotation tests.",
+    )
+    parser.add_argument(
+        "--rotation-disable-noncommanded-angle-loops",
+        action="store_true",
+        default=False,
+        help="In rotation test, zero non-commanded inner-loop angle gains (roll/pitch) so only the commanded axis loop is active.",
+    )
+    parser.add_argument(
         "--headless",
         action="store_true",
         help="Run Isaac Sim headless for tuning/verification.",
@@ -1845,10 +1863,11 @@ def _run_coordinate_search(
     )
 
 
-# Rotation test: zero-g, stationary, command omega on each axis at 0.5 rad/s only; pass if PID tracks.
+# Rotation test: zero-g, stationary, command omega on each axis in both directions; pass if PID tracks.
 _ROTATION_AXES = ("roll", "pitch", "yaw")  # body omega_x, omega_y, omega_z
-_ROTATION_SPEEDS_RAD_S = (0.5,)  # single speed per axis
+_ROTATION_SPEEDS_RAD_S = (2.0, -2.0)  # + and - per axis (roll+, roll-, pitch+, pitch-, yaw+, yaw-)
 _ROTATION_DURATION_S = 5.0
+_ROTATION_MAX_DURATION_S = 10.0  # cap each omega command run at 10 s (t in logs won't exceed this)
 _ROTATION_STEP_HZ = 40
 _ROTATION_SETTLE_STEPS = 10
 _ROTATION_TOL_ABS_RAD_S = 0.15
@@ -1927,6 +1946,50 @@ def _quat_wxyz_to_rpy_deg(quat_wxyz: np.ndarray) -> np.ndarray:
     return np.array([math.degrees(roll), math.degrees(pitch), math.degrees(yaw)])
 
 
+def _rotation_pid_cfg_for_axis(
+    base_pid_yaml: Mapping[str, Any],
+    *,
+    hover_altitude: float,
+    axis_name: str,
+    isolate_pid_axis: bool,
+    zero_yaw_when_isolated: bool,
+    disable_noncommanded_angle_loops: bool,
+) -> dict[str, Any]:
+    """Build a per-axis PID config for rotation debugging."""
+    root = _with_hover_target(base_pid_yaml, hover_altitude)
+    pid = dict(root.get("pid", root))
+    inner = dict(pid.get("inner_loop", {}))
+
+    if (
+        isolate_pid_axis
+        and axis_name in ("roll", "pitch")
+        and bool(zero_yaw_when_isolated)
+    ):
+        inner["yaw_Kd"] = 0.0
+        inner["max_yaw_frac"] = 0.0
+
+    if bool(disable_noncommanded_angle_loops):
+        roll_cfg = dict(inner.get("roll", {}))
+        pitch_cfg = dict(inner.get("pitch", {}))
+        if axis_name == "roll":
+            pitch_cfg["Kp"] = 0.0
+            pitch_cfg["Kd"] = 0.0
+        elif axis_name == "pitch":
+            roll_cfg["Kp"] = 0.0
+            roll_cfg["Kd"] = 0.0
+        elif axis_name == "yaw":
+            roll_cfg["Kp"] = 0.0
+            roll_cfg["Kd"] = 0.0
+            pitch_cfg["Kp"] = 0.0
+            pitch_cfg["Kd"] = 0.0
+        inner["roll"] = roll_cfg
+        inner["pitch"] = pitch_cfg
+
+    pid["inner_loop"] = inner
+    root["pid"] = pid
+    return root
+
+
 def _run_rotation_test(
     *,
     config_path: Path,
@@ -1963,20 +2026,41 @@ def _run_rotation_test(
 
     isolate = getattr(args, "isolate_pid_axis", True)
     print(f"[rotation] isolate_pid_axis={isolate} (only tested axis fins active)", flush=True)
+    print(
+        f"[rotation] zero_yaw_when_isolated={bool(getattr(args, 'rotation_zero_yaw_when_isolated', True))} "
+        f"disable_noncommanded_angle_loops={bool(getattr(args, 'rotation_disable_noncommanded_angle_loops', False))}",
+        flush=True,
+    )
 
     episodes = max(1, int(args.episodes))
-    pid_yaml = _with_hover_target(base_pid_yaml, alt)
-    ctrl = PIDController(pid_yaml)
     hover_thrust_frac = float(env._task.hover_thrust_norm)
     steps_per_trial = max(
         int(round(_ROTATION_DURATION_S * _ROTATION_STEP_HZ)), 1
     )
+    max_steps_cap = int(_ROTATION_MAX_DURATION_S * _ROTATION_STEP_HZ)
+    total_steps_per_run = min(episodes * steps_per_trial, max_steps_cap)
+    # Prevent episode truncation mid-run: task default is 5 s (600 steps @ 120 Hz).
+    if env._task._max_steps < total_steps_per_run:
+        env._task._max_steps = total_steps_per_run
     axis_idx = {"roll": 0, "pitch": 1, "yaw": 2}
     all_passed = True
 
     try:
         for axis_name in _ROTATION_AXES:
             idx = axis_idx[axis_name]
+            pid_yaml_axis = _rotation_pid_cfg_for_axis(
+                base_pid_yaml,
+                hover_altitude=alt,
+                axis_name=axis_name,
+                isolate_pid_axis=bool(getattr(args, "isolate_pid_axis", True)),
+                zero_yaw_when_isolated=bool(
+                    getattr(args, "rotation_zero_yaw_when_isolated", True)
+                ),
+                disable_noncommanded_angle_loops=bool(
+                    getattr(args, "rotation_disable_noncommanded_angle_loops", False)
+                ),
+            )
+            ctrl = PIDController(pid_yaml_axis)
             for speed in _ROTATION_SPEEDS_RAD_S:
                 omega_cmd = [0.0, 0.0, 0.0]
                 omega_cmd[idx] = speed
@@ -1987,8 +2071,8 @@ def _run_rotation_test(
                     pitch_rad_s=omega_cmd[1] if omega_cmd[1] != 0 else None,
                     yaw_rad_s=omega_cmd[2] if omega_cmd[2] != 0 else None,
                 )
-                # One reset per (axis, speed), then one continuous run for episodes * duration (no mid-run resets).
-                total_steps = episodes * steps_per_trial
+                # One reset per (axis, speed), then one continuous run (capped at _ROTATION_MAX_DURATION_S).
+                total_steps = total_steps_per_run
                 obs, _ = env.reset(seed=int(args.seed))
                 _lock_drone_position_xyz(env, lock_x, lock_y, lock_z)
                 # Log reset orientation once so we can verify it
@@ -1998,15 +2082,18 @@ def _run_rotation_test(
                     flush=True,
                 )
                 print(
-                    "  (labeled: target_omega x=roll y=pitch z=yaw rad/s; fins; omega_act; rpy_deg world)",
+                    "  (labeled: target_omega/omega_err/omega_act in body FRD rad/s; "
+                    "g_body is observed gravity in body frame; pid_fins are pre-isolation, "
+                    "applied_fins are after axis isolation; rpy_deg is world-frame Euler for visualization only)",
                     flush=True,
                 )
                 errors: list[float] = []
                 for step in range(total_steps):
-                    action_pid = ctrl.get_action(obs)
+                    action_pid, dbg = ctrl.get_action_with_debug(obs)
                     action_isaac = map_pid_action_to_isaac(
                         action_pid, hover_thrust_frac=hover_thrust_frac
                     )
+                    action_pre_isolation = action_isaac.copy()
                     action_isaac[0] = 1.0  # max thrust; position locked so purely rotational
                     if getattr(args, "isolate_pid_axis", True):
                         for fi in _ROTATION_FIN_INDICES_TO_ZERO.get(axis_name, ()):
@@ -2025,6 +2112,7 @@ def _run_rotation_test(
                                 t_s = (step + 1) * (1.0 / _ROTATION_STEP_HZ)
                                 quat = env._task.robot.data.root_quat_w[0].cpu().numpy()
                                 rpy_deg = _quat_wxyz_to_rpy_deg(quat)
+                                omega_err = np.asarray(omega_cmd, dtype=float) - o[9:12]
                                 print(
                                     f"  t={t_s:.2f} s",
                                     flush=True,
@@ -2033,13 +2121,39 @@ def _run_rotation_test(
                                     f"    target_omega -> (x={omega_cmd[0]:+.2f}, y={omega_cmd[1]:+.2f}, z={omega_cmd[2]:+.2f})",
                                     flush=True,
                                 )
-                                fin_parts = " ".join(
+                                print(
+                                    f"    omega_err    -> (x={omega_err[0]:+.3f}, y={omega_err[1]:+.3f}, z={omega_err[2]:+.3f})",
+                                    flush=True,
+                                )
+                                print(
+                                    f"    g_body       -> (x={o[6]:+.3f}, y={o[7]:+.3f}, z={o[8]:+.3f})",
+                                    flush=True,
+                                )
+                                pid_fin_parts = " ".join(
+                                    f"{short}={action_pre_isolation[1 + i]:+.3f}"
+                                    for i, short in enumerate(("R", "L", "Fwd", "Aft"))
+                                )
+                                applied_fin_parts = " ".join(
                                     f"{short}={action_isaac[1 + i]:+.3f}"
                                     for i, short in enumerate(("R", "L", "Fwd", "Aft"))
                                 )
-                                print(f"    Fin -> ({fin_parts}", flush=True)
+                                print(f"    pid_fins     -> ({pid_fin_parts})", flush=True)
+                                print(f"    applied_fins -> ({applied_fin_parts})", flush=True)
                                 print(
                                     f"    omega_act    -> (x={o[9]:+.3f}, y={o[10]:+.3f}, z={o[11]:+.3f})",
+                                    flush=True,
+                                )
+                                print(
+                                    f"    pid_terms    -> (roll_cmd={dbg['roll_cmd']:+.3f}, "
+                                    f"pitch_cmd={dbg['pitch_cmd']:+.3f}, "
+                                    f"yaw_total={dbg['yaw_total']:+.3f}, "
+                                    f"omega_z_filt={dbg['omega_z_filt']:+.3f})",
+                                    flush=True,
+                                )
+                                print(
+                                    f"    pid_rate_err -> (x={dbg.get('omega_error_x', float('nan')):+.3f}, "
+                                    f"y={dbg.get('omega_error_y', float('nan')):+.3f}, "
+                                    f"z={dbg.get('omega_error_z', float('nan')):+.3f})",
                                     flush=True,
                                 )
                                 print(

@@ -290,6 +290,15 @@ class PIDController(Controller):
 
         debug: dict[str, float] = {
             "gain_scale": float(s),
+            "target_body_x": float(target_body[0]),
+            "target_body_y": float(target_body[1]),
+            "target_body_z": float(target_body[2]),
+            "v_body_x": float(v_b[0]),
+            "v_body_y": float(v_b[1]),
+            "v_body_z": float(v_b[2]),
+            "g_body_x": gx,
+            "g_body_y": gy,
+            "g_body_z": gz,
             "alt_target": alt_target,
             "alt_error": alt_error,
             "alt_error_clamped": alt_error_clamped,
@@ -306,11 +315,31 @@ class PIDController(Controller):
             "omega_x": float(omega[0]),
             "omega_y": float(omega[1]),
             "omega_z": float(omega[2]),
+            "omega_cmd_x": float(oc_roll) if oc_roll is not None else float("nan"),
+            "omega_cmd_y": float(oc_pitch) if oc_pitch is not None else float("nan"),
+            "omega_cmd_z": float(oc_yaw) if oc_yaw is not None else float("nan"),
+            "omega_error_x": (
+                float(oc_roll - float(omega[0]))
+                if oc_roll is not None
+                else float("nan")
+            ),
+            "omega_error_y": (
+                float(oc_pitch - float(omega[1]))
+                if oc_pitch is not None
+                else float("nan")
+            ),
+            "omega_error_z": (
+                float(oc_yaw - self._omega_z_filt)
+                if oc_yaw is not None
+                else float("nan")
+            ),
             "roll_Kp": float(Kr.get("Kp", 0.0)),
             "roll_Kd": float(Kr.get("Kd", 0.0)),
             "pitch_Kp": float(Kp_i.get("Kp", 0.0)),
             "pitch_Kd": float(Kp_i.get("Kd", 0.0)),
             "gyro_ff": float(Kff),
+            "yaw_Kd": float(Kyaw),
+            "yaw_limit": float(yaw_limit),
             "pitch_cmd": pitch_cmd,
             "roll_cmd": roll_cmd,
             "omega_z_raw": omega_z_raw,
