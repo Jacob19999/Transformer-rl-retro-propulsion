@@ -46,3 +46,5 @@ pid:
       - 0.0
       - 0.5
       gain_scale: 0.7
+  fin_mapping:
+    path: simulation/configs/fin_mapping.yaml

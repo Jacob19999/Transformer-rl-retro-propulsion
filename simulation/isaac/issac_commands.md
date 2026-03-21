@@ -106,6 +106,22 @@ Thrust + fin + override inertia:
 .\env_isaaclab\Scripts\python.exe -m simulation.isaac.scripts.diag_thrust_fin_wiggle --thrust 0.75 --max-deflection 0.1 --fixed-altitude --override-inertia 0.1 0.1 0.1 --hold-secs 1.0
 ```
 
+### Fin mapping auto-calibration (Isaac)
+
+Excites each fin, measures Δω per axis, writes `simulation/configs/fin_mapping.yaml` (or `--output`).
+
+```
+.\env_isaaclab\Scripts\python.exe -m simulation.isaac.scripts.calibrate_fin_mapping --config simulation/isaac/configs/isaac_env_single.yaml
+```
+
+With **force gizmos** in the viewport (GUI only; do not use `--headless`):
+
+```
+.\env_isaaclab\Scripts\python.exe -m simulation.isaac.scripts.calibrate_fin_mapping --config simulation/isaac/configs/isaac_env_single.yaml --draw-forces
+```
+
+Colours: cyan = thrust, red/green/blue/yellow = fin aero (fin order 0–3), orange = body torque.
+
 ---
 
 ## Thrust test

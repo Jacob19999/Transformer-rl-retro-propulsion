@@ -23,7 +23,12 @@ class IsaacVehicleParams:
     i_fan: float
     v_exhaust_nominal: float
     cl_alpha: float
+    cd0: float
+    aspect_ratio: float
+    stall_angle: float
     fin_area: float
+    omega_fan_max: float
+    exhaust_velocity_ratio: bool
 
 
 def _resolve_vehicle_section(config_path: str | Path) -> tuple[Path, dict]:
@@ -49,7 +54,12 @@ def load_isaac_vehicle_params(config_path: str | Path) -> IsaacVehicleParams:
         k_torque=float(edf_cfg.get("k_torque", 1.0e-10)),
         i_fan=float(edf_cfg.get("I_fan", 3.0e-7)),
         v_exhaust_nominal=float(fins_cfg.get("V_exhaust_nominal", 70.0)),
-        cl_alpha=float(fins_cfg.get("CL_alpha", 6.283)),
+        cl_alpha=float(fins_cfg.get("CL_alpha", fins_cfg.get("Cl_alpha", 6.283))),
+        cd0=float(fins_cfg.get("Cd0", 0.01)),
+        aspect_ratio=float(fins_cfg.get("AR", 0.846)),
+        stall_angle=float(fins_cfg.get("stall_angle", 0.262)),
         fin_area=float(fins_cfg.get("planform_area", 0.003575)),
+        omega_fan_max=float(edf_cfg.get("max_omega", 9948.0)),
+        exhaust_velocity_ratio=bool(fins_cfg.get("exhaust_velocity_ratio", True)),
     )
 

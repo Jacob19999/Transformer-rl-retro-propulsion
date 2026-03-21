@@ -322,6 +322,9 @@ vehicle:
         drag_direction: [0, 0, 1]
         angular_offset_deg: 270       # azimuthal position (270° = aft)
 
+  fin_mapping:
+    path: simulation/configs/fin_mapping.yaml
+
   # ─── Explicit Mass Properties ────────────────────────────────────
   # Primary source for Isaac Sim / IsaacLab.
   # USD MassAPI uses these directly — no primitive aggregation needed.

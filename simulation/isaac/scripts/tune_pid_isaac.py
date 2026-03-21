@@ -21,6 +21,7 @@ import yaml
 
 from isaacsim import SimulationApp  # pyright: ignore[reportMissingImports]
 
+from simulation.isaac.fin_mapping import default_fin_mapping
 from simulation.isaac.pid_action_adapter import map_pid_action_to_isaac
 from simulation.training.controllers.pid_controller import PIDController
 from simulation.training.scripts.tune_pid import (
@@ -360,6 +361,16 @@ def _parse_args() -> argparse.Namespace:
         type=int,
         default=240,
         help="Number of relay trace samples to save for the first autotune run.",
+    )
+    parser.add_argument(
+        "--draw-forces",
+        action="store_true",
+        default=False,
+        help=(
+            "Overlay force/torque gizmo arrows in the viewport. "
+            "Cyan=thrust, Red/Green/Blue/Yellow=fin aero, Orange=body torque. "
+            "Has no effect in headless mode."
+        ),
     )
     return parser.parse_args()
 
@@ -1216,14 +1227,12 @@ def _relay_action(
     u = float(np.clip(relay_state, -1.0, 1.0))
     if bool(invert):
         u = -u
+    mapping = default_fin_mapping()
     if loop_name == "roll":
-        # Positive roll_cmd maps to negative fin3/fin4 normalized commands.
-        action[3] = -u
-        action[4] = -u
+        action[1:5] = np.asarray(mapping.roll_weights, dtype=np.float32) * u
         return action
     if loop_name == "pitch":
-        action[1] = u
-        action[2] = u
+        action[1:5] = np.asarray(mapping.pitch_weights, dtype=np.float32) * u
         return action
     raise ValueError(f"Relay autotune only supports roll/pitch, got {loop_name!r}")
 
@@ -1877,7 +1886,12 @@ _ROTATION_LOG_INTERVAL_STEPS = 40  # log every 1 s at 40 Hz
 _ROTATION_FIN_LABELS = ("RightFin", "LeftFin", "FwdFin", "AftFin")
 # When isolating: zero these 0-based fin indices so only the tested axis has fin authority.
 # Roll=FwdFin+AftFin (2,3), Pitch=RightFin+LeftFin (0,1), Yaw=all four.
-_ROTATION_FIN_INDICES_TO_ZERO = {"roll": (0, 1), "pitch": (2, 3), "yaw": ()}
+_DEFAULT_FIN_MAPPING = default_fin_mapping()
+_ROTATION_FIN_INDICES_TO_ZERO = {
+    "roll": tuple(i for i, w in enumerate(_DEFAULT_FIN_MAPPING.roll_weights) if abs(float(w)) < 1e-6),
+    "pitch": tuple(i for i, w in enumerate(_DEFAULT_FIN_MAPPING.pitch_weights) if abs(float(w)) < 1e-6),
+    "yaw": (),
+}
 
 
 def _disable_gravity_rotation(env) -> None:
@@ -2007,6 +2021,7 @@ def _run_rotation_test(
         disable_gyro=bool(args.disable_gyro),
         disable_anti_torque=bool(args.disable_anti_torque),
         disable_gravity=True,
+        debug_draw_forces=bool(getattr(args, "draw_forces", False)),
     )
     alt = float(args.hover_altitude)
     _configure_env_for_test(env, test_mode="rotation", hover_altitude=alt)

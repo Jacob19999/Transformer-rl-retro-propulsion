@@ -84,15 +84,14 @@ from simulation.isaac.conventions import (  # noqa: E402
     FIN_DRIVE_DAMPING,
     FIN_DRIVE_EFFORT_LIMIT,
     FIN_DRIVE_STIFFNESS,
-    FIN_AFT_IDX,
-    FIN_FWD_IDX,
-    FIN_LEFT_IDX,
-    FIN_RIGHT_IDX,
     OBS_DIM,
 )
 from simulation.isaac.usd.parts_registry import BODY_PRIM, DRONE_ROOT, load_fin_specs, zup_to_frd  # noqa: E402
+from simulation.isaac.fin_aero import FinAeroParams, compute_fin_forces_body  # noqa: E402
+from simulation.isaac.fin_mapping import FinMapping, default_fin_mapping, load_fin_mapping  # noqa: E402
 from simulation.isaac.vehicle_params import load_isaac_vehicle_params  # noqa: E402
 from simulation.isaac.wind.isaac_wind_model import IsaacWindModel  # noqa: E402
+from simulation.isaac.debug_draw import ForceGizmoDrawer  # noqa: E402
 from simulation.isaac.quaternion_isaac import (  # noqa: E402
     rotate_body_to_world_wxyz,
     rotate_world_to_body_wxyz,
@@ -224,6 +223,12 @@ class EdfLandingTaskCfg(DirectRLEnvCfg):
     reward_config_path: str      = str(REPO_ROOT / "simulation" / "configs" / "reward.yaml")
     environment_config_path: str = str(REPO_ROOT / "simulation" / "configs" / "default_environment.yaml")
 
+    # Debug visualisation
+    # When True a ForceGizmoDrawer is created and draws force/torque arrows each
+    # step for the first environment.  Has no effect in headless mode because the
+    # draw interface simply returns a no-op.
+    debug_draw_forces: bool = False
+
 
 # ---------------------------------------------------------------------------
 # Task implementation (T014-T020)
@@ -252,8 +257,12 @@ class EdfLandingTask(DirectRLEnv):
             [tp[0], tp[1], tp[2]], dtype=torch.float32, device=self.device
         ).unsqueeze(0).expand(self.num_envs, -1)  # (num_envs, 3)
 
-        # T016: Physics lag state tensors
+        # T016: Runtime state tensors
         self.thrust_actual = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
+        self.fin_deflections_cmd = torch.zeros(
+            (self.num_envs, 4), dtype=torch.float32, device=self.device
+        )
+        # Compatibility telemetry tensor (now sourced from measured joint state).
         self.fin_deflections_actual = torch.zeros(
             (self.num_envs, 4), dtype=torch.float32, device=self.device
         )
@@ -268,6 +277,16 @@ class EdfLandingTask(DirectRLEnv):
         vehicle_cfg  = load_config(cfg.vehicle_config_path)
         vehicle_data = vehicle_cfg.get("vehicle", vehicle_cfg)
         self._vehicle_data = vehicle_data
+        mapping_path = vehicle_data.get("fin_mapping", {}).get("path")
+        self._fin_mapping: FinMapping = (
+            load_fin_mapping(mapping_path) if mapping_path else default_fin_mapping()
+        )
+        self._fin_joint_source_idx = torch.tensor(
+            self._fin_mapping.joint_source_indices, dtype=torch.long, device=self.device
+        )
+        self._fin_joint_signs = torch.tensor(
+            self._fin_mapping.joint_signs, dtype=torch.float32, device=self.device
+        )
 
         # Lift directions remain in config for now; fin anchor positions come from the USD asset.
         fin_specs = load_fin_specs(vehicle_data)
@@ -275,6 +294,22 @@ class EdfLandingTask(DirectRLEnv):
             [list(s.lift_direction) for s in fin_specs],
             dtype=torch.float32, device=self.device,
         )  # (4, 3)
+        self._fin_drag = torch.tensor(
+            [list(vehicle_data["fins"]["fins_config"][i]["drag_direction"]) for i in range(4)],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        self._fin_aero = FinAeroParams(
+            cl_alpha=float(self.vehicle_params.cl_alpha),
+            cd0=float(self.vehicle_params.cd0),
+            aspect_ratio=float(self.vehicle_params.aspect_ratio),
+            stall_angle=float(self.vehicle_params.stall_angle),
+            max_deflection=float(self.vehicle_params.delta_max),
+            planform_area=float(self.vehicle_params.fin_area),
+            v_exhaust_nominal=float(self.vehicle_params.v_exhaust_nominal),
+            omega_fan_max=float(self.vehicle_params.omega_fan_max),
+            exhaust_velocity_ratio=bool(self.vehicle_params.exhaust_velocity_ratio),
+        )
         # Vehicle mass, CoM, and fin anchors come from the live Isaac asset.
         fin_names = [s.prim_name for s in fin_specs]
         self._body_id = self._resolve_single_body_id("Body")
@@ -291,14 +326,18 @@ class EdfLandingTask(DirectRLEnv):
             f"body_com_frd={tuple(float(x) for x in self._body_com_default_frd.tolist())}"
         )
         print(
-            "[EdfLandingTask] Joint visual sign correction: "
-            "RightFin<- -LeftFin, LeftFin<- -RightFin, FwdFin<- -AftFin, AftFin<- -FwdFin"
+            "[EdfLandingTask] Fin joint mapping loaded: "
+            f"source_idx={self._fin_mapping.joint_source_indices}, "
+            f"signs={self._fin_mapping.joint_signs}"
         )
 
         # T020: Wind model -- instantiate if isaac_wind.enabled: true in environment config
         env_cfg_raw  = load_config(cfg.environment_config_path)
         env_data     = env_cfg_raw.get("environment", env_cfg_raw)
+        atmosphere_cfg = env_data.get("atmosphere", {})
+        self._rho_ref = float(atmosphere_cfg.get("rho_ref", 1.225))
         wind_cfg     = env_data.get("isaac_wind", {})
+        self._rho_ref = float(wind_cfg.get("air_density", self._rho_ref))
         if wind_cfg.get("enabled", False):
             self._wind_model: IsaacWindModel | None = IsaacWindModel(
                 wind_cfg, self.num_envs, self.device
@@ -349,6 +388,12 @@ class EdfLandingTask(DirectRLEnv):
         self._runtime_reset_pitch_offset_rad: float = 0.0
         self._runtime_reset_ang_vel_frd = torch.zeros(
             3, dtype=torch.float32, device=self.device
+        )
+
+        # Debug force gizmos (no-op when draw interface unavailable / headless)
+        self._force_gizmo: ForceGizmoDrawer | None = (
+            ForceGizmoDrawer(force_scale=0.25, torque_scale=0.25, max_envs=1)
+            if cfg.debug_draw_forces else None
         )
 
     # ------------------------------------------------------------------
@@ -558,6 +603,7 @@ class EdfLandingTask(DirectRLEnv):
 
         # Reset lag state
         self.thrust_actual[env_ids] = 0.0
+        self.fin_deflections_cmd[env_ids] = 0.0
         self.fin_deflections_actual[env_ids] = 0.0
         self._episode_step[env_ids] = 0
         self._prev_action[env_ids] = 0.0
@@ -658,12 +704,11 @@ class EdfLandingTask(DirectRLEnv):
         T_cmd     = thrust_cmd_norm.clamp(0.0, 1.0) * self.vehicle_params.t_max
         delta_cmd = fin_cmd_norm * self.vehicle_params.delta_max
 
-        # First-order lag update (once per policy step)
+        # Motor lag remains first-order in task logic.
         self.thrust_actual += (dt / self.vehicle_params.tau_motor) * (T_cmd - self.thrust_actual)
-        self.fin_deflections_actual += (dt / self.vehicle_params.tau_servo) * (
-            delta_cmd - self.fin_deflections_actual
-        )
-        self.fin_deflections_actual.clamp_(
+        # Fin servo response is now owned by PhysX articulation drives.
+        self.fin_deflections_cmd.copy_(delta_cmd)
+        self.fin_deflections_cmd.clamp_(
             -self.vehicle_params.delta_max,
             self.vehicle_params.delta_max,
         )
@@ -673,69 +718,65 @@ class EdfLandingTask(DirectRLEnv):
         # Increment episode step counter
         self._episode_step += 1
 
+    def _ensure_fin_joint_ids(self) -> None:
+        """Resolve fin joint IDs lazily once robot buffers are ready."""
+        if self._fin_joint_ids:
+            return
+        print(f"[EdfLandingTask] robot.num_joints = {self.robot.num_joints}")
+        print(f"[EdfLandingTask] robot.joint_names = {self.robot.joint_names}")
+        fin_specs = load_fin_specs(self._vehicle_data)
+        joint_names_ordered = [f"{s.prim_name}_Joint" for s in fin_specs]
+        try:
+            joint_ids, joint_names = self.robot.find_joints(
+                joint_names_ordered, preserve_order=True
+            )
+            print(f"[EdfLandingTask] find_joints({joint_names_ordered}) -> ids={joint_ids}, names={joint_names}")
+        except Exception as e:
+            print(f"[EdfLandingTask] find_joints({joint_names_ordered}) FAILED: {e}")
+            joint_ids = []
+        if len(joint_ids) == 4:
+            self._fin_joint_ids = [int(i) for i in joint_ids]
+            return
+        try:
+            joint_ids, joint_names = self.robot.find_joints(".*", preserve_order=False)
+            print(f"[EdfLandingTask] find_joints('.*') -> ids={joint_ids}, names={joint_names}")
+            if len(joint_ids) == 4:
+                self._fin_joint_ids = [int(i) for i in joint_ids]
+        except Exception as e:
+            print(f"[EdfLandingTask] find_joints('.*') FAILED: {e}")
+        if not self._fin_joint_ids:
+            print("[EdfLandingTask] WARNING: Could not find 4 fin joints! Fins will not move.")
+
+    def _read_fin_joint_pos_rad(self) -> torch.Tensor:
+        """Read current articulation fin joint positions in radians."""
+        if not self._fin_joint_ids:
+            return torch.zeros((self.num_envs, 4), dtype=torch.float32, device=self.device)
+        joint_pos = self.robot.data.joint_pos[:, self._fin_joint_ids]
+        # Isaac builds differ: some expose deg for authored angular drives.
+        max_abs = float(joint_pos.detach().abs().max().item()) if joint_pos.numel() > 0 else 0.0
+        if max_abs > 3.5:
+            joint_pos = torch.deg2rad(joint_pos)
+        return joint_pos
+
     def _apply_action(self) -> None:
         """Apply forces/torques each decimation substep using current lag state."""
         num_envs = self.num_envs
-        forces  = torch.zeros((num_envs, 1, 3), device=self.device)
-        torques = torch.zeros((num_envs, 1, 3), device=self.device)
+        ext_body_ids = [self._body_id, *self._fin_body_ids]
+        n_ext = len(ext_body_ids)
+        forces = torch.zeros((num_envs, n_ext, 3), device=self.device)
+        torques = torch.zeros((num_envs, n_ext, 3), device=self.device)
 
         # ----------------------------------------------------------------
         # Fin joints -- set Drive/actuator position targets (degrees)
         # ----------------------------------------------------------------
-        if not self._fin_joint_ids:
-            # Debug: print all joints the articulation knows about
-            print(f"[EdfLandingTask] robot.num_joints = {self.robot.num_joints}")
-            print(f"[EdfLandingTask] robot.joint_names = {self.robot.joint_names}")
-
-            # Manual scene: joints are /Drone/Fin_N/RevoluteJoint.
-            # PhysX joint names appear as "RevoluteJoint" (possibly de-duplicated
-            # with index suffixes).  Try exact names first, then regex fallback.
-            # Find fin joints by name: FwdFin_Joint, AftFin_Joint, LeftFin_Joint, RightFin_Joint
-            fin_specs = load_fin_specs(self._vehicle_data)
-            joint_names_ordered = [f"{s.prim_name}_Joint" for s in fin_specs]
-            try:
-                joint_ids, joint_names = self.robot.find_joints(
-                    joint_names_ordered,
-                    preserve_order=True,
-                )
-                print(f"[EdfLandingTask] find_joints({joint_names_ordered}) -> ids={joint_ids}, names={joint_names}")
-            except Exception as e:
-                print(f"[EdfLandingTask] find_joints({joint_names_ordered}) FAILED: {e}")
-                joint_ids, joint_names = [], []
-
-            if len(joint_ids) == 4:
-                self._fin_joint_ids = [int(i) for i in joint_ids]
-            else:
-                # Fallback: regex to catch any joint
-                try:
-                    joint_ids, joint_names = self.robot.find_joints(
-                        ".*", preserve_order=False
-                    )
-                    print(f"[EdfLandingTask] find_joints('.*') -> ids={joint_ids}, names={joint_names}")
-                    if len(joint_ids) == 4:
-                        self._fin_joint_ids = [int(i) for i in joint_ids]
-                except Exception as e:
-                    print(f"[EdfLandingTask] find_joints('.*') FAILED: {e}")
-
-            if not self._fin_joint_ids:
-                print("[EdfLandingTask] WARNING: Could not find 4 fin joints! Fins will not move.")
-
+        self._ensure_fin_joint_ids()
         if self._fin_joint_ids:
-            # Visual/joint-drive mapping differs from the controller/aero deflection
-            # convention on both fin pairs. Each pair needs swap+negate so that
-            # common-mode pitch/roll motion looks correct while preserving the yaw
-            # differential pattern visually.
-            fin_target_rad = torch.stack(
-                (
-                    -self.fin_deflections_actual[:, FIN_LEFT_IDX],
-                    -self.fin_deflections_actual[:, FIN_RIGHT_IDX],
-                    -self.fin_deflections_actual[:, FIN_AFT_IDX],
-                    -self.fin_deflections_actual[:, FIN_FWD_IDX],
-                ),
-                dim=-1,
-            )
+            # Apply calibrated canonical->joint mapping instead of hardcoded swap/sign.
+            fin_target_rad = self.fin_deflections_cmd.index_select(1, self._fin_joint_source_idx)
+            fin_target_rad = fin_target_rad * self._fin_joint_signs
             fin_target_deg = fin_target_rad * (180.0 / math.pi)
             self.robot.set_joint_position_target(fin_target_deg, joint_ids=self._fin_joint_ids)
+            self.fin_deflections_actual.copy_(self._read_fin_joint_pos_rad())
 
         quat_w = self.robot.data.root_quat_w  # (N, 4) IsaacLab wxyz [qw, qx, qy, qz]
 
@@ -753,37 +794,22 @@ class EdfLandingTask(DirectRLEnv):
         # ----------------------------------------------------------------
         # Fin aerodynamic forces (NACA0012 in exhaust stream)
         # ----------------------------------------------------------------
-        omega_ratio  = (self.thrust_actual / self.vehicle_params.t_max).clamp(0.0, 1.0).sqrt()
-        V_ex         = omega_ratio * self.vehicle_params.v_exhaust_nominal
-        dyn_pressure = 0.5 * 1.225 * V_ex.pow(2)  # sea-level rho
-
-        # Fin anchor points are authored in the USD asset. Convert them to live
-        # lever arms about the Isaac-computed body CoM each step.
-        body_com_frd = _zup_to_frd_tensor(self.robot.data.body_com_pos_b[:, self._body_id, :])
-
-        for i in range(4):
-            delta_i = self.fin_deflections_actual[:, i]                  # (N,)
-            L_i = (
-                dyn_pressure
-                * self.vehicle_params.fin_area
-                * self.vehicle_params.cl_alpha
-                * delta_i
-            )
-
-            # Broadcast per-fin body-frame vectors to (N, 3)
-            lift_dir_b = self._fin_lift[i].unsqueeze(0).expand(num_envs, -1)  # (N, 3)
-            anchor_b   = self._fin_anchor_pos_frd[i].unsqueeze(0).expand(num_envs, -1)
-            r_b        = anchor_b - body_com_frd
-
-            # Rotate into world (Z-up) frame
-            lift_dir_w = rotate_body_to_world_wxyz(quat_w, lift_dir_b)  # (N, 3)
-            r_w        = rotate_body_to_world_wxyz(quat_w, r_b)         # (N, 3)
-
-            F_i = L_i.unsqueeze(-1) * lift_dir_w  # (N, 3)
-            # Use fin lift only to generate attitude torque. Omitting the net
-            # translational force keeps lateral motion dominated by tilt+thrust
-            # instead of direct side-force from the control surfaces.
-            torques[:, 0, :] += torch.linalg.cross(r_w, F_i)
+        rho = torch.full((num_envs,), self._rho_ref, dtype=torch.float32, device=self.device)
+        fin_forces_body = compute_fin_forces_body(
+            delta_rad=self.fin_deflections_actual,
+            omega_fan=self._omega_fan,
+            rho=rho,
+            lift_dirs_body=self._fin_lift,
+            drag_dirs_body=self._fin_drag,
+            params=self._fin_aero,
+        )  # (N,4,3)
+        fin_forces_world = rotate_body_to_world_wxyz(
+            quat_w.repeat_interleave(4, dim=0),
+            fin_forces_body.reshape(num_envs * 4, 3),
+        ).reshape(num_envs, 4, 3)
+        # Apply aerodynamic forces directly to each fin link. PhysX propagates
+        # the resulting reactions to the main body; no manual tau_fins needed.
+        forces[:, 1:, :] += fin_forces_world
 
         # Gyro precession torque: τ_gyro = −ω_body × h_fan  (body frame → world frame)
         # PhysX handles ω×(I·ω) internally; we only inject the fan angular momentum term.
@@ -817,8 +843,23 @@ class EdfLandingTask(DirectRLEnv):
             F_wind      = self._wind_model.compute_drag_force(wind_vec, body_vel_w)
             forces[:, 0, :] += F_wind
 
-        self.robot.set_external_force_and_torque(forces, torques, body_ids=[self._body_id], is_global=True)
+        self.robot.set_external_force_and_torque(forces, torques, body_ids=ext_body_ids, is_global=True)
         self.robot.write_data_to_sim()
+
+        # Debug gizmos — drawn after forces are committed each substep.
+        if self._force_gizmo is not None:
+            # fin_origins_w: world positions of fin link centroids (N, 4, 3)
+            # _fin_body_ids_t is cached on first use to avoid repeated allocation.
+            if not hasattr(self, "_fin_body_ids_t"):
+                self._fin_body_ids_t = torch.tensor(self._fin_body_ids, dtype=torch.long, device=self.device)
+            fin_origins_w  = self.robot.data.body_pos_w[:, self._fin_body_ids_t, :]
+            self._force_gizmo.draw(
+                fin_origins_w  = fin_origins_w,
+                fin_forces_w   = forces[:, 1:, :],
+                body_origin_w  = self.robot.data.root_pos_w,
+                thrust_w       = forces[:, 0, :],
+                body_torque_w  = torques[:, 0, :],
+            )
 
     # ------------------------------------------------------------------
     # T018: Observations -- 20-dim vector

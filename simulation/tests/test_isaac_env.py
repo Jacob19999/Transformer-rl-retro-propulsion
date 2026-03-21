@@ -36,9 +36,8 @@ _SINGLE_CFG = REPO_ROOT / "simulation" / "isaac" / "configs" / "isaac_env_single
 _CFG_128    = REPO_ROOT / "simulation" / "isaac" / "configs" / "isaac_env_128.yaml"
 
 # Physical constants
-_DELTA_MAX  = 0.2618   # rad, ±15°
+_DELTA_MAX  = 0.3490   # rad, ±20°
 _T_MAX      = 45.0     # N
-_TAU_SERVO  = 0.04     # s
 _TAU_MOTOR  = 0.10     # s
 _DT         = 1.0 / 120.0
 
@@ -181,11 +180,11 @@ def test_inverted_hover_thrust_loses_altitude():
 
 
 # ---------------------------------------------------------------------------
-# T025: Fin deflection limits ±15°
+# T025: Fin deflection limits from vehicle config (default ±20°)
 # ---------------------------------------------------------------------------
 @pytest.mark.isaac
 def test_fin_deflection_limits(single_env):
-    """Command each fin to ±1.0, step 60 frames, verify clamped to ±15° (0.2618 rad)."""
+    """Command each fin to ±1.0, step 60 frames, verify clamped to configured limit."""
     eps = 0.001  # rad
 
     for fin_idx in range(4):
@@ -227,30 +226,77 @@ def test_action_scaling(single_env):
 
 
 # ---------------------------------------------------------------------------
-# T027: Fin lag response — 63% of target within tau_servo/dt steps
+# T027: Fin joint response follows articulation drive dynamics
 # ---------------------------------------------------------------------------
 @pytest.mark.isaac
 def test_fin_lag_response():
-    """Fin deflection reaches 63% of target within tau_servo/dt steps (first-order lag)."""
+    """Fin joint should move toward target and remain bounded by joint limits."""
     env = EDFIsaacEnv(config_path=_SINGLE_CFG, seed=1)
     try:
         env.reset()
         action = np.zeros(5, dtype=np.float32)
         action[1] = 1.0  # fin 1 to max
 
-        settle_steps = int(_TAU_SERVO / _DT)  # ≈ 5 steps
-
-        for step in range(settle_steps):
+        for _ in range(60):
             env.step(action)
 
         fin_actual = env._task.fin_deflections_actual[0, 0].item()
         target = _DELTA_MAX
-        # First-order lag: after 1 tau, response should be ≥ 63% of target
-        assert fin_actual >= 0.63 * target, (
-            f"After {settle_steps} steps, fin={fin_actual:.4f} rad < 63% of target={target:.4f}"
+        assert fin_actual > 0.0, "Fin did not move in commanded direction."
+        assert abs(fin_actual) <= target + 1e-3, "Fin exceeded configured limit."
+        assert fin_actual >= 0.70 * target, (
+            f"After settling, fin={fin_actual:.4f} rad did not approach target={target:.4f} rad."
         )
     finally:
         env.close()
+
+
+# ---------------------------------------------------------------------------
+# T028: Fin aerodynamic link forces induce angular-rate response
+# ---------------------------------------------------------------------------
+@pytest.mark.isaac
+def test_fin_force_application_produces_rate_response():
+    """With thrust on, a single fin command should induce measurable body rate."""
+    env = EDFIsaacEnv(
+        config_path=_SINGLE_CFG,
+        seed=3,
+        disable_wind=True,
+        disable_gyro=True,
+        disable_anti_torque=True,
+        disable_gravity=True,
+    )
+    try:
+        env._task.cfg.spawn_altitude_min = 1.0
+        env._task.cfg.spawn_altitude_max = 1.0
+        env._task.cfg.spawn_vel_mag_min = 0.0
+        env._task.cfg.spawn_vel_mag_max = 0.0
+        env.reset(seed=3)
+
+        action = np.zeros(5, dtype=np.float32)
+        action[0] = 0.75
+        action[1] = 0.8
+        peak_rate = 0.0
+        for _ in range(90):
+            env.step(action)
+            omega = env._task.robot.data.root_ang_vel_b[0].detach().cpu().numpy()
+            peak_rate = max(peak_rate, float(np.max(np.abs(omega))))
+        assert peak_rate > 0.05, f"Expected fin-induced angular-rate response, got peak={peak_rate:.4f} rad/s"
+    finally:
+        env.close()
+
+
+# ---------------------------------------------------------------------------
+# T028b: Fin mapping artifact is loaded by the Isaac task
+# ---------------------------------------------------------------------------
+@pytest.mark.isaac
+def test_fin_mapping_artifact_loaded(single_env):
+    """Isaac task should load a mapping artifact with 4-fin weights."""
+    mapping = single_env._task._fin_mapping
+    assert len(mapping.joint_source_indices) == 4
+    assert len(mapping.joint_signs) == 4
+    assert len(mapping.pitch_weights) == 4
+    assert len(mapping.roll_weights) == 4
+    assert len(mapping.yaw_weights) == 4
 
 
 # ---------------------------------------------------------------------------

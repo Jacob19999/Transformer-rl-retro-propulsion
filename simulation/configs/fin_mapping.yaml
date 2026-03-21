@@ -1,0 +1,57 @@
+fin_mapping:
+  joint_source_indices:
+  - 1
+  - 0
+  - 3
+  - 2
+  joint_signs:
+  - -1.0
+  - -1.0
+  - -1.0
+  - -1.0
+  pitch_weights:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  roll_weights:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  yaw_weights:
+  - 1.0
+  - 1.0
+  - -1.0
+  - -1.0
+  generated_by: calibrate_fin_mapping.py
+  measurement:
+    thrust: 0.7
+    deflection: 0.65
+    settle_steps: 45
+    hold_steps: 90
+    per_fin:
+    - fin_index: 0
+      delta_omega_roll: 1.1982789480825886
+      delta_omega_pitch: 3.095032585049921
+      delta_omega_yaw: 7.859373325855813
+      dominant_axis: yaw
+      dominant_sign: 1.0
+    - fin_index: 1
+      delta_omega_roll: -0.9012346422532573
+      delta_omega_pitch: -2.915243017290777
+      delta_omega_yaw: 7.813928360493264
+      dominant_axis: yaw
+      dominant_sign: 1.0
+    - fin_index: 2
+      delta_omega_roll: -1.8651842629769817
+      delta_omega_pitch: 1.0731833104146062
+      delta_omega_yaw: -7.802684550731101
+      dominant_axis: yaw
+      dominant_sign: -1.0
+    - fin_index: 3
+      delta_omega_roll: -2.3493210828164592
+      delta_omega_pitch: -1.2569235440241755
+      delta_omega_yaw: -7.859602694957175
+      dominant_axis: yaw
+      dominant_sign: -1.0

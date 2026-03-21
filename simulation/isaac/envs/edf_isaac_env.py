@@ -64,6 +64,7 @@ class EDFIsaacEnv(gym.Env):
         disable_gyro: bool = False,
         disable_anti_torque: bool = False,
         disable_gravity: bool = False,
+        debug_draw_forces: bool = False,
     ) -> None:
         super().__init__()
 
@@ -79,6 +80,7 @@ class EDFIsaacEnv(gym.Env):
         self._runtime_disable_gyro = bool(disable_gyro)
         self._runtime_disable_anti_torque = bool(disable_anti_torque)
         self._runtime_disable_gravity = bool(disable_gravity)
+        self._debug_draw_forces = bool(debug_draw_forces)
 
         # VRAM guard (T031)
         self._check_vram()
@@ -119,6 +121,8 @@ class EDFIsaacEnv(gym.Env):
         if env_path:
             p = Path(env_path)
             task_cfg.environment_config_path = str(REPO_ROOT / p if not p.is_absolute() else p)
+
+        task_cfg.debug_draw_forces = self._debug_draw_forces
 
         usd_path = self._cfg_raw.get("drone_usd_path", None)
         if usd_path:

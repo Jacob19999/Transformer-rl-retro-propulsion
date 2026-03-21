@@ -306,6 +306,15 @@ def main() -> None:
             "e.g. --override-inertia 0.1 0.1 0.1"
         ),
     )
+    parser.add_argument(
+        "--draw-forces",
+        action="store_true",
+        default=False,
+        help=(
+            "Overlay force/torque gizmo arrows in the viewport. "
+            "Cyan = thrust, Red/Green/Blue/Yellow = fin aero forces, Orange = body torque."
+        ),
+    )
     args = parser.parse_args()
 
     hold_steps = max(1, round(args.hold_secs * 120))
@@ -317,7 +326,11 @@ def main() -> None:
 
     from simulation.isaac.envs.edf_isaac_env import EDFIsaacEnv
 
-    env = EDFIsaacEnv(config_path=config_path, render_mode="human")
+    env = EDFIsaacEnv(
+        config_path=config_path,
+        render_mode="human",
+        debug_draw_forces=args.draw_forces,
+    )
 
     # ------------------------------------------------------------------
     # Print fin geometry / hinge axes and body-frame convention

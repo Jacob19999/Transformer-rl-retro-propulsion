@@ -23,6 +23,7 @@ from typing import Any, Mapping
 import numpy as np
 
 from simulation.training.controllers.base import Controller
+from simulation.isaac.fin_mapping import default_fin_mapping, load_fin_mapping, mix_controls
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +44,7 @@ class PIDController(Controller):
 
         self.outer: dict[str, Any] = dict(cfg["outer_loop"])
         self.inner: dict[str, Any] = dict(cfg["inner_loop"])
+        self._fin_mapping_cfg: dict[str, Any] = dict(cfg.get("fin_mapping", {}) or {})
 
         self.dt: float = float(cfg.get("dt", 0.025))  # 40 Hz by default
         if self.dt <= 0.0:
@@ -115,6 +117,10 @@ class PIDController(Controller):
             None,
             None,
             None,
+        )
+        mapping_path = self._fin_mapping_cfg.get("path")
+        self._fin_mapping = (
+            load_fin_mapping(mapping_path) if mapping_path else default_fin_mapping()
         )
 
     def set_omega_cmd(
@@ -271,15 +277,13 @@ class PIDController(Controller):
                 np.clip(-Kyaw * self._omega_z_filt, -yaw_limit, yaw_limit)
             )
 
-        # Isaac/USD fin numbering:
-        #   Fin_1 = right, Fin_2 = left, Fin_3 = forward, Fin_4 = aft.
-        # With the current fin lift directions, pitch authority is dominant on
-        # Fin_1/Fin_2 and roll authority is dominant on Fin_3/Fin_4.
-        # Positive yaw uses the differential pattern [-,+,-,+].
-        fin1 = float(np.clip((+pitch_cmd - yaw_total) / self.delta_max, -1.0, 1.0))
-        fin2 = float(np.clip((+pitch_cmd + yaw_total) / self.delta_max, -1.0, 1.0))
-        fin3 = float(np.clip((+roll_cmd - yaw_total) / self.delta_max, -1.0, 1.0))
-        fin4 = float(np.clip((+roll_cmd + yaw_total) / self.delta_max, -1.0, 1.0))
+        fin1, fin2, fin3, fin4 = mix_controls(
+            pitch_cmd=float(pitch_cmd),
+            roll_cmd=float(roll_cmd),
+            yaw_cmd=float(yaw_total),
+            delta_max=float(self.delta_max),
+            mapping=self._fin_mapping,
+        )
 
         action = np.array(
             [thrust_action, fin1, fin2, fin3, fin4], dtype=np.float32

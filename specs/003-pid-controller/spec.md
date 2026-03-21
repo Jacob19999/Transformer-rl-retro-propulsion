@@ -108,7 +108,7 @@ A researcher runs long PID tuning / training jobs and wants the script to tell t
 - **FR-014**: The reward monitor MUST support `decreasing` as a valid direction because that is the requested user workflow, even if the implementation internally monitors an equivalent cost metric derived from reward.
 - **FR-015**: The workflow MUST accept CLI paths for Isaac env config, vehicle config, reward config, PID config, output directory, and log directory.
 - **FR-016**: The workflow MUST expose enough logged PID internals to explain each action, including loop errors and the corresponding loop outputs before final action clipping.
-- **FR-016a**: The workflow MUST preserve and document the current fin-axis mapping used by `PIDController`: `Fin_1`/`Fin_2` are the forward/aft pitch pair, `Fin_3`/`Fin_4` are the left/right roll pair, and yaw damping is applied through the differential pattern `[-d, +d, +d, -d]`.
+- **FR-016a**: The workflow MUST consume a fin-axis mapping artifact for `PIDController` mixing and MUST document how that mapping was calibrated in Isaac Sim (including measured per-fin `Δωx/Δωy/Δωz`). Hardcoded assumptions about which fin pair is pitch/roll authority are not the source of truth.
 - **FR-017**: The workflow MUST function when disturbances are disabled, so deterministic ablation runs can be used for controller debugging and repeatable comparisons.
 - **FR-018**: The workflow MUST preserve compatibility with the existing observation/action contract used by the custom Python simulation, so the same PID config can be ported between backends.
 

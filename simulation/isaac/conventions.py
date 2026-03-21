@@ -8,6 +8,7 @@ redefine them independently.
 from __future__ import annotations
 
 from simulation.isaac.usd.parts_registry import FIN_PRIM_NAMES, frd_to_zup, zup_to_frd
+from simulation.isaac.fin_mapping import default_fin_mapping
 
 # ---------------------------------------------------------------------------
 # Action layout
@@ -83,11 +84,12 @@ FRD_BODY_FRAME_TEXT = "FRD (+X=fwd/nose, +Y=right, +Z=down)"
 
 def fin_axis_command(axis: str, magnitude: float) -> tuple[float, float, float, float]:
     """Return common-mode fin commands for the requested body axis."""
+    mapping = default_fin_mapping()
     mag = float(magnitude)
     if axis == "pitch":
-        return (mag, mag, 0.0, 0.0)
+        return tuple(float(w * mag) for w in mapping.pitch_weights)  # type: ignore[return-value]
     if axis == "roll":
-        return (0.0, 0.0, mag, mag)
+        return tuple(float(w * mag) for w in mapping.roll_weights)  # type: ignore[return-value]
     if axis == "yaw":
         return yaw_fin_command(mag)
     raise ValueError(f"Unsupported fin axis {axis!r}")
@@ -95,6 +97,7 @@ def fin_axis_command(axis: str, magnitude: float) -> tuple[float, float, float, 
 
 def yaw_fin_command(magnitude: float) -> tuple[float, float, float, float]:
     """Return the differential yaw fin pattern using the canonical fin order."""
+    mapping = default_fin_mapping()
     mag = float(magnitude)
-    return tuple(sign * mag for sign in YAW_FIN_SIGNS)  # type: ignore[return-value]
+    return tuple(float(w * mag) for w in mapping.yaw_weights)  # type: ignore[return-value]
 
