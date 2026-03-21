@@ -32,6 +32,11 @@ import sys
 from pathlib import Path
 
 try:
+    import numpy as np
+except ImportError:
+    np = None  # type: ignore[assignment]
+
+try:
     from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
 except ImportError as e:
     raise ImportError(
@@ -54,6 +59,7 @@ from simulation.isaac.usd.parts_registry import (                      # noqa: E
     expected_mvp_prim_paths,
     load_fin_specs,
     FinSpec,
+    frd_to_zup,
 )
 # Negligible fin mass so runtime accepts the link; body carries effectively full vehicle mass.
 _FIN_MASS_KG = 1e-5
@@ -154,29 +160,6 @@ def _ensure_stage_metadata(stage: Usd.Stage) -> None:
 # ---------------------------------------------------------------------------
 # Physics API authoring
 # ---------------------------------------------------------------------------
-def _warn_ignored_legacy_config(vehicle_cfg: dict) -> None:
-    """Warn when legacy YAML geometry or inertia fields are present but ignored."""
-    ignored_fields: list[str] = []
-
-    mass_props_cfg = vehicle_cfg.get("mass_properties", {})
-    if mass_props_cfg.get("center_of_mass") is not None:
-        ignored_fields.append("vehicle.mass_properties.center_of_mass")
-    if mass_props_cfg.get("inertia_tensor") is not None:
-        ignored_fields.append("vehicle.mass_properties.inertia_tensor")
-
-    fins_cfg = vehicle_cfg.get("fins", {}).get("fins_config", [])
-    if any(fin.get("position") is not None for fin in fins_cfg):
-        ignored_fields.append("vehicle.fins.fins_config[*].position")
-
-    if ignored_fields:
-        joined = ", ".join(ignored_fields)
-        print(
-            "[postprocess_usd] WARNING: ignoring legacy YAML geometry fields: "
-            f"{joined}. Fin joints use authored USD transforms, and Isaac Sim/PhysX "
-            "will compute CoM/inertia from the colliders."
-        )
-
-
 def _load_total_vehicle_mass(vehicle_cfg: dict) -> float:
     """Load the total vehicle mass from the legacy vehicle config."""
     mass_props_cfg = vehicle_cfg.get("mass_properties", {})
@@ -199,17 +182,6 @@ def _compute_body_mass(total_vehicle_mass: float, fin_mass: float, num_fins: int
     return body_mass
 
 
-def _clear_authored_mass_distribution(mass_api: UsdPhysics.MassAPI) -> None:
-    """Remove authored CoM/inertia so Isaac Sim computes them from colliders."""
-    for attr in (
-        mass_api.GetCenterOfMassAttr(),
-        mass_api.GetDiagonalInertiaAttr(),
-        mass_api.GetPrincipalAxesAttr(),
-    ):
-        if attr.IsValid():
-            attr.Clear()
-
-
 def _clear_authored_inertia(mass_api: UsdPhysics.MassAPI) -> None:
     """Clear only inertia so Isaac Sim computes it; CoM is left as authored."""
     for attr in (
@@ -218,6 +190,77 @@ def _clear_authored_inertia(mass_api: UsdPhysics.MassAPI) -> None:
     ):
         if attr.IsValid():
             attr.Clear()
+
+
+def _decompose_inertia_tensor(
+    inertia_frd: list[list[float]],
+) -> tuple["Gf.Vec3f", "Gf.Quatf"]:
+    """Decompose a 3×3 inertia tensor (FRD body frame) for USD MassAPI authoring.
+
+    Converts from FRD body frame to Z-up prim frame, then eigendecomposes the
+    symmetric matrix into principal moments (diagonal) and principal axes (quaternion).
+
+    Args:
+        inertia_frd: 3×3 symmetric inertia tensor in FRD body frame (kg·m²).
+
+    Returns:
+        (diagonal_zup, principal_axes_quatf) suitable for USD MassAPI:
+          - GetDiagonalInertiaAttr().Set(diagonal_zup)
+          - GetPrincipalAxesAttr().Set(principal_axes_quatf)
+    """
+    if np is None:
+        raise ImportError(
+            "numpy is required for inertia tensor decomposition. "
+            "Install it or run from an Isaac Sim environment."
+        )
+
+    # FRD → Z-up: R = diag(1, -1, -1).  Inertia transforms as I_zup = R @ I_frd @ R^T.
+    # Since R is its own inverse (R² = I), off-diagonal Ixy and Ixz negate; Iyz is unchanged.
+    I = np.array(inertia_frd, dtype=float)
+    R = np.diag([1.0, -1.0, -1.0])
+    I_zup = R @ I @ R.T
+
+    # Eigendecompose symmetric matrix: I_zup = V @ diag(λ) @ V^T
+    eigenvalues, eigenvectors = np.linalg.eigh(I_zup)
+
+    # Ensure non-negative principal moments (numerical safety).
+    eigenvalues = np.maximum(eigenvalues, 0.0)
+
+    # Ensure the eigenvector matrix is a proper rotation (det = +1, not -1).
+    if np.linalg.det(eigenvectors) < 0:
+        eigenvectors[:, 0] = -eigenvectors[:, 0]
+
+    # Convert rotation matrix to quaternion via Shepperd's method.
+    rot = eigenvectors
+    trace = rot[0, 0] + rot[1, 1] + rot[2, 2]
+    if trace > 0:
+        s = 0.5 / math.sqrt(trace + 1.0)
+        w = 0.25 / s
+        x = (rot[2, 1] - rot[1, 2]) * s
+        y = (rot[0, 2] - rot[2, 0]) * s
+        z = (rot[1, 0] - rot[0, 1]) * s
+    elif rot[0, 0] > rot[1, 1] and rot[0, 0] > rot[2, 2]:
+        s = 2.0 * math.sqrt(1.0 + rot[0, 0] - rot[1, 1] - rot[2, 2])
+        w = (rot[2, 1] - rot[1, 2]) / s
+        x = 0.25 * s
+        y = (rot[0, 1] + rot[1, 0]) / s
+        z = (rot[0, 2] + rot[2, 0]) / s
+    elif rot[1, 1] > rot[2, 2]:
+        s = 2.0 * math.sqrt(1.0 + rot[1, 1] - rot[0, 0] - rot[2, 2])
+        w = (rot[0, 2] - rot[2, 0]) / s
+        x = (rot[0, 1] + rot[1, 0]) / s
+        y = 0.25 * s
+        z = (rot[1, 2] + rot[2, 1]) / s
+    else:
+        s = 2.0 * math.sqrt(1.0 + rot[2, 2] - rot[0, 0] - rot[1, 1])
+        w = (rot[1, 0] - rot[0, 1]) / s
+        x = (rot[0, 2] + rot[2, 0]) / s
+        y = (rot[1, 2] + rot[2, 1]) / s
+        z = 0.25 * s
+
+    diagonal = Gf.Vec3f(float(eigenvalues[0]), float(eigenvalues[1]), float(eigenvalues[2]))
+    principal_axes = Gf.Quatf(float(w), Gf.Vec3f(float(x), float(y), float(z)))
+    return diagonal, principal_axes
 
 
 def _body_local_bbox_center_z(stage: Usd.Stage) -> float:
@@ -231,9 +274,15 @@ def _body_local_bbox_center_z(stage: Usd.Stage) -> float:
     return 0.5 * (r.GetMin()[2] + r.GetMax()[2])
 
 
-def _add_root_physics(stage: Usd.Stage, body_mass: float) -> None:
+def _add_root_physics(stage: Usd.Stage, vehicle_cfg: dict, body_mass: float) -> None:
     """Apply ArticulationRootAPI to /Drone and RigidBodyAPI + MassAPI to /Drone/Body.
-    CoM is set to (0, 0, z) with z from body local bbox; inertia left for Isaac to compute.
+
+    When mass_properties.use_explicit is True in vehicle_cfg, authors explicit CoM
+    (FRD → Z-up converted) and inertia (eigendecomposed from full 3×3 YAML tensor).
+    Falls back to bbox-derived CoM and collider-derived inertia when use_explicit is
+    False or the required fields are absent.
+
+    Ref: specs/006-refactor-fin-physics/research.md RQ-3
     """
     root_prim = stage.GetPrimAtPath(DRONE_ROOT)
     body_prim = stage.GetPrimAtPath(BODY_PRIM)
@@ -241,9 +290,28 @@ def _add_root_physics(stage: Usd.Stage, body_mass: float) -> None:
     UsdPhysics.RigidBodyAPI.Apply(body_prim)
     mass_api = UsdPhysics.MassAPI.Apply(body_prim)
     mass_api.GetMassAttr().Set(body_mass)
-    com_z = _body_local_bbox_center_z(stage)
-    mass_api.GetCenterOfMassAttr().Set(Gf.Vec3f(0.0, 0.0, float(com_z)))
-    _clear_authored_inertia(mass_api)
+
+    mp = vehicle_cfg.get("mass_properties", {})
+    if mp.get("use_explicit", False) and "center_of_mass" in mp and "inertia_tensor" in mp:
+        # Author explicit CoM: convert FRD body frame → Z-up prim frame.
+        com_frd = [float(v) for v in mp["center_of_mass"]]
+        com_zup = frd_to_zup(*com_frd)
+        mass_api.GetCenterOfMassAttr().Set(Gf.Vec3f(*com_zup))
+
+        # Author explicit inertia: decompose full 3×3 tensor into principal moments + axes.
+        inertia_frd = [[float(v) for v in row] for row in mp["inertia_tensor"]]
+        diagonal, principal_axes = _decompose_inertia_tensor(inertia_frd)
+        mass_api.GetDiagonalInertiaAttr().Set(diagonal)
+        mass_api.GetPrincipalAxesAttr().Set(principal_axes)
+        print(
+            f"[postprocess_usd] Authored explicit CoM (Z-up)={tuple(com_zup)}, "
+            f"diagonal_inertia={tuple(float(v) for v in diagonal)}"
+        )
+    else:
+        # Fallback: bbox-derived CoM; let Isaac Sim compute inertia from colliders.
+        com_z = _body_local_bbox_center_z(stage)
+        mass_api.GetCenterOfMassAttr().Set(Gf.Vec3f(0.0, 0.0, float(com_z)))
+        _clear_authored_inertia(mass_api)
 
 
 def _add_fin_physics(stage: Usd.Stage, fin_specs: list[FinSpec], fin_mass: float) -> None:
@@ -309,15 +377,25 @@ def _add_collision_apis(stage: Usd.Stage, fin_specs: list[FinSpec]) -> None:
         else:
             fin_mesh_paths.append(f"{DRONE_ROOT}/{spec.prim_name}")
 
-    for path in [*body_mesh_paths, *fin_mesh_paths]:
+    # Body: retain convex decomposition for complex geometry.
+    for path in body_mesh_paths:
         prim = stage.GetPrimAtPath(path)
         if not prim.IsValid():
             continue
-        # Base collision API (enables participation in contact generation).
         UsdPhysics.CollisionAPI.Apply(prim)
-        # Mesh-specific approximation: convex decomposition of the mesh geometry.
         mesh_collision = UsdPhysics.MeshCollisionAPI.Apply(prim)
         mesh_collision.CreateApproximationAttr("convexDecomposition")
+
+    # Fins: use convex hull — simpler and more stable for thin flat surfaces.
+    # Convex decomposition of thin fins can produce degenerate shapes and solver warnings.
+    # Ref: specs/006-refactor-fin-physics/research.md RQ-4
+    for path in fin_mesh_paths:
+        prim = stage.GetPrimAtPath(path)
+        if not prim.IsValid():
+            continue
+        UsdPhysics.CollisionAPI.Apply(prim)
+        mesh_collision = UsdPhysics.MeshCollisionAPI.Apply(prim)
+        mesh_collision.CreateApproximationAttr("convexHull")
 
 
 def _create_fin_joints(
@@ -351,6 +429,24 @@ def _create_fin_joints(
         hinge_zup = _read_fin_hinge_from_stage(stage, fin_path)
         joint.GetLocalPos0Attr().Set(Gf.Vec3f(*hinge_zup))
         joint.GetLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
+
+        # Convention fix: apply 180° rotation around Z to BOTH joint local frames.
+        # The YAML hinge_axis is in FRD body frame, but the Blender-exported fin prims
+        # are in Z-up world orientation.  In Z-up coordinates, FRD +Y → -Y, so all four
+        # fin revolute joints produce rotation in the OPPOSITE direction from what the
+        # controller expects as "positive deflection".
+        #
+        # Setting localRot0 = localRot1 = R_180z:
+        #   - Preserves the zero-angle neutral position (R_180z^-1 · I · R_180z = I)
+        #   - Conjugation by R_180z maps R_Y(θ) → R_Y(-θ) and R_X(θ) → R_X(-θ),
+        #     effectively negating the rotation direction for both Y-axis (right/left fins)
+        #     and X-axis (fwd/aft fins).
+        # After this fix, a positive drive target (degrees) produces positive deflection
+        # per controller convention, and FinMapping is identity (no runtime sign hack).
+        # Ref: specs/006-refactor-fin-physics/research.md RQ-2
+        rot_flip = Gf.Quatf(0.0, Gf.Vec3f(0.0, 0.0, 1.0))  # 180° around Z: w=0, z=1
+        joint.GetLocalRot0Attr().Set(rot_flip)
+        joint.GetLocalRot1Attr().Set(rot_flip)
 
         drive_api = UsdPhysics.DriveAPI.Apply(joint.GetPrim(), "angular")
         drive_api.GetStiffnessAttr().Set(FIN_DRIVE_STIFFNESS)
@@ -404,7 +500,6 @@ def postprocess_drone_usd(
     # Load config and fin specs
     cfg         = load_config(config_path)
     vehicle_cfg = cfg.get("vehicle", cfg)
-    _warn_ignored_legacy_config(vehicle_cfg)
     fin_specs   = load_fin_specs(vehicle_cfg)
     if not fin_specs:
         raise ValueError("No fins found in vehicle config. Check fins.fins_config.")
@@ -448,8 +543,7 @@ def postprocess_drone_usd(
 
     _ensure_stage_metadata(stage)
 
-    # Author mass only; let Isaac Sim derive CoM/inertia from the colliders.
-    _add_root_physics(stage, body_mass)
+    _add_root_physics(stage, vehicle_cfg, body_mass)
     _strip_rigid_body_from_visual_children(stage)
     _add_fin_physics(stage, fin_specs, fin_mass)
     _add_collision_apis(stage, fin_specs)
@@ -480,8 +574,8 @@ def _main() -> None:
         "--config",
         default="simulation/configs/default_vehicle.yaml",
         help=(
-            "Vehicle YAML config used for total mass, fin mass, and joint limits. "
-            "Fin positions and explicit CoM/inertia are ignored."
+            "Vehicle YAML config used for total mass, fin mass, joint limits, "
+            "and explicit CoM/inertia (from mass_properties section)."
         ),
     )
     parser.add_argument(

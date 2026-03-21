@@ -48,14 +48,14 @@ class FinMapping:
         return cls(
             joint_source_indices=tuple(
                 _as_int_list(
-                    data.get("joint_source_indices", [1, 0, 3, 2]),
+                    data.get("joint_source_indices", [0, 1, 2, 3]),
                     expected=4,
                     name="joint_source_indices",
                 )
             ),
             joint_signs=tuple(
                 _as_float_list(
-                    data.get("joint_signs", [-1.0, -1.0, -1.0, -1.0]),
+                    data.get("joint_signs", [1.0, 1.0, 1.0, 1.0]),
                     expected=4,
                     name="joint_signs",
                 )
@@ -85,7 +85,13 @@ class FinMapping:
 
 
 def default_fin_mapping() -> FinMapping:
-    """Default mapping matching the current Isaac/USD setup."""
+    """Identity mapping — USD hinge axes are authored to match controller convention.
+
+    As of feature 006-refactor-fin-physics, the USD joint frames include a 180° localRot
+    flip so positive drive target = positive deflection per controller convention.
+    No runtime index swap or sign negation is needed.
+    Ref: specs/006-refactor-fin-physics/research.md RQ-2
+    """
     return FinMapping.from_dict({})
 
 
@@ -159,8 +165,8 @@ def derive_mapping_from_axis_response(
         yaw = [-1.0, 1.0, -1.0, 1.0]
 
     return FinMapping(
-        joint_source_indices=(1, 0, 3, 2),
-        joint_signs=(-1.0, -1.0, -1.0, -1.0),
+        joint_source_indices=(0, 1, 2, 3),
+        joint_signs=(1.0, 1.0, 1.0, 1.0),
         pitch_weights=tuple(pitch),  # type: ignore[arg-type]
         roll_weights=tuple(roll),  # type: ignore[arg-type]
         yaw_weights=tuple(yaw),  # type: ignore[arg-type]

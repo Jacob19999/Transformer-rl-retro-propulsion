@@ -1,29 +1,20 @@
 fin_mapping:
-  joint_source_indices:
-  - 1
-  - 0
-  - 3
-  - 2
-  joint_signs:
-  - -1.0
-  - -1.0
-  - -1.0
-  - -1.0
-  pitch_weights:
-  - 0.0
-  - 0.0
-  - 0.0
-  - 0.0
-  roll_weights:
-  - 0.0
-  - 0.0
-  - 0.0
-  - 0.0
-  yaw_weights:
-  - 1.0
-  - 1.0
-  - -1.0
-  - -1.0
+  # Identity mapping — USD hinge axes corrected at authoring time (feature 006).
+  # positive drive target → positive deflection per controller convention.
+  # No runtime index swap or sign negation needed.
+  # Ref: specs/006-refactor-fin-physics/research.md RQ-2
+  joint_source_indices: [0, 1, 2, 3]
+  joint_signs: [1.0, 1.0, 1.0, 1.0]
+
+  # Controller mixing weights (canonical fin order: Right, Left, Fwd, Aft)
+  # Right+Left fins (indices 0,1) produce pitch (FRD +X lift)
+  # Fwd+Aft fins (indices 2,3) produce roll (FRD -Y / +Y lift)
+  # Differential pattern provides secondary yaw authority from 3° cant angle
+  pitch_weights: [1.0, 1.0, 0.0, 0.0]
+  roll_weights: [0.0, 0.0, 1.0, 1.0]
+  yaw_weights: [-1.0, 1.0, -1.0, 1.0]
+
+  # Historical calibration data (kept for reference; weights above supersede)
   generated_by: calibrate_fin_mapping.py
   measurement:
     thrust: 0.7

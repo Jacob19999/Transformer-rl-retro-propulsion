@@ -46,10 +46,27 @@ FIN_AXIS_LABELS = (
     "AftFin",
 )
 
-# Visual-mesh joint sign correction (Right, Left, Fwd, Aft) applied only when
-# writing joint position targets for Isaac articulation drives.
-# This does not change controller/aero torque conventions.
-FIN_JOINT_VISUAL_SIGN = (-1.0, -1.0, -1.0, -1.0)
+# ---------------------------------------------------------------------------
+# Joint unit convention (IsaacLab / PhysX)
+# ---------------------------------------------------------------------------
+# IsaacLab uses DEGREES for both joint position targets and joint position readback:
+#   - Write path: convert rad → deg, call set_joint_position_target(deg)
+#   - Read path:  read joint_pos (deg), convert deg → rad unconditionally
+# Do NOT use a heuristic threshold (e.g. max_abs > 3.5) to detect units —
+# it misclassifies small deflections (< 3.5 deg) as radians and fails silently.
+# USD angular limits and drive targets are also authored in degrees.
+# Ref: specs/006-refactor-fin-physics/research.md RQ-1
+
+# ---------------------------------------------------------------------------
+# Sign convention (eliminated by USD hinge axis fix)
+# ---------------------------------------------------------------------------
+# FIN_JOINT_VISUAL_SIGN was (-1,-1,-1,-1) — a runtime sign hack to compensate
+# for hinge axes being authored in the wrong direction.  As of feature 006,
+# the USD joint frames are corrected at authoring time (postprocess_usd.py
+# applies a 180° localRot flip to all four fin joints so positive drive target
+# produces positive deflection per controller convention).  FinMapping is now
+# identity; no runtime sign correction is needed.
+# Ref: specs/006-refactor-fin-physics/research.md RQ-2
 
 # Fin joint drive constants are authored in the USD postprocessor and mirrored
 # by the runtime actuator config.

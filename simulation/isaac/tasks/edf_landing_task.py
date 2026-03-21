@@ -92,6 +92,7 @@ from simulation.isaac.fin_mapping import FinMapping, default_fin_mapping, load_f
 from simulation.isaac.vehicle_params import load_isaac_vehicle_params  # noqa: E402
 from simulation.isaac.wind.isaac_wind_model import IsaacWindModel  # noqa: E402
 from simulation.isaac.debug_draw import ForceGizmoDrawer  # noqa: E402
+from simulation.isaac.fin_telemetry import FinTelemetryBuffer  # noqa: E402
 from simulation.isaac.quaternion_isaac import (  # noqa: E402
     rotate_body_to_world_wxyz,
     rotate_world_to_body_wxyz,
@@ -229,6 +230,12 @@ class EdfLandingTaskCfg(DirectRLEnvCfg):
     # draw interface simply returns a no-op.
     debug_draw_forces: bool = False
 
+    # Per-fin telemetry ring buffer (GPU tensors, zero overhead when disabled).
+    # Records cmd_angle, meas_angle, link_pos/quat, exhaust_vel, aoa,
+    # aero_force, and joint_wrench per fin per step.
+    debug_fin_telemetry: bool = False       # Enable recording
+    debug_fin_telemetry_save: bool = False  # Flush .pt file on episode end
+
 
 # ---------------------------------------------------------------------------
 # Task implementation (T014-T020)
@@ -281,13 +288,6 @@ class EdfLandingTask(DirectRLEnv):
         self._fin_mapping: FinMapping = (
             load_fin_mapping(mapping_path) if mapping_path else default_fin_mapping()
         )
-        self._fin_joint_source_idx = torch.tensor(
-            self._fin_mapping.joint_source_indices, dtype=torch.long, device=self.device
-        )
-        self._fin_joint_signs = torch.tensor(
-            self._fin_mapping.joint_signs, dtype=torch.float32, device=self.device
-        )
-
         # Lift directions remain in config for now; fin anchor positions come from the USD asset.
         fin_specs = load_fin_specs(vehicle_data)
         self._fin_lift = torch.tensor(
@@ -321,8 +321,8 @@ class EdfLandingTask(DirectRLEnv):
         self._body_com_default_frd = _zup_to_frd_tensor(self.robot.data.body_com_pos_b[0, self._body_id, :])
         self._body_inertia_default = self.robot.data.default_inertia[0, self._body_id, :].reshape(3, 3).clone()
         print(
-            "[EdfLandingTask] WARNING: ignoring YAML fin positions and explicit CoM/inertia. "
-            f"Using Isaac Sim asset data instead: total_mass={self._mass:.3f} kg, "
+            "[EdfLandingTask] Mass properties from Isaac asset (authored from YAML via postprocess_usd): "
+            f"total_mass={self._mass:.3f} kg, "
             f"body_com_frd={tuple(float(x) for x in self._body_com_default_frd.tolist())}"
         )
         print(
@@ -395,6 +395,18 @@ class EdfLandingTask(DirectRLEnv):
             ForceGizmoDrawer(force_scale=0.25, torque_scale=0.25, max_envs=1)
             if cfg.debug_draw_forces else None
         )
+
+        # Per-fin telemetry ring buffer (opt-in, zero overhead when disabled)
+        self._fin_telemetry: FinTelemetryBuffer | None = (
+            FinTelemetryBuffer(
+                num_envs=self.num_envs,
+                max_steps=self._max_steps,
+                device=self.device,
+            )
+            if cfg.debug_fin_telemetry else None
+        )
+        self._fin_telemetry_save: bool = cfg.debug_fin_telemetry_save
+        self._fin_telemetry_episode: int = 0
 
     # ------------------------------------------------------------------
     # Runtime toggles (PID tuning / evaluation)
@@ -625,6 +637,15 @@ class EdfLandingTask(DirectRLEnv):
         if self._wind_model is not None:
             self._wind_model.reset(env_ids)
 
+        # Telemetry flush + reset on full-batch episode end
+        if self._fin_telemetry is not None and len(env_ids) == self.num_envs:
+            if self._fin_telemetry_save:
+                import os
+                out_path = f"runs/fin_telemetry/ep{self._fin_telemetry_episode:05d}.pt"
+                self._fin_telemetry.flush(out_path)
+            self._fin_telemetry.reset()
+            self._fin_telemetry_episode += 1
+
         # Sample random altitude and velocity
         alt = torch.zeros(n, device=self.device).uniform_(
             self.cfg.spawn_altitude_min, self.cfg.spawn_altitude_max
@@ -748,15 +769,16 @@ class EdfLandingTask(DirectRLEnv):
             print("[EdfLandingTask] WARNING: Could not find 4 fin joints! Fins will not move.")
 
     def _read_fin_joint_pos_rad(self) -> torch.Tensor:
-        """Read current articulation fin joint positions in radians."""
+        """Read current articulation fin joint positions in radians.
+
+        IsaacLab reports joint positions in degrees (matching USD-authored angular limits
+        and drive targets). Convert unconditionally to radians.
+        Ref: specs/006-refactor-fin-physics/research.md RQ-1
+        """
         if not self._fin_joint_ids:
             return torch.zeros((self.num_envs, 4), dtype=torch.float32, device=self.device)
         joint_pos = self.robot.data.joint_pos[:, self._fin_joint_ids]
-        # Isaac builds differ: some expose deg for authored angular drives.
-        max_abs = float(joint_pos.detach().abs().max().item()) if joint_pos.numel() > 0 else 0.0
-        if max_abs > 3.5:
-            joint_pos = torch.deg2rad(joint_pos)
-        return joint_pos
+        return torch.deg2rad(joint_pos)
 
     def _apply_action(self) -> None:
         """Apply forces/torques each decimation substep using current lag state."""
@@ -771,10 +793,22 @@ class EdfLandingTask(DirectRLEnv):
         # ----------------------------------------------------------------
         self._ensure_fin_joint_ids()
         if self._fin_joint_ids:
-            # Apply calibrated canonical->joint mapping instead of hardcoded swap/sign.
-            fin_target_rad = self.fin_deflections_cmd.index_select(1, self._fin_joint_source_idx)
-            fin_target_rad = fin_target_rad * self._fin_joint_signs
-            fin_target_deg = fin_target_rad * (180.0 / math.pi)
+            # FinMapping must be identity after the USD hinge axis convention fix.
+            # If a non-identity mapping is loaded, fail loudly rather than silently
+            # applying the wrong sign/order and masking physics errors.
+            # Ref: specs/006-refactor-fin-physics/research.md RQ-2
+            assert list(self._fin_mapping.joint_source_indices) == [0, 1, 2, 3], (
+                "Non-identity joint_source_indices detected. "
+                f"Got {self._fin_mapping.joint_source_indices}. "
+                "Update the USD hinge axes at authoring time instead of using runtime remapping."
+            )
+            assert all(s == 1.0 for s in self._fin_mapping.joint_signs), (
+                "Non-identity joint_signs detected. "
+                f"Got {self._fin_mapping.joint_signs}. "
+                "Update the USD hinge axes at authoring time instead of using runtime sign correction."
+            )
+            # Direct pass-through: rad → deg, no index swap or sign correction needed.
+            fin_target_deg = self.fin_deflections_cmd * (180.0 / math.pi)
             self.robot.set_joint_position_target(fin_target_deg, joint_ids=self._fin_joint_ids)
             self.fin_deflections_actual.copy_(self._read_fin_joint_pos_rad())
 
@@ -810,6 +844,36 @@ class EdfLandingTask(DirectRLEnv):
         # Apply aerodynamic forces directly to each fin link. PhysX propagates
         # the resulting reactions to the main body; no manual tau_fins needed.
         forces[:, 1:, :] += fin_forces_world
+
+        # ----------------------------------------------------------------
+        # Per-fin telemetry (opt-in; zero overhead when disabled)
+        # ----------------------------------------------------------------
+        if self._fin_telemetry is not None:
+            step_idx = int(self._episode_step[0].item())
+            # Compute angle of attack per fin (magnitude of measured deflection, clamped)
+            aoa = self.fin_deflections_actual.abs()
+            # Exhaust velocity: omega_fan / omega_fan_max * v_exhaust_nominal
+            omega_ratio = (self._omega_fan / max(self._fin_aero.omega_fan_max, 1e-6)).clamp(0.0, 1.0)
+            exhaust_vel = (omega_ratio.unsqueeze(-1) * self._fin_aero.v_exhaust_nominal).expand(num_envs, 4)
+            # Fin link world positions and quaternions
+            fin_link_pos_w = self.robot.data.body_pos_w[:, self._fin_body_ids, :]   # (N, 4, 3)
+            fin_link_quat_w = self.robot.data.body_quat_w[:, self._fin_body_ids, :] # (N, 4, 4)
+            # Joint wrench (incoming wrench at each fin link body)
+            try:
+                joint_wrench = self.robot.data.body_incoming_joint_wrench_b[:, self._fin_body_ids, :]  # (N, 4, 6)
+            except AttributeError:
+                joint_wrench = torch.zeros((num_envs, 4, 6), device=self.device)
+            self._fin_telemetry.record(
+                step=step_idx,
+                cmd_angle=self.fin_deflections_cmd,
+                meas_angle=self.fin_deflections_actual,
+                link_pos=fin_link_pos_w,
+                link_quat=fin_link_quat_w,
+                exhaust_vel=exhaust_vel,
+                aoa=aoa,
+                aero_force=fin_forces_world,
+                joint_wrench=joint_wrench,
+            )
 
         # Gyro precession torque: τ_gyro = −ω_body × h_fan  (body frame → world frame)
         # PhysX handles ω×(I·ω) internally; we only inject the fan angular momentum term.

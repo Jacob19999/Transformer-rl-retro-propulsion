@@ -16,3 +16,9 @@ environment_config_path: simulation/configs/default_environment.yaml
 
 # USD asset
 drone_usd_path: simulation/isaac/usd/drone_v2_physics.usd
+
+# Debug options
+debug:
+  # Per-fin telemetry ring buffer (GPU tensors, zero overhead when disabled)
+  fin_telemetry: false       # Enable per-fin telemetry recording each step
+  fin_telemetry_save: false  # Flush buffer to .pt file on episode end
