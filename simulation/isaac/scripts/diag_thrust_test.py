@@ -92,8 +92,8 @@ def _run_diagnostic(args) -> None:
 
     config_path = resolve_repo_path(args.config)
 
-    with config_path.open("r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
+    from simulation.config_loader import load_config  # noqa: E402
+    cfg = load_config(config_path)
     cfg["spawn_altitude_range"] = [args.spawn_alt, args.spawn_alt]
     cfg["spawn_velocity_magnitude_range"] = [0.0, 0.0]
 

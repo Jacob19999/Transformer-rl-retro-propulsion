@@ -58,8 +58,8 @@ def _unwrap_angle(prev: float | None, current: float) -> float:
 
 def _prepare_env_config(args) -> tuple[Path, Path | None]:
     cfg_path = resolve_repo_path(args.config or (_LIFTOFF_CONFIG if args.mode == "liftoff" else _ZERO_G_CONFIG))
-    with cfg_path.open("r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
+    from simulation.config_loader import load_config  # noqa: E402
+    cfg = load_config(cfg_path)
 
     cfg["vehicle_config_path"] = str(resolve_repo_path(args.vehicle_config))
     cfg["spawn_velocity_magnitude_range"] = [0.0, 0.0]

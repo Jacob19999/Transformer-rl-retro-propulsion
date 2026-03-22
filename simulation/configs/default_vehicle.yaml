@@ -22,176 +22,25 @@ vehicle:
   #   Cd_local:        shape-specific drag coefficient (0.0 if shielded/internal)
   #   randomize_mass:  fractional perturbation per episode (optional, e.g., 0.10 = ±10%)
 
+  # ── TESTING/VALIDATION PHASE: Single combined body ──────────────
+  # All components lumped into one primitive with centered CoM and
+  # symmetric inertia for predictable response during testing.
+  # Matches the USD hierarchy: /Drone/Body/edf_drone (single mesh).
+  # TODO: Expand to per-component primitives for sim-to-real fidelity.
   primitives:
-    # ── EDF Duct (outer shroud) ──
-    - name: "edf_duct"
+    - name: "edf_body_combined"
       shape: "cylinder"
-      mass: 0.85               # kg (aluminium duct shroud)
-      radius: 0.045            # m (90 mm outer diameter)
-      height: 0.15             # m (duct axial length)
-      position: [0, 0, 0.05]  # m, body frame — slightly below geometric center
-      orientation: [0, 0, 0]   # aligned with body z-axis (thrust axis)
-      surface_area: 0.0424     # m², 2πrh + 2πr² (lateral + end caps)
-      drag_facing:
-        x: 0.0135              # m², side profile (d × h)
-        y: 0.0135              # m², side profile
-        z: 0.00636             # m², top/bottom (πr²)
-      Cd_local: 0.82           # bluff cylinder
-
-    # ── EDF Motor + Rotor Assembly ──
-    - name: "edf_motor_rotor"
-      shape: "cylinder"
-      mass: 0.35               # kg (motor stator + rotor + hub)
-      radius: 0.040            # m
-      height: 0.04             # m
-      position: [0, 0, 0.06]  # m, centered inside duct
-      orientation: [0, 0, 0]
-      surface_area: 0.0        # internal — not exposed to external airstream
-      drag_facing: { x: 0, y: 0, z: 0 }
-      Cd_local: 0.0            # shielded by duct
-
-    # ── 8S LiPo Battery Pack ──
-    - name: "battery_8s_lipo"
-      shape: "box"
-      mass: 0.80               # kg
-      dimensions: [0.15, 0.05, 0.04]  # m [length_x, width_y, height_z]
-      position: [0.02, 0, -0.03]      # m, slightly forward and above CoM
-      orientation: [0, 0, 0]
-      surface_area: 0.031      # m², 2(lw + lh + wh)
-      drag_facing:
-        x: 0.002               # m², w × h
-        y: 0.006               # m², l × h
-        z: 0.0075              # m², l × w
-      Cd_local: 1.05           # box/rectangular prism
-
-    # ── Jetson Nano + Carrier Board ──
-    - name: "jetson_nano"
-      shape: "box"
-      mass: 0.14               # kg
-      dimensions: [0.08, 0.08, 0.03]  # m
-      position: [-0.04, 0, -0.05]     # m, aft and above
-      orientation: [0, 0, 0]
-      surface_area: 0.0224     # m²
-      drag_facing:
-        x: 0.0024              # m²
-        y: 0.0024              # m²
-        z: 0.0064              # m²
-      Cd_local: 1.05
-
-    # ── Carbon Fibre Frame + 3D-Printed Joints ──
-    - name: "frame_structure"
-      shape: "cylinder"
-      mass: 0.50               # kg
-      radius: 0.06             # m (effective outer envelope)
+      mass: 3.13               # kg (total vehicle mass)
+      radius: 0.045            # m (90 mm duct outer radius)
       height: 0.30             # m (total airframe height)
       position: [0, 0, 0]     # m, centered at body frame origin
       orientation: [0, 0, 0]
-      surface_area: 0.113      # m², lateral surface (2πrh)
+      surface_area: 0.251      # m², aggregated from all components
       drag_facing:
-        x: 0.036               # m², d × h
-        y: 0.036               # m²
-        z: 0.01131             # m², πr²
-      Cd_local: 0.50           # semi-streamlined open truss
-
-    # ── ESC (120 A) ──
-    - name: "esc_120a"
-      shape: "box"
-      mass: 0.12               # kg
-      dimensions: [0.07, 0.04, 0.02]  # m
-      position: [0.03, 0.02, -0.02]   # m
-      orientation: [0, 0, 0]
-      surface_area: 0.010      # m²
-      drag_facing:
-        x: 0.0008              # m²
-        y: 0.0014              # m²
-        z: 0.0028              # m²
-      Cd_local: 1.05
-
-    # ── Wiring Harness + Connectors ──
-    - name: "wiring_misc"
-      shape: "sphere"
-      mass: 0.10               # kg (aggregate)
-      radius: 0.025            # m (effective bounding sphere)
-      position: [0, 0, -0.02] # m
-      surface_area: 0.00785    # m², 4πr²
-      drag_facing:
-        x: 0.00196             # m², πr²
-        y: 0.00196             # m²
-        z: 0.00196             # m²
-      Cd_local: 0.47           # sphere
-
-    # ── IMU (BNO085) ──
-    - name: "imu_bno085"
-      shape: "box"
-      mass: 0.01               # kg
-      dimensions: [0.02, 0.02, 0.005]  # m
-      position: [0, 0, -0.06] # m, mounted high on frame (above CoM)
-      orientation: [0, 0, 0]
-      surface_area: 0.0012     # m²
-      drag_facing: { x: 0, y: 0, z: 0 }
-      Cd_local: 0.0            # negligible
-
-    # ── Optical Flow Camera (PX4) ──
-    - name: "optical_flow_camera"
-      shape: "box"
-      mass: 0.02               # kg
-      dimensions: [0.03, 0.03, 0.01]  # m
-      position: [0, 0, -0.10] # m, mounted on underside (top in FRD = above)
-      orientation: [0, 0, 0]
-      surface_area: 0.003      # m²
-      drag_facing: { x: 0, y: 0, z: 0 }
-      Cd_local: 0.0            # negligible
-
-    # ── Servo Actuators (4× Freewing 9 g Digital Metal Gear for fin control) ──
-    - name: "servo_fin_1"
-      shape: "box"
-      mass: 0.010              # kg (~9–12 g, Freewing 9 g servo)
-      dimensions: [0.0235, 0.012, 0.027]  # m (23.5×12×27 mm)
-      position: [0.060, 0, 0.12]   # m, forward/nose fin servo (FRD +X)
-      orientation: [0, 0, 0]
-      surface_area: 0.0023     # m²
-      Cd_local: 0.0            # inside duct shroud
-
-    - name: "servo_fin_2"
-      shape: "box"
-      mass: 0.010
-      dimensions: [0.0235, 0.012, 0.027]
-      position: [-0.060, 0, 0.12]  # m, aft fin servo (FRD -X)
-      orientation: [0, 0, 0]
-      surface_area: 0.0023
-      Cd_local: 0.0
-
-    - name: "servo_fin_3"
-      shape: "box"
-      mass: 0.010
-      dimensions: [0.0235, 0.012, 0.027]
-      position: [0, -0.060, 0.12]  # m, left fin servo (FRD -Y)
-      orientation: [0, 0, 0]
-      surface_area: 0.0023
-      Cd_local: 0.0
-
-    - name: "servo_fin_4"
-      shape: "box"
-      mass: 0.010
-      dimensions: [0.0235, 0.012, 0.027]
-      position: [0, 0.060, 0.12]   # m, right fin servo (FRD +Y)
-      orientation: [0, 0, 0]
-      surface_area: 0.0023
-      Cd_local: 0.0
-
-    # ── Variable Payload (domain randomization target) ──
-    - name: "payload_variable"
-      shape: "sphere"
-      mass: 0.20               # kg (water / ballast for CoM shift tests)
-      radius: 0.03             # m
-      position: [0, 0, -0.08] # m
-      surface_area: 0.01131    # m², 4πr²
-      drag_facing:
-        x: 0.00283             # m², πr²
-        y: 0.00283
-        z: 0.00283
-      Cd_local: 0.47
-      randomize_mass: 0.10     # ±10% uniform perturbation per episode
+        x: 0.060               # m², aggregated side profile
+        y: 0.060               # m², symmetric with x for predictable response
+        z: 0.039               # m², aggregated top/bottom profile
+      Cd_local: 0.70           # blended average for combined shape
 
   # ─── EDF Propulsion System ───────────────────────────────────────
   # Complete EDF spec for thrust model, ground effect, gyroscopic coupling.
@@ -335,13 +184,17 @@ vehicle:
   # Update when the physical drone is weighed / CAD is finalized.
   mass_properties:
     use_explicit: true         # true = use values below; false = compute from primitives
-    source: "primitives"       # "primitives" | "cad" | "measured" — provenance tag
+    source: "testing"          # "primitives" | "cad" | "measured" | "testing"
     total_mass: 3.13           # kg
-    center_of_mass: [0.0045, 0.0008, 0.0046]   # [x, y, z] m, FRD body frame
+    # TESTING PHASE: Centered CoM and symmetric diagonal inertia.
+    # Ixx=Iyy gives equal pitch/roll authority for predictable response.
+    # Izz ≈ 1/3 of Ixx — typical for a pencil-body vehicle.
+    # Original per-component values preserved in git history.
+    center_of_mass: [0.0, 0.0, 0.0]             # [x, y, z] m, centered for testing
     inertia_tensor:                              # kg·m², about CoM, body frame axes
-      - [0.01358, -0.00006,  0.00034]
-      - [-0.00006, 0.01549,  0.00006]
-      - [0.00034,  0.00006,  0.00480]
+      - [0.015,  0.0,   0.0  ]
+      - [0.0,    0.015, 0.0  ]
+      - [0.0,    0.0,   0.005]
 
   # ─── Computed Properties (auto-populated at init when not using explicit) ──
   _computed:
