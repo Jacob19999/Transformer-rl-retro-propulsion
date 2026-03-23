@@ -56,7 +56,12 @@ def _run_trial(
     settle_steps: int,
     hold_steps: int,
     lock_altitude_m: float,
-) -> float:
+) -> tuple[float, dict[str, Any] | None]:
+    """Run a single axis-isolation trial and return (signed_delta_omega, force_snapshot).
+
+    *force_snapshot* is a dict with per-fin magnitudes and vectors from the
+    last hold step (or ``None`` if the force gizmo is not active).
+    """
     obs, _ = env.reset()
     _ = obs
     lock_position_at_altitude(env, altitude_m=lock_altitude_m)
@@ -83,7 +88,20 @@ def _run_trial(
         peak_delta = max(peak_delta, abs(omega - omega0))
     omega_end = float(task.robot.data.root_ang_vel_b[0, axis_i].item())
     signed_delta = omega_end - omega0
-    return signed_delta if abs(signed_delta) >= peak_delta * 0.6 else np.sign(signed_delta) * peak_delta
+    delta = signed_delta if abs(signed_delta) >= peak_delta * 0.6 else np.sign(signed_delta) * peak_delta
+
+    # Capture force gizmo snapshot from the last hold step.
+    force_snap: dict[str, Any] | None = None
+    gizmo = getattr(task, "_force_gizmo", None)
+    if gizmo is not None and gizmo.fin_magnitudes:
+        force_snap = {
+            "fin_magnitudes": list(gizmo.fin_magnitudes[0]),
+            "fin_vectors": [list(v) for v in gizmo.fin_vectors[0]],
+            "thrust_mag": gizmo.thrust_magnitudes[0] if gizmo.thrust_magnitudes else 0.0,
+            "torque_mag": gizmo.torque_magnitudes[0] if gizmo.torque_magnitudes else 0.0,
+        }
+
+    return delta, force_snap
 
 
 def main() -> None:
@@ -141,12 +159,33 @@ def main() -> None:
             per_fin: list[dict[str, Any]] = []
             dominant_axis: list[str] = []
             dominant_sign: list[float] = []
+            yaw_torque_signs: list[float] = []
             axis_order = ("roll", "pitch", "yaw")
+
+            # Read body inertia diagonal for torque normalization.
+            # The calibration measures angular rate (ω), but the controller cares
+            # about torque authority (τ = I·α ∝ I·ω).  With Izz ≪ Ixx=Iyy the
+            # small yaw inertia amplifies yaw rates, fooling a raw-ω classifier
+            # into labelling every fin as yaw-dominant.  Normalizing ω by I gives
+            # a torque proxy that correctly identifies pitch/roll as dominant.
+            inertia_diag = env._task._body_inertia_default.diagonal().cpu()
+            inertia_scale = {
+                "roll": float(inertia_diag[0]),
+                "pitch": float(inertia_diag[1]),
+                "yaw": float(inertia_diag[2]),
+            }
+            print(
+                f"[calibrate_fin_mapping] Inertia diag (Z-up): "
+                f"Ixx={inertia_scale['roll']:.6f}  "
+                f"Iyy={inertia_scale['pitch']:.6f}  "
+                f"Izz={inertia_scale['yaw']:.6f}"
+            )
 
             for fin_idx in range(4):
                 axis_deltas: dict[str, float] = {}
+                fin_force_snaps: dict[str, dict[str, Any] | None] = {}
                 for axis in axis_order:
-                    pos = _run_trial(
+                    pos, pos_snap = _run_trial(
                         env,
                         fin_idx=fin_idx,
                         fin_cmd=abs(float(args.deflection)),
@@ -156,7 +195,7 @@ def main() -> None:
                         hold_steps=int(args.hold_steps),
                         lock_altitude_m=float(args.lock_altitude),
                     )
-                    neg = _run_trial(
+                    neg, neg_snap = _run_trial(
                         env,
                         fin_idx=fin_idx,
                         fin_cmd=-abs(float(args.deflection)),
@@ -168,30 +207,58 @@ def main() -> None:
                     )
                     chosen = pos if abs(pos) >= abs(neg) else neg
                     axis_deltas[axis] = float(chosen)
+                    fin_force_snaps[axis] = pos_snap if abs(pos) >= abs(neg) else neg_snap
 
-                dom = max(axis_order, key=lambda a: abs(axis_deltas[a]))
-                dom_sign = 1.0 if axis_deltas[dom] >= 0.0 else -1.0
+                # Normalize by inertia to get torque authority (τ ∝ I·ω).
+                torque_deltas = {a: axis_deltas[a] * inertia_scale[a] for a in axis_order}
+                dom = max(axis_order, key=lambda a: abs(torque_deltas[a]))
+                dom_sign = 1.0 if torque_deltas[dom] >= 0.0 else -1.0
                 dominant_axis.append(dom)
                 dominant_sign.append(dom_sign)
-                per_fin.append(
-                    {
-                        "fin_index": fin_idx,
-                        "delta_omega_roll": axis_deltas["roll"],
-                        "delta_omega_pitch": axis_deltas["pitch"],
-                        "delta_omega_yaw": axis_deltas["yaw"],
-                        "dominant_axis": dom,
-                        "dominant_sign": dom_sign,
-                    }
-                )
+                yaw_torque_signs.append(1.0 if torque_deltas["yaw"] >= 0.0 else -1.0)
+                fin_entry: dict[str, Any] = {
+                    "fin_index": fin_idx,
+                    "delta_omega_roll": axis_deltas["roll"],
+                    "delta_omega_pitch": axis_deltas["pitch"],
+                    "delta_omega_yaw": axis_deltas["yaw"],
+                    "torque_roll": torque_deltas["roll"],
+                    "torque_pitch": torque_deltas["pitch"],
+                    "torque_yaw": torque_deltas["yaw"],
+                    "dominant_axis": dom,
+                    "dominant_sign": dom_sign,
+                }
+
+                # Attach force gizmo snapshot from the dominant-axis trial.
+                dom_snap = fin_force_snaps.get(dom)
+                if dom_snap is not None:
+                    fin_entry["force_magnitude"] = dom_snap["fin_magnitudes"][fin_idx]
+                    fin_entry["force_vector"] = dom_snap["fin_vectors"][fin_idx]
+                    fin_entry["thrust_magnitude"] = dom_snap["thrust_mag"]
+
+                per_fin.append(fin_entry)
+
                 print(
                     f"[calibrate_fin_mapping] fin={fin_idx+1} "
                     f"dω_roll={axis_deltas['roll']:+.5f} "
                     f"dω_pitch={axis_deltas['pitch']:+.5f} "
                     f"dω_yaw={axis_deltas['yaw']:+.5f} "
+                    f"| τ_roll={torque_deltas['roll']:+.6f} "
+                    f"τ_pitch={torque_deltas['pitch']:+.6f} "
+                    f"τ_yaw={torque_deltas['yaw']:+.6f} "
                     f"-> {dom} ({dom_sign:+.0f})"
                 )
+                if dom_snap is not None:
+                    fmag = dom_snap["fin_magnitudes"][fin_idx]
+                    fvec = dom_snap["fin_vectors"][fin_idx]
+                    print(
+                        f"                        "
+                        f"|F| = {fmag:.4f} N  "
+                        f"F = ({fvec[0]:+.4f}, {fvec[1]:+.4f}, {fvec[2]:+.4f})"
+                    )
 
-            mapping = derive_mapping_from_axis_response(dominant_axis, dominant_sign)
+            mapping = derive_mapping_from_axis_response(
+                dominant_axis, dominant_sign, yaw_torque_signs=yaw_torque_signs,
+            )
             payload = {
                 "fin_mapping": {
                     "joint_source_indices": list(mapping.joint_source_indices),
@@ -205,6 +272,11 @@ def main() -> None:
                         "deflection": float(args.deflection),
                         "settle_steps": int(args.settle_steps),
                         "hold_steps": int(args.hold_steps),
+                        "inertia_diag_zup": {
+                            "Ixx": inertia_scale["roll"],
+                            "Iyy": inertia_scale["pitch"],
+                            "Izz": inertia_scale["yaw"],
+                        },
                         "per_fin": per_fin,
                     },
                 }

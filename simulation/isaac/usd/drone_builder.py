@@ -157,7 +157,7 @@ def print_stage_info(stage) -> None:  # stage: Usd.Stage
         t = prim.GetTypeName() if prim and prim.IsValid() else None
         print(f"[drone_usd] {p} type={t}")
 
-    # Print joint info
+    # Print joint info with localRot / axis details
     for fin_name in FIN_PRIM_NAMES:
         candidates = [
             f"{DRONE_ROOT}/{fin_name}/RevoluteJoint",
@@ -167,7 +167,22 @@ def print_stage_info(stage) -> None:  # stage: Usd.Stage
         for jp in candidates:
             prim = stage.GetPrimAtPath(jp)
             if prim and prim.IsValid():
-                print(f"[drone_usd] {jp} type={prim.GetTypeName()}")
+                joint = UsdPhysics.RevoluteJoint(prim)
+                axis = joint.GetAxisAttr().Get() if joint.GetAxisAttr().HasValue() else "?"
+                rot0 = joint.GetLocalRot0Attr().Get() if joint.GetLocalRot0Attr().HasValue() else None
+                rot1 = joint.GetLocalRot1Attr().Get() if joint.GetLocalRot1Attr().HasValue() else None
+                pos0 = joint.GetLocalPos0Attr().Get() if joint.GetLocalPos0Attr().HasValue() else None
+                lower = joint.GetLowerLimitAttr().Get() if joint.GetLowerLimitAttr().HasValue() else "?"
+                upper = joint.GetUpperLimitAttr().Get() if joint.GetUpperLimitAttr().HasValue() else "?"
+                rot0_str = f"({rot0})" if rot0 else "identity"
+                rot1_str = f"({rot1})" if rot1 else "identity"
+                print(
+                    f"[drone_usd] {jp}  axis={axis}  "
+                    f"limits=[{lower}, {upper}]  "
+                    f"localRot0={rot0_str}  localRot1={rot1_str}"
+                )
+                if pos0:
+                    print(f"            localPos0=({pos0[0]:.4f}, {pos0[1]:.4f}, {pos0[2]:.4f})")
                 break
         else:
             print(f"[drone_usd] {DRONE_ROOT}/{fin_name} — no joint found")

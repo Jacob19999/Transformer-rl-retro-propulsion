@@ -138,8 +138,9 @@ vehicle:
     # Torque authority:
     #   Fin_1+Fin_2 (right+left): τ_y → PITCH (dominant)
     #   Fin_3+Fin_4 (fwd+aft):    τ_x → ROLL (dominant)
-    #   Yaw: a mild in-plane cant gives the differential fin pattern
-    #        [-,+,-,+] a secondary τ_z contribution while keeping pitch/roll dominant.
+    #   Yaw: the 3° cant gives each fin a secondary τ_z component.
+    #        Pitch-pair (1+2) → positive yaw; roll-pair (3+4) → negative yaw.
+    #        Correct mixing weights: [+1,+1,−1,−1] (NOT differential [-,+,-,+]).
     # Lift vectors below use a 3 deg cant from the principal pitch/roll directions.
     # angular_offset_deg: azimuthal position, 0° = FRD +Y (starboard/right).
     fins_config:

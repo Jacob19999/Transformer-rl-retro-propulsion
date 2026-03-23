@@ -56,6 +56,11 @@ python -m simulation.isaac.scripts.test_fins --config simulation/isaac/configs/i
 python -m simulation.isaac.scripts.diag_fin_wiggle
 python -m simulation.isaac.scripts.diag_fin_wiggle --config simulation/isaac/configs/isaac_env_single.yaml --episodes 100 --sweeps 3
 
+# Per-fin force vector gizmo — colour-coded arrows + magnitude dots at each fin COM
+python -m simulation.isaac.scripts.diag_fin_forces
+python -m simulation.isaac.scripts.diag_fin_forces --thrust 0.7 --fins 0.5 0.0 -0.5 0.0
+python -m simulation.isaac.scripts.diag_fin_forces --sweep --sweep-hz 0.5 --duration 10.0
+
 # Throughput benchmark (1, 128, 512, 1024 envs)
 python -m simulation.isaac.scripts.benchmark_envs
 

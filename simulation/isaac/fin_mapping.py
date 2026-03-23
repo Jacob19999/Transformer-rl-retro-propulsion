@@ -76,7 +76,7 @@ class FinMapping:
             ),
             yaw_weights=tuple(
                 _as_float_list(
-                    data.get("yaw_weights", [-1.0, 1.0, -1.0, 1.0]),
+                    data.get("yaw_weights", [1.0, 1.0, -1.0, -1.0]),
                     expected=4,
                     name="yaw_weights",
                 )
@@ -136,12 +136,20 @@ def mix_controls(
 def derive_mapping_from_axis_response(
     dominant_axis: Sequence[str],
     dominant_sign: Sequence[float],
+    *,
+    yaw_torque_signs: Sequence[float] | None = None,
 ) -> FinMapping:
     """Derive controller mixing from per-fin dominant axis/sign measurements.
 
     Args:
         dominant_axis: sequence of 4 labels, each in {"roll","pitch","yaw"}.
         dominant_sign: sequence of 4 signs (+/-), one per fin.
+        yaw_torque_signs: optional sequence of 4 signs indicating the direction
+            of each fin's yaw torque for a *positive* deflection.  When provided
+            the yaw weights are set to these signs so that a positive yaw command
+            produces positive yaw.  Without this, yaw weights fall back to a
+            geometry-aware default ``[+1, +1, -1, -1]`` (pitch-pair positive,
+            roll-pair negative) which matches the standard quad-fin cant layout.
     """
     if len(dominant_axis) != 4 or len(dominant_sign) != 4:
         raise ValueError("dominant_axis and dominant_sign must each have 4 values.")
@@ -160,9 +168,15 @@ def derive_mapping_from_axis_response(
         else:
             raise ValueError(f"Unsupported dominant axis {axis!r}.")
 
-    # If yaw was not observed as dominant, keep the current stable differential default.
+    # If yaw was not observed as dominant, derive weights from measured yaw
+    # torque signs (preferred) or use geometry-aware default.
     if not any(abs(v) > 0.0 for v in yaw):
-        yaw = [-1.0, 1.0, -1.0, 1.0]
+        if yaw_torque_signs is not None and len(yaw_torque_signs) == 4:
+            yaw = [1.0 if float(s) >= 0.0 else -1.0 for s in yaw_torque_signs]
+        else:
+            # Geometry-aware default: pitch-pair fins produce positive yaw,
+            # roll-pair fins produce negative yaw for positive deflection.
+            yaw = [1.0, 1.0, -1.0, -1.0]
 
     return FinMapping(
         joint_source_indices=(0, 1, 2, 3),

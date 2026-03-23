@@ -299,6 +299,19 @@ class EdfLandingTask(DirectRLEnv):
             dtype=torch.float32,
             device=self.device,
         )
+        # Hinge axes for deflection-dependent force direction rotation (cos/sin
+        # decomposition).  When present, lift/drag basis vectors are rotated by
+        # the mechanical deflection δ via Rodrigues' formula so that lift
+        # "leaks" into thrust loss at large deflections.
+        fins_config = vehicle_data["fins"]["fins_config"]
+        if all("hinge_axis" in fc for fc in fins_config):
+            ha = torch.tensor(
+                [list(map(float, fc["hinge_axis"])) for fc in fins_config],
+                dtype=torch.float32, device=self.device,
+            )  # (4, 3)
+            self._fin_hinge: torch.Tensor | None = ha / ha.norm(dim=1, keepdim=True).clamp(min=1e-12)
+        else:
+            self._fin_hinge = None
         self._fin_aero = FinAeroParams(
             cl_alpha=float(self.vehicle_params.cl_alpha),
             cd0=float(self.vehicle_params.cd0),
@@ -835,6 +848,7 @@ class EdfLandingTask(DirectRLEnv):
             rho=rho,
             lift_dirs_body=self._fin_lift,
             drag_dirs_body=self._fin_drag,
+            hinge_axes_body=self._fin_hinge,
             params=self._fin_aero,
         )  # (N,4,3)
         fin_forces_world = rotate_body_to_world_wxyz(

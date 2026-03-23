@@ -4,7 +4,11 @@ Fin forces model for 4 NACA 0012 fins in EDF exhaust.
 Implements vehicle.md §6.3 and tracker Stage 5:
 - Thin-airfoil lift: C_L = Cl_alpha * alpha_eff with tanh stall soft-clamp at ±15°
 - Induced drag: C_D = Cd0 + C_L^2 / (pi * AR)
-- Per-fin force: F_k = 0.5 * rho * V_e^2 * A_fin * (C_L * n_L + C_D * n_D)
+- Per-fin force with deflection-rotated basis (Rodrigues' formula):
+    n_L' = n_L·cos(δ) + (k × n_L)·sin(δ) + k·(k·n_L)·(1−cos(δ))
+    n_D' = n_D·cos(δ) + (k × n_D)·sin(δ) + k·(k·n_D)·(1−cos(δ))
+    F_k = 0.5 * rho * V_e² * A_fin * (C_L * n_L' + C_D * n_D')
+  When hinge_axis is absent from config, falls back to fixed-direction basis.
 - Exhaust velocity scaling: V_exhaust = V_exhaust_nominal * (omega_fan / omega_fan_max)
 - Mechanical clamp: delta = clip(delta, -delta_max, +delta_max) at ±20°
 - Total fin force/torque: sum over 4 fins, tau_fins = Σ (r_fin_k - com) × F_k
@@ -112,6 +116,18 @@ class FinModel:
         if self._positions.shape[0] != n or self._lift_dirs.shape[0] != n or self._drag_dirs.shape[0] != n:
             raise ValueError(f"Expected {n} fins, got {self._positions.shape[0]}")
 
+        # Hinge axes for deflection-dependent force direction rotation.
+        # When all fins specify hinge_axis, lift/drag directions are rotated
+        # by the deflection angle δ using Rodrigues' formula (cos/sin
+        # decomposition).  Without hinge_axis the model falls back to
+        # fixed-direction basis (backward compatible).
+        if all("hinge_axis" in fc for fc in config.fins_config):
+            ha = np.array([_as_vec3(fc["hinge_axis"], name=f"fin{i}_hinge") for i, fc in enumerate(config.fins_config)])
+            norms = np.linalg.norm(ha, axis=1, keepdims=True)
+            self._hinge_axes: np.ndarray | None = ha / np.maximum(norms, 1e-12)
+        else:
+            self._hinge_axes = None
+
     @classmethod
     def from_config(
         cls,
@@ -185,10 +201,33 @@ class FinModel:
         # 5.4 Exhaust velocity scaling
         V_e = self._exhaust_velocity(omega_fan)
 
-        # 5.3 Per-fin force: F_k = 0.5 * rho * V_e^2 * A_fin * (C_L * n_L + C_D * n_D)
+        # 5.3 Per-fin force with deflection-rotated basis directions.
+        # When hinge_axis is available, rotate n_L and n_D by the
+        # mechanical deflection δ around each fin's hinge axis using
+        # Rodrigues' rotation formula.  This captures the cos(δ)/sin(δ)
+        # coupling: as the fin deflects, lift "leaks" into the axial
+        # (thrust-loss) direction and the useful lateral component shrinks.
+        if self._hinge_axes is not None:
+            cos_d = np.cos(delta_clipped)[:, np.newaxis]  # (4, 1)
+            sin_d = np.sin(delta_clipped)[:, np.newaxis]  # (4, 1)
+            k = self._hinge_axes  # (4, 3)
+
+            # Rotate lift directions
+            k_cross_nL = np.cross(k, self._lift_dirs)                         # (4, 3)
+            k_dot_nL = np.sum(k * self._lift_dirs, axis=1, keepdims=True)     # (4, 1)
+            nL = self._lift_dirs * cos_d + k_cross_nL * sin_d + k * k_dot_nL * (1.0 - cos_d)
+
+            # Rotate drag directions
+            k_cross_nD = np.cross(k, self._drag_dirs)                         # (4, 3)
+            k_dot_nD = np.sum(k * self._drag_dirs, axis=1, keepdims=True)     # (4, 1)
+            nD = self._drag_dirs * cos_d + k_cross_nD * sin_d + k * k_dot_nD * (1.0 - cos_d)
+        else:
+            nL = self._lift_dirs
+            nD = self._drag_dirs
+
         q_dyn = 0.5 * rho * (V_e ** 2) * self._config.planform_area
         # (4,) * (4,3) -> (4,3) broadcast; same for C_D
-        F_per_fin = q_dyn * (C_L[:, np.newaxis] * self._lift_dirs + C_D[:, np.newaxis] * self._drag_dirs)
+        F_per_fin = q_dyn * (C_L[:, np.newaxis] * nL + C_D[:, np.newaxis] * nD)
 
         # 5.6 Total force
         F_fins = np.sum(F_per_fin, axis=0)

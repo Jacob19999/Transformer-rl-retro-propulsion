@@ -16,11 +16,15 @@ Usage (inside any Isaac Sim script or task)::
         body_torque_w=torques_w,       # (N, 3)     optional – body torques (orange)
     )
 
+    # After draw(), per-fin magnitudes are available for console readout:
+    print(gizmo.format_magnitudes())
+
 Arrow colour key
 ----------------
 Fin forces  : Red / Green / Blue / Yellow  (fin order 0-3)
 Thrust      : Cyan
 Body torque : Orange
+Tip dot     : same colour as arrow, size ∝ force magnitude
 
 The draw interface is acquired lazily; if the extension is unavailable (e.g. in
 headless unit tests) all calls are silently no-ops.
@@ -136,6 +140,10 @@ def _arrow_segments(
 class ForceGizmoDrawer:
     """Draws per-fin aero forces, thrust, and optional body torques as debug arrows.
 
+    After each ``draw()`` call the most recent per-fin magnitudes and vectors
+    are stored and can be retrieved via :pymethod:`format_magnitudes` for
+    console output.
+
     Parameters
     ----------
     force_scale:
@@ -151,6 +159,14 @@ class ForceGizmoDrawer:
         Only draw for the first N environments (default 1) to avoid visual clutter.
     auto_clear:
         If True, clear all previous debug lines at the start of every ``draw()`` call.
+    show_magnitudes:
+        If True, draw a dot at each arrow tip whose size is proportional to the
+        force magnitude (provides an at-a-glance magnitude cue beyond arrow length).
+    dot_scale:
+        Pixels of dot radius per Newton.  Default 8.0 gives a clearly visible
+        dot at typical fin forces (~0.5–2.0 N).
+    fin_labels:
+        Optional 4-element sequence of short labels for console output.
     """
 
     def __init__(
@@ -162,6 +178,9 @@ class ForceGizmoDrawer:
         line_width: float = 3.0,
         max_envs: int = 1,
         auto_clear: bool = True,
+        show_magnitudes: bool = True,
+        dot_scale: float = 8.0,
+        fin_labels: tuple[str, ...] | None = None,
     ):
         self.force_scale  = force_scale
         self.torque_scale = torque_scale
@@ -169,12 +188,48 @@ class ForceGizmoDrawer:
         self.line_width   = line_width
         self.max_envs     = max_envs
         self.auto_clear   = auto_clear
+        self.show_magnitudes = show_magnitudes
+        self.dot_scale       = dot_scale
+        self.fin_labels      = fin_labels or ("Fin1_R", "Fin2_L", "Fin3_F", "Fin4_A")
+
+        # Snapshot from most recent draw() — available for console readout.
+        self._last_fin_mags:   list[list[float]] = []   # [env][fin] magnitude (N)
+        self._last_fin_vecs:   list[list[tuple[float, float, float]]] = []  # [env][fin] (fx,fy,fz)
+        self._last_thrust_mag: list[float] = []         # [env] magnitude (N)
+        self._last_torque_mag: list[float] = []         # [env] magnitude (N·m)
+
+    # ------------------------------------------------------------------
+    # Read-only access to last-drawn magnitudes
+    # ------------------------------------------------------------------
+    @property
+    def fin_magnitudes(self) -> list[list[float]]:
+        """Per-env, per-fin force magnitudes [N] from the last ``draw()``."""
+        return self._last_fin_mags
+
+    @property
+    def fin_vectors(self) -> list[list[tuple[float, float, float]]]:
+        """Per-env, per-fin world-frame force vectors [N] from the last ``draw()``."""
+        return self._last_fin_vecs
+
+    @property
+    def thrust_magnitudes(self) -> list[float]:
+        """Per-env thrust magnitude [N] from the last ``draw()``."""
+        return self._last_thrust_mag
+
+    @property
+    def torque_magnitudes(self) -> list[float]:
+        """Per-env body torque magnitude [N·m] from the last ``draw()``."""
+        return self._last_torque_mag
 
     # ------------------------------------------------------------------
     def clear(self) -> None:
         draw = _get_draw()
         if draw is not None:
             draw.clear_lines()
+            try:
+                draw.clear_points()
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------
     def draw(
@@ -189,7 +244,9 @@ class ForceGizmoDrawer:
         """Issue debug draw calls for one physics step.
 
         All tensors must live on any device (CPU or CUDA); they are moved to
-        CPU and converted to Python floats internally.
+        CPU and converted to Python floats internally.  After this call,
+        magnitude/vector snapshots are available via the corresponding
+        properties and :pymethod:`format_magnitudes`.
         """
         draw = _get_draw()
         if draw is None:
@@ -197,6 +254,10 @@ class ForceGizmoDrawer:
 
         if self.auto_clear:
             draw.clear_lines()
+            try:
+                draw.clear_points()
+            except Exception:
+                pass
 
         n = min(self.max_envs, fin_origins_w.shape[0])
         if n == 0:
@@ -220,39 +281,119 @@ class ForceGizmoDrawer:
         all_ends:   list = []
         all_colors: list = []
 
+        # Magnitude dot accumulators
+        dot_positions: list = []
+        dot_colors:    list = []
+        dot_sizes:     list = []
+
+        # Snapshot accumulators
+        snap_fin_mags: list[list[float]] = []
+        snap_fin_vecs: list[list[tuple[float, float, float]]] = []
+        snap_thrust:   list[float] = []
+        snap_torque:   list[float] = []
+
         for env_i in range(n):
+            env_fin_mags: list[float] = []
+            env_fin_vecs: list[tuple[float, float, float]] = []
+
             # --- Per-fin aero forces ---
             for fin_j in range(4):
                 ox, oy, oz = fin_o[env_i, fin_j].tolist()
                 fx, fy, fz = fin_f[env_i, fin_j].tolist()
                 mag = math.sqrt(fx * fx + fy * fy + fz * fz)
+                env_fin_mags.append(mag)
+                env_fin_vecs.append((fx, fy, fz))
                 if mag < min_m:
                     continue
                 vx, vy, vz = fx * scale_f, fy * scale_f, fz * scale_f
                 s, e, c = _arrow_segments(ox, oy, oz, vx, vy, vz, FIN_COLORS[fin_j % 4])
                 all_starts.extend(s); all_ends.extend(e); all_colors.extend(c)
 
+                # Magnitude dot at arrow tip
+                if self.show_magnitudes:
+                    tip = (ox + vx, oy + vy, oz + vz)
+                    dot_positions.append(tip)
+                    dot_colors.append(FIN_COLORS[fin_j % 4])
+                    dot_sizes.append(max(4.0, mag * self.dot_scale))
+
+            snap_fin_mags.append(env_fin_mags)
+            snap_fin_vecs.append(env_fin_vecs)
+
             # --- EDF thrust ---
             ox, oy, oz = body_o[env_i].tolist()
             fx, fy, fz = thr_f[env_i].tolist()
             mag = math.sqrt(fx * fx + fy * fy + fz * fz)
+            snap_thrust.append(mag)
             if mag >= min_m:
                 vx, vy, vz = fx * scale_f, fy * scale_f, fz * scale_f
                 s, e, c = _arrow_segments(ox, oy, oz, vx, vy, vz, THRUST_COLOR)
                 all_starts.extend(s); all_ends.extend(e); all_colors.extend(c)
 
+                if self.show_magnitudes:
+                    tip = (ox + vx, oy + vy, oz + vz)
+                    dot_positions.append(tip)
+                    dot_colors.append(THRUST_COLOR)
+                    dot_sizes.append(max(4.0, mag * self.dot_scale))
+
             # --- Body torque (optional) ---
             if torq_f is not None:
                 tx, ty, tz = torq_f[env_i].tolist()
                 mag = math.sqrt(tx * tx + ty * ty + tz * tz)
+                snap_torque.append(mag)
                 if mag >= min_m:
                     vx, vy, vz = tx * scale_t, ty * scale_t, tz * scale_t
                     # Offset slightly so torque arrow doesn't overlap thrust.
                     s, e, c = _arrow_segments(ox + 0.06, oy, oz, vx, vy, vz, TORQUE_COLOR)
                     all_starts.extend(s); all_ends.extend(e); all_colors.extend(c)
 
-        if not all_starts:
-            return
+                    if self.show_magnitudes:
+                        tip = (ox + 0.06 + vx, oy + vy, oz + vz)
+                        dot_positions.append(tip)
+                        dot_colors.append(TORQUE_COLOR)
+                        dot_sizes.append(max(4.0, mag * self.dot_scale))
+            else:
+                snap_torque.append(0.0)
 
-        widths = [self.line_width] * len(all_starts)
-        draw.draw_lines(all_starts, all_ends, all_colors, widths)
+        # Store snapshot for console readout.
+        self._last_fin_mags   = snap_fin_mags
+        self._last_fin_vecs   = snap_fin_vecs
+        self._last_thrust_mag = snap_thrust
+        self._last_torque_mag = snap_torque
+
+        if all_starts:
+            widths = [self.line_width] * len(all_starts)
+            draw.draw_lines(all_starts, all_ends, all_colors, widths)
+
+        # Draw magnitude dots at arrow tips (best-effort; some Kit versions
+        # may not expose draw_points on this interface).
+        if dot_positions:
+            try:
+                draw.draw_points(dot_positions, dot_colors, dot_sizes)
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------------
+    def format_magnitudes(self, env_idx: int = 0) -> str:
+        """Return a one-line summary of per-fin force magnitudes and vectors.
+
+        Example output::
+
+            Fin1_R: 0.42 N (0.01, -0.40, 0.12)  Fin2_L: 0.38 N ...  T: 6.72 N  τ: 0.05 N·m
+        """
+        if env_idx >= len(self._last_fin_mags):
+            return "(no data)"
+
+        parts: list[str] = []
+        mags = self._last_fin_mags[env_idx]
+        vecs = self._last_fin_vecs[env_idx]
+        for j in range(4):
+            label = self.fin_labels[j] if j < len(self.fin_labels) else f"F{j}"
+            fx, fy, fz = vecs[j]
+            parts.append(f"{label}: {mags[j]:.3f} N ({fx:+.3f}, {fy:+.3f}, {fz:+.3f})")
+
+        if env_idx < len(self._last_thrust_mag):
+            parts.append(f"T: {self._last_thrust_mag[env_idx]:.3f} N")
+        if env_idx < len(self._last_torque_mag):
+            parts.append(f"τ: {self._last_torque_mag[env_idx]:.4f} N·m")
+
+        return "  ".join(parts)

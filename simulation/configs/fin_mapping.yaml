@@ -1,48 +1,97 @@
 fin_mapping:
-  # Identity mapping — USD hinge axes corrected at authoring time (feature 006).
-  # positive drive target → positive deflection per controller convention.
-  # No runtime index swap or sign negation needed.
-  # Ref: specs/006-refactor-fin-physics/research.md RQ-2
-  joint_source_indices: [0, 1, 2, 3]
-  joint_signs: [1.0, 1.0, 1.0, 1.0]
-
-  # Controller mixing weights (canonical fin order: Right, Left, Fwd, Aft)
-  # Right+Left fins (indices 0,1) produce pitch (FRD +X lift)
-  # Fwd+Aft fins (indices 2,3) produce roll (FRD -Y / +Y lift)
-  # Differential pattern provides secondary yaw authority from 3° cant angle
-  pitch_weights: [1.0, 1.0, 0.0, 0.0]
-  roll_weights: [0.0, 0.0, 1.0, 1.0]
-  yaw_weights: [-1.0, 1.0, -1.0, 1.0]
-
-  # Historical calibration data (kept for reference; weights above supersede)
+  joint_source_indices:
+  - 0
+  - 1
+  - 2
+  - 3
+  joint_signs:
+  - -1.0
+  - -1.0
+  - -1.0
+  - -1.0
+  pitch_weights:
+  - 1.0
+  - 1.0
+  - 0.0
+  - 0.0
+  roll_weights:
+  - 0.0
+  - 0.0
+  - -1.0
+  - -1.0
+  yaw_weights:
+  - 1.0
+  - 1.0
+  - -1.0
+  - -1.0
   generated_by: calibrate_fin_mapping.py
   measurement:
     thrust: 0.7
     deflection: 0.65
     settle_steps: 45
     hold_steps: 90
+    inertia_diag_zup:
+      Ixx: 0.015000002458691597
+      Iyy: 0.014999998733401299
+      Izz: 0.005000000819563866
     per_fin:
     - fin_index: 0
-      delta_omega_roll: 1.1982789480825886
-      delta_omega_pitch: 3.095032585049921
-      delta_omega_yaw: 7.859373325855813
-      dominant_axis: yaw
+      delta_omega_roll: -0.25096486473921686
+      delta_omega_pitch: 1.0019534282910172
+      delta_omega_yaw: 1.7144698241251994
+      torque_roll: -0.003764473588133457
+      torque_pitch: 0.015029300155292347
+      torque_yaw: 0.008572350525743514
+      dominant_axis: pitch
       dominant_sign: 1.0
+      force_magnitude: 0.29792741802071
+      force_vector:
+      - -0.22649891674518585
+      - 0.019076192751526833
+      - 0.19260084629058838
+      thrust_magnitude: 31.49975202151371
     - fin_index: 1
-      delta_omega_roll: -0.9012346422532573
-      delta_omega_pitch: -2.915243017290777
-      delta_omega_yaw: 7.813928360493264
-      dominant_axis: yaw
+      delta_omega_roll: 0.24972541665192693
+      delta_omega_pitch: 1.0027352028118912
+      delta_omega_yaw: 1.715378556539445
+      torque_roll: 0.0037458818637766877
+      torque_pitch: 0.015041026772115263
+      torque_yaw: 0.008576894188559506
+      dominant_axis: pitch
       dominant_sign: 1.0
+      force_magnitude: 0.2979257789098936
+      force_vector:
+      - -0.22679367661476135
+      - 0.010897642932832241
+      - 0.19288763403892517
+      thrust_magnitude: 31.499751608832952
     - fin_index: 2
-      delta_omega_roll: -1.8651842629769817
-      delta_omega_pitch: 1.0731833104146062
-      delta_omega_yaw: -7.802684550731101
-      dominant_axis: yaw
+      delta_omega_roll: -0.9643795933807269
+      delta_omega_pitch: -0.2473730094206985
+      delta_omega_yaw: -1.7160141131382893
+      torque_roll: -0.014465696271822906
+      torque_pitch: -0.0037105948279881453
+      torque_yaw: -0.008580071972074606
+      dominant_axis: roll
       dominant_sign: -1.0
+      force_magnitude: 0.29792456786949745
+      force_vector:
+      - 0.0108761265873909
+      - -0.23022496700286865
+      - 0.18877823650836945
+      thrust_magnitude: 31.499752006620376
     - fin_index: 3
-      delta_omega_roll: -2.3493210828164592
-      delta_omega_pitch: -1.2569235440241755
-      delta_omega_yaw: -7.859602694957175
-      dominant_axis: yaw
+      delta_omega_roll: -0.9635918583953753
+      delta_omega_pitch: 0.24823616971843876
+      delta_omega_yaw: -1.713805522630782
+      torque_roll: -0.014453880245105835
+      torque_pitch: 0.003723542231360971
+      torque_yaw: -0.008569029017726989
+      dominant_axis: roll
       dominant_sign: -1.0
+      force_magnitude: 0.2979237200364723
+      force_vector:
+      - 0.01908806897699833
+      - -0.2299046814441681
+      - 0.1885153204202652
+      thrust_magnitude: 31.4997514501876

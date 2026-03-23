@@ -2036,8 +2036,8 @@ def _run_rotation_test(
         return False
 
     _disable_gravity_rotation(env)
-    # Lock position at (0, 0, alt) so test is purely rotational; max thrust so no thrust modulation.
-    lock_x, lock_y, lock_z = 0.0, 0.0, alt
+    # No position lock — the drone drifts freely in zero-g.
+    # Thrust is set to hover fraction (enough for fin exhaust velocity).
 
     isolate = getattr(args, "isolate_pid_axis", True)
     print(f"[rotation] isolate_pid_axis={isolate} (only tested axis fins active)", flush=True)
@@ -2089,7 +2089,6 @@ def _run_rotation_test(
                 # One reset per (axis, speed), then one continuous run (capped at _ROTATION_MAX_DURATION_S).
                 total_steps = total_steps_per_run
                 obs, _ = env.reset(seed=int(args.seed))
-                _lock_drone_position_xyz(env, lock_x, lock_y, lock_z)
                 # Log reset orientation once so we can verify it
                 _log_rotation_reset_pose(env, axis_name, speed)
                 print(
@@ -2109,14 +2108,13 @@ def _run_rotation_test(
                         action_pid, hover_thrust_frac=hover_thrust_frac
                     )
                     action_pre_isolation = action_isaac.copy()
-                    action_isaac[0] = 1.0  # max thrust; position locked so purely rotational
+                    action_isaac[0] = hover_thrust_frac  # enough for fin exhaust; no position lock
                     if getattr(args, "isolate_pid_axis", True):
                         for fi in _ROTATION_FIN_INDICES_TO_ZERO.get(axis_name, ()):
                             action_isaac[1 + fi] = 0.0
                     obs, _rew, term, trunc, _info = env.step(
                         np.asarray(action_isaac, dtype=np.float32)
                     )
-                    _lock_drone_position_xyz(env, lock_x, lock_y, lock_z)
                     if step >= _ROTATION_SETTLE_STEPS and not (term or trunc):
                         o = np.asarray(obs, dtype=float).reshape(-1)
                         if o.size >= 12:

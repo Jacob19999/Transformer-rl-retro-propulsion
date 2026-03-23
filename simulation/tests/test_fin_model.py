@@ -183,3 +183,113 @@ def test_from_config() -> None:
     F_fins, tau_fins = model.compute(np.zeros(4), 5000.0, rho=1.225)
     assert F_fins.shape == (3,)
     assert tau_fins.shape == (3,)
+
+
+# ── Deflection-rotated basis (cos/sin decomposition) tests ──────────────
+
+
+def _make_fin_config_with_hinge(
+    **kwargs: float,
+) -> FinModelConfig:
+    """Config with hinge_axis for each fin — enables force direction rotation."""
+    defaults = dict(
+        Cl_alpha=2 * np.pi,
+        Cd0=0.01,
+        AR=0.80,
+        stall_angle=np.deg2rad(15),
+        max_deflection=np.deg2rad(20),
+        planform_area=0.002,
+        V_exhaust_nominal=70.0,
+        omega_fan_max=9948.0,
+    )
+    defaults.update(kwargs)
+    fins_config = (
+        {"position": [0, 0.04, 0.12], "lift_direction": [1, 0, 0], "drag_direction": [0, 0, 1], "hinge_axis": [0, 1, 0]},
+        {"position": [0, -0.04, 0.12], "lift_direction": [1, 0, 0], "drag_direction": [0, 0, 1], "hinge_axis": [0, 1, 0]},
+        {"position": [0.04, 0, 0.12], "lift_direction": [0, 1, 0], "drag_direction": [0, 0, 1], "hinge_axis": [1, 0, 0]},
+        {"position": [-0.04, 0, 0.12], "lift_direction": [0, 1, 0], "drag_direction": [0, 0, 1], "hinge_axis": [1, 0, 0]},
+    )
+    return FinModelConfig(
+        **defaults,
+        exhaust_velocity_ratio=True,
+        fins_config=fins_config,
+    )
+
+
+def test_rotation_zero_deflection_matches_fixed() -> None:
+    """At δ=0, Rodrigues' rotation is identity — rotated model must match fixed."""
+    com = np.array([0.0, 0.0, 0.05])
+    fixed_model = FinModel(_make_fin_config(), com)
+    rotated_model = FinModel(_make_fin_config_with_hinge(), com)
+
+    delta = np.zeros(4)
+    F_fixed, tau_fixed = fixed_model.compute(delta, 5000.0, rho=1.225)
+    F_rot, tau_rot = rotated_model.compute(delta, 5000.0, rho=1.225)
+
+    assert np.allclose(F_fixed, F_rot, atol=1e-12)
+    assert np.allclose(tau_fixed, tau_rot, atol=1e-12)
+
+
+def test_rotation_reduces_lateral_force_at_max_deflection() -> None:
+    """At max deflection, cos(δ) < 1 reduces the useful lateral force component.
+
+    Fin 0: lift_dir=[1,0,0], hinge=[0,1,0], drag_dir=[0,0,1].
+    At δ=20°, the rotated lift direction has x-component = cos(20°) ≈ 0.94,
+    so F_x (lateral) should be ~6% less than the fixed-direction model.
+    """
+    com = np.array([0.0, 0.0, 0.05])
+    fixed_model = FinModel(_make_fin_config(), com)
+    rotated_model = FinModel(_make_fin_config_with_hinge(), com)
+
+    delta_20 = np.array([np.deg2rad(20), 0.0, 0.0, 0.0])
+    omega = 9948.0
+    rho = 1.225
+
+    F_fixed, _ = fixed_model.compute(delta_20, omega, rho=rho)
+    F_rot, _ = rotated_model.compute(delta_20, omega, rho=rho)
+
+    # Lateral force (F_x from fin 0 lift) should be smaller with rotation
+    assert F_rot[0] < F_fixed[0], "Rotation should reduce lateral component"
+    # The ratio should be close to cos(20°) ≈ 0.94 (not exact because drag
+    # direction also rotates, contributing a small +x component via sin(δ))
+    ratio = F_rot[0] / F_fixed[0]
+    assert 0.90 < ratio < 0.98, f"Expected ratio near cos(20°)=0.94, got {ratio}"
+
+
+def test_rotation_increases_axial_force() -> None:
+    """Rotation leaks lift into thrust-loss direction (body +z).
+
+    With hinge rotation, F_z should increase compared to fixed-direction
+    because lift·sin(δ) adds to the axial drag component.
+    """
+    com = np.array([0.0, 0.0, 0.05])
+    fixed_model = FinModel(_make_fin_config(), com)
+    rotated_model = FinModel(_make_fin_config_with_hinge(), com)
+
+    delta_20 = np.array([np.deg2rad(20), 0.0, 0.0, 0.0])
+    omega = 9948.0
+    rho = 1.225
+
+    F_fixed, _ = fixed_model.compute(delta_20, omega, rho=rho)
+    F_rot, _ = rotated_model.compute(delta_20, omega, rho=rho)
+
+    # F_z (axial / thrust loss) should be larger with rotation
+    assert F_rot[2] > F_fixed[2], "Rotation should increase axial thrust loss"
+
+
+def test_rotation_symmetric_deflection_still_cancels_lateral() -> None:
+    """Symmetric opposite deflections with rotation still cancel lateral force.
+
+    Fins 0 and 1 share hinge_axis [0,1,0] and lift_dir [1,0,0].
+    delta = [+d, -d, 0, 0]: cos(d) and cos(-d) are equal, sin(d) and sin(-d)
+    are opposite.  The x-components of the rotated lift are both scaled by
+    cos(d) (same magnitude, same C_L sign ↔ opposite), so they still cancel.
+    """
+    com = np.array([0.0, 0.0, 0.05])
+    model = FinModel(_make_fin_config_with_hinge(), com)
+
+    delta = np.array([0.15, -0.15, 0.15, -0.15])
+    F, _ = model.compute(delta, 5000.0, rho=1.225)
+
+    assert np.allclose(F[0], 0.0, atol=1e-10), "F_x should cancel"
+    assert np.allclose(F[1], 0.0, atol=1e-10), "F_y should cancel"
