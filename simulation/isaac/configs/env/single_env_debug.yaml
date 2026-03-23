@@ -1,0 +1,9 @@
+# Single-environment debug configuration (with gizmos)
+env:
+  num_envs: 1
+  env_spacing: 4.0
+  dispatch_mode: per_link_force
+  gizmos_enabled: true
+  decimation: 4
+  physics_dt: 0.00833    # 1/120 s
+  replicate_physics: false

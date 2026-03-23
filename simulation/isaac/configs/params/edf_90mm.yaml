@@ -1,0 +1,15 @@
+# 90mm EDF model parameters
+# All values include source label per config_schema contract
+
+edf:
+  max_thrust: 48.0                   # N, source: estimate (artifact target for 2.5kg vehicle, ~1.9x weight)
+  diameter: 0.09                     # m, source: measured
+  k_T: null                          # N·s²/rad², source: to-be-calibrated (thrust coefficient from thrust stand)
+  k_Q: null                          # N·m·s²/rad², source: to-be-calibrated (torque coefficient from thrust stand)
+  rotor_inertia: 0.0005              # kg·m², source: estimate (90mm class rotor)
+  tau_motor: 0.15                    # s, source: estimate (first-order spool lag for 90mm class)
+  omega_max: null                    # rad/s, source: to-be-calibrated (no-load RPM from ESC data)
+  d_omega_max: null                  # rad/s², source: to-be-calibrated (from bench step response)
+
+  # Derived from geometry: exhaust speed at nominal throttle (estimate)
+  exhaust_speed_nominal: 40.0        # m/s, source: estimate (from thrust/area calculation)

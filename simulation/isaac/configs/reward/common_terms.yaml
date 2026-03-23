@@ -1,0 +1,10 @@
+# Common reward term defaults shared across tasks
+# These values are overridden by task-specific reward configs
+
+reward_defaults:
+  alive_bonus: 0.0
+  position_error: -1.0
+  attitude_error: -1.0
+  angular_velocity: -0.2
+  control_effort: -0.05
+  control_rate: -0.02

@@ -1,0 +1,59 @@
+# Debug gizmo configuration — enable/disable and styling per gizmo type
+
+gizmos:
+  body_axes:
+    enabled: true
+    scale: 0.3           # m, axis length
+    opacity: 0.9
+
+  com_marker:
+    enabled: true
+    radius: 0.03         # m
+    color: [1.0, 1.0, 0.0]  # yellow
+
+  target_marker:
+    enabled: true
+    radius: 0.1          # m
+    color: [0.0, 1.0, 0.0]  # green
+
+  thrust_vector:
+    enabled: true
+    scale: 0.01          # scale factor: N → m
+    color: [1.0, 0.5, 0.0]  # orange
+
+  fin_force_arrows:
+    enabled: true
+    scale: 0.05          # scale factor: N → m
+    color: [0.0, 0.5, 1.0]  # blue
+
+  total_aero_force:
+    enabled: true
+    scale: 0.01
+    color: [0.0, 1.0, 1.0]  # cyan
+
+  reaction_torque:
+    enabled: true
+    scale: 0.1           # scale factor: N·m → m
+    color: [1.0, 0.0, 0.5]  # magenta
+
+  contact_normals:
+    enabled: true
+    scale: 0.001         # scale: N → m
+    color: [1.0, 0.0, 0.0]  # red
+
+  hover_tolerance_volume:
+    enabled: true
+    opacity: 0.1
+    color: [0.0, 1.0, 0.0]  # transparent green sphere
+
+  hud_overlay:
+    enabled: true
+    update_frequency: 10     # Hz
+    show_position_error: true
+    show_tilt: true
+    show_body_rates: true
+    show_motor_rpm: true
+    show_fin_angles: true
+    show_reward: true
+    show_contact_state: true
+    show_task_mode: true

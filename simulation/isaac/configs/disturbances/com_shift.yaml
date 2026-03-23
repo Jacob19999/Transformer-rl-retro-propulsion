@@ -1,0 +1,6 @@
+# COM offset disturbance configuration
+disturbances:
+  enabled: true
+  com_offset:
+    enabled: true
+    range: [[-0.01, -0.01, -0.01], [0.01, 0.01, 0.01]]  # m

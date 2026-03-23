@@ -1,0 +1,75 @@
+# Asset metadata for EDF Drone v2 USD scene
+# Maps USD prim names/paths to simulation indices and physical properties.
+# YAML is authoritative; USD must be validated against this via validate_usd_mass_props.py
+
+asset:
+  name: edf_drone_v2
+  usd_path: "assets/usd/edf_drone_v2.usd"
+
+  # Root body link name (ArticulationRootAPI prim)
+  body_link_name: "body"
+
+  # Fin link names in canonical order: +X, +Y, -X, -Y
+  fin_link_names:
+    - "fin_px"   # +X fin (forward fin)
+    - "fin_py"   # +Y fin (right fin)
+    - "fin_mx"   # -X fin (rear fin)
+    - "fin_my"   # -Y fin (left fin)
+
+  # Revolute joint names (parent: body → child: fin)
+  fin_joint_names:
+    - "joint_fin_px"
+    - "joint_fin_py"
+    - "joint_fin_mx"
+    - "joint_fin_my"
+
+  # Hinge axes for each fin joint in body-FRD frame (unit vectors)
+  # Positive deflection rotates fin tip toward the hinge axis using right-hand rule
+  hinge_axes:
+    - [0.0, 1.0, 0.0]   # fin_px: hinge along +Y (pitches body nose up on positive deflection)
+    - [-1.0, 0.0, 0.0]  # fin_py: hinge along -X (rolls body right on positive deflection)
+    - [0.0, -1.0, 0.0]  # fin_mx: hinge along -Y
+    - [1.0, 0.0, 0.0]   # fin_my: hinge along +X
+
+  # Joint limits [min_rad, max_rad] — must match USD PhysicsRevoluteJoint limits
+  joint_limits:
+    - [-0.262, 0.262]   # fin_px, 15°
+    - [-0.262, 0.262]   # fin_py, 15°
+    - [-0.262, 0.262]   # fin_mx, 15°
+    - [-0.262, 0.262]   # fin_my, 15°
+
+  # Center-of-pressure (COP) positions for each fin in body-FRD frame (m)
+  # These are used for set_external_force_and_torque(positions=...) in Isaac Sim
+  fin_cop_positions:
+    - [0.04, 0.0, 0.10]    # fin_px COP: forward-offset, at EDF exit plane z
+    - [0.0, 0.04, 0.10]    # fin_py COP
+    - [-0.04, 0.0, 0.10]   # fin_mx COP
+    - [0.0, -0.04, 0.10]   # fin_my COP
+
+  # Chord directions in fin-local frame (direction of fin-plane normal under deflection)
+  fin_chord_directions:
+    - [1.0, 0.0, 0.0]   # fin_px chord
+    - [0.0, 1.0, 0.0]   # fin_py chord
+    - [1.0, 0.0, 0.0]   # fin_mx chord
+    - [0.0, 1.0, 0.0]   # fin_my chord
+
+  # Normal directions (perpendicular to fin surface in zero-deflection position)
+  fin_normal_directions:
+    - [0.0, 0.0, 1.0]   # fin_px: normal along -z (exhaust flow direction)
+    - [0.0, 0.0, 1.0]   # fin_py
+    - [0.0, 0.0, 1.0]   # fin_mx
+    - [0.0, 0.0, 1.0]   # fin_my
+
+  # EDF thrust axis in body-FRD frame (exhaust exits downward = +z in FRD)
+  edf_thrust_axis: [0.0, 0.0, 1.0]
+
+  # Rotor spin axis in body-FRD frame (rotor spins around body z-axis)
+  rotor_spin_axis: [0.0, 0.0, 1.0]
+
+  # Contact regions — prim names that should contact ground on landing
+  # (not body or fin links)
+  landing_contact_regions:
+    - "landing_leg_px"
+    - "landing_leg_py"
+    - "landing_leg_mx"
+    - "landing_leg_my"

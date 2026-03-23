@@ -1,0 +1,11 @@
+# MG996R Servo model parameters
+# All values include source label per config_schema contract
+
+servo:
+  mass: 0.055                        # kg, source: datasheet (MG996R spec sheet)
+  stall_torque: 1.08                 # N·m at 6V, source: datasheet
+  transit_time_60deg: 0.14           # s at 6V, source: datasheet
+  max_angular_velocity: 7.54         # rad/s, source: derived (π/3 / 0.14)
+  tau_servo: 0.05                    # s, source: estimate (first-order lag time constant; tune from bench)
+  deadband: 0.017                    # rad (~1°), source: estimate
+  max_command_angle: 0.262           # rad (15°), source: measured (mechanical linkage limit)

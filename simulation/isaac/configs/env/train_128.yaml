@@ -1,0 +1,9 @@
+# 128-environment training configuration
+env:
+  num_envs: 128
+  env_spacing: 4.0
+  dispatch_mode: per_link_force
+  gizmos_enabled: false
+  decimation: 4
+  physics_dt: 0.00833    # 1/120 s
+  replicate_physics: true

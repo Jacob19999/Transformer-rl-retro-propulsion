@@ -1,0 +1,12 @@
+# Landing task reward weights
+reward:
+  alive_bonus: 0.5
+  position_error: -1.0
+  attitude_error: -1.5
+  angular_velocity: -0.5
+  control_effort: -0.1
+  crash_penalty: -100.0
+  touchdown_softness: 5.0
+  landing_success: 50.0
+  pad_accuracy: 10.0
+  vertical_speed_shaping: -2.0
