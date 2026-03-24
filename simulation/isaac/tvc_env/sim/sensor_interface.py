@@ -63,8 +63,8 @@ class SensorInterface:
         Returns:
             Tensor (num_envs,) — magnitude of downward velocity component (m/s).
         """
-        # In Isaac y-up convention, downward = negative y
-        return (-linear_vel_world[:, 1]).clamp(min=0.0)  # Only downward component
+        # In Isaac Z-up convention, downward = negative z.
+        return (-linear_vel_world[:, 2]).clamp(min=0.0)  # Only downward component
 
     def get_contact_normal_forces(self) -> Tensor:
         """Get contact normal force magnitudes per environment.

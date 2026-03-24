@@ -110,6 +110,7 @@ class TVCEnvBase:
         from tvc_env.dynamics.fin_force_dispatch import FinForceDispatch
         from tvc_env.dynamics.actuator_servo import ServoModel
         from tvc_env.dynamics.propulsion_edf import EDFModel
+        from tvc_env.dynamics.wind_model import WindModel
         from tvc_env.sim.body_interface import BodyInterface
         from tvc_env.sim.link_force_interface import LinkForceInterface
         from tvc_env.sim.wrench_dispatch import WrenchDispatch
@@ -134,11 +135,25 @@ class TVCEnvBase:
             max_command_angle=servo_config.get("servo", servo_config).get("max_command_angle", 0.262),
             deadband=servo_config.get("servo", servo_config).get("deadband", 0.017),
         )
+        edf_params = edf_config.get("edf", edf_config)
         edf_model = EDFModel(
-            max_thrust=edf_config.get("edf", edf_config).get("max_thrust", 48.0),
-            tau_motor=edf_config.get("edf", edf_config).get("tau_motor", 0.15),
-            omega_max=edf_config.get("edf", edf_config).get("omega_max") or 3000.0,
+            max_thrust=edf_params.get("max_thrust", 48.0),
+            tau_motor=edf_params.get("tau_motor", 0.15),
+            omega_max=edf_params.get("omega_max") or 3000.0,
+            d_omega_max=edf_params.get("d_omega_max"),
+            k_T=edf_params.get("k_T"),
+            k_Q=edf_params.get("k_Q"),
+            rotor_inertia=edf_params.get("rotor_inertia", 0.0005),
         )
+
+        # Wind model (only if disturbance config enables it)
+        dist_cfg = self._config.config.get("disturbances", {})
+        if dist_cfg.get("enabled") and dist_cfg.get("wind", {}).get("enabled"):
+            wind_model = WindModel.from_disturbance_config(
+                self._config.config, device=device,
+            )
+        else:
+            wind_model = None
 
         # Sim interfaces
         body_iface = BodyInterface(articulation, art_map)
@@ -146,6 +161,7 @@ class TVCEnvBase:
         wrench_dispatch = WrenchDispatch(
             mode=self._config.dispatch_mode,
             link_force_interface=link_force_iface,
+            body_link_index=art_map.body_index,
         )
 
         # Contact state machine
@@ -161,6 +177,7 @@ class TVCEnvBase:
         self._body_iface = body_iface
         self._link_force_iface = link_force_iface
         self._wrench_dispatch = wrench_dispatch
+        self._wind_model = wind_model
         self._aero_model = aero_model
         self._fin_dispatch = FinForceDispatch(aero_model, cops, hinge_axes)
         self._servo_model = servo_model

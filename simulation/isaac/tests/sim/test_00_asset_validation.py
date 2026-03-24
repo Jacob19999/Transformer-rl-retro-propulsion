@@ -91,19 +91,15 @@ except ImportError:
 class TestAssetValidationWithIsaac:
     """Full USD structural validation tests (require Isaac Sim runtime)."""
 
-    def test_valid_usd_passes_all_checks(self, metadata, vehicle_config):
+    def test_valid_usd_passes_all_checks(self, metadata, vehicle_config, usd_stage):
         """Valid USD scene should pass all structural checks."""
-        import omni.usd
-        stage = omni.usd.get_context().get_stage()
-        diagnostics = validate_asset(metadata, vehicle_config, stage=stage)
+        diagnostics = validate_asset(metadata, vehicle_config, stage=usd_stage)
         # Should not raise; any diagnostics are warnings
         assert isinstance(diagnostics, list)
 
-    def test_missing_fin_link_raises(self, metadata, vehicle_config):
+    def test_missing_fin_link_raises(self, metadata, vehicle_config, usd_stage):
         """USD scene missing a fin link prim should raise AssetValidationError."""
-        import omni.usd
-        stage = omni.usd.get_context().get_stage()
         bad_metadata = copy.deepcopy(metadata)
         bad_metadata["fin_link_names"][0] = "nonexistent_fin"
         with pytest.raises(AssetValidationError, match="not found in USD"):
-            validate_asset(bad_metadata, vehicle_config, stage=stage)
+            validate_asset(bad_metadata, vehicle_config, stage=usd_stage)

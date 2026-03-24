@@ -10,8 +10,8 @@ from enum import IntEnum
 GRAVITY: float = 9.81  # m/s², standard gravity
 AIR_DENSITY: float = 1.225  # kg/m³, ISA sea level
 
-# Gravity vector in Isaac world frame (y-up convention)
-GRAVITY_VEC_ISAAC = torch.tensor([0.0, -GRAVITY, 0.0], dtype=torch.float32)
+# Gravity vector in Isaac world frame (Z-up convention)
+GRAVITY_VEC_ISAAC = torch.tensor([0.0, 0.0, -GRAVITY], dtype=torch.float32)
 
 # Gravity vector in body-FRD frame (z-down = positive gravity)
 GRAVITY_VEC_FRD = torch.tensor([0.0, 0.0, GRAVITY], dtype=torch.float32)

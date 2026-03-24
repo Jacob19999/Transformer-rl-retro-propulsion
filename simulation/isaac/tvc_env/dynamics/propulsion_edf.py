@@ -4,7 +4,7 @@ EDF thrust and spool dynamics model.
 Implements:
   - Throttle-to-RPM mapping: ω_target = throttle * ω_max
   - First-order motor spool lag: dω/dt = (ω_target - ω) / τ_motor
-  - RPM rate limiting: clamp(dω, -dω_max, dω_max)
+  - Optional RPM rate limiting: clamp(dω, -dω_max, dω_max)
   - Thrust: T = k_T * ω²
 
 Vectorized for (num_envs,) arrays.
@@ -26,7 +26,7 @@ class EDFModel:
         max_thrust: float = 48.0,          # N, source: estimate
         tau_motor: float = 0.15,           # s, source: estimate
         omega_max: float = 3000.0,         # rad/s, source: to-be-calibrated (placeholder)
-        d_omega_max: float = 5000.0,       # rad/s², source: to-be-calibrated (placeholder)
+        d_omega_max: float | None = None,  # rad/s², source: to-be-calibrated (optional clamp)
         k_T: float | None = None,          # N·s²/rad², source: to-be-calibrated
         k_Q: float | None = None,          # N·m·s²/rad², source: to-be-calibrated
         rotor_inertia: float = 0.0005,     # kg·m², source: estimate
@@ -54,19 +54,35 @@ class EDFModel:
     @classmethod
     def from_yaml(cls, yaml_path: str | Path) -> "EDFModel":
         """Load EDF model from YAML config file."""
-        with open(yaml_path, "r") as f:
-            config = yaml.safe_load(f)
-        edf = config.get("edf", config)
+        path = Path(yaml_path)
+        with open(path, "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f) or {}
 
-        # Replace None/null for to-be-calibrated params with defaults
+        edf = config.get("edf")
+        if edf is None and isinstance(config.get("vehicle"), dict):
+            edf = config["vehicle"].get("edf")
+
+        # Repo convention: vehicle mass/inertia live under configs/vehicle/,
+        # while EDF parameters live under configs/params/edf_90mm.yaml.
+        if edf is None and path.parent.name == "vehicle":
+            params_path = path.parent.parent / "params" / "edf_90mm.yaml"
+            if params_path.exists():
+                with open(params_path, "r", encoding="utf-8") as f:
+                    params_config = yaml.safe_load(f) or {}
+                edf = params_config.get("edf", params_config)
+
+        if edf is None:
+            edf = config
+
+        tau_motor = edf.get("tau_motor", 0.15)
         omega_max = edf.get("omega_max") or 3000.0
-        d_omega_max = edf.get("d_omega_max") or 5000.0
+        d_omega_max = edf.get("d_omega_max")
         k_T = edf.get("k_T")  # None is OK — computed from max_thrust/omega_max²
         k_Q = edf.get("k_Q")
 
         return cls(
             max_thrust=edf.get("max_thrust", 48.0),
-            tau_motor=edf.get("tau_motor", 0.15),
+            tau_motor=tau_motor,
             omega_max=omega_max,
             d_omega_max=d_omega_max,
             k_T=k_T,
@@ -95,10 +111,11 @@ class EDFModel:
         # First-order spool dynamics
         d_omega = (omega_target - omega_state) / self.tau_motor
 
-        # Rate limit
-        d_omega_clamped = d_omega.clamp(-self.d_omega_max, self.d_omega_max)
+        # Uncalibrated slew limits should not distort the configured first-order response.
+        if self.d_omega_max is not None:
+            d_omega = d_omega.clamp(-self.d_omega_max, self.d_omega_max)
 
-        new_omega = omega_state + d_omega_clamped * dt
+        new_omega = omega_state + d_omega * dt
         new_omega = new_omega.clamp(0.0, self.omega_max)
 
         return new_omega

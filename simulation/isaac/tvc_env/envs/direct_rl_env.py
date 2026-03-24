@@ -1,13 +1,19 @@
 """
 DirectRLEnv implementation for the TVC environment.
 
-Subclasses Isaac Lab's DirectRLEnv and implements:
+Uses Isaac Lab's SimulationContext and InteractiveScene via build_scene(),
+and implements a Gymnasium-compatible step/reset/close interface directly.
+
+Methods:
   _setup_scene()           — builds scene, loads asset, initializes physics systems
   _pre_physics_step()      — clamps and stores actions per action_space contract
   _apply_action()          — servo dynamics → fin aero → force dispatch (called decimation times)
   _get_observations()      — assembles 24-dim observation tensor
   _get_rewards()           — computes weighted reward via reward_registry
   _get_dones()             — evaluates termination conditions
+  step()                   — full RL step: pre_physics → decimated substeps → obs/reward/done
+  reset()                  — reset all envs, return initial observations
+  close()                  — release simulation context
   action_space             — Box(5,) with fin angle × 4 + throttle × 1
   observation_space        — Box(24,) or Box(27,) with wind
 
@@ -18,6 +24,7 @@ from __future__ import annotations
 import torch
 from torch import Tensor
 from pathlib import Path
+from typing import Any
 
 from tvc_env.envs.base_env import TVCEnvBase, BaseEnvConfig
 from tvc_env.common.datatypes import VehicleState
@@ -25,7 +32,11 @@ from tvc_env.common.constants import ContactState
 
 
 class TVCDirectRLEnv(TVCEnvBase):
-    """Isaac Lab DirectRLEnv for EDF TVC simulation."""
+    """Isaac Lab environment for EDF TVC simulation.
+
+    Uses build_scene() for SimulationContext + InteractiveScene creation,
+    and implements step/reset/close directly (no DirectRLEnv inheritance).
+    """
 
     def __init__(
         self,
@@ -33,26 +44,16 @@ class TVCDirectRLEnv(TVCEnvBase):
         render_mode: str | None = None,
         **kwargs,
     ):
-        try:
-            from isaaclab.envs import DirectRLEnv
-            DirectRLEnvBase = DirectRLEnv
-        except ImportError:
-            # Fallback for offline testing without Isaac Lab
-            DirectRLEnvBase = object
-
         TVCEnvBase.__init__(self, config)
-        if DirectRLEnvBase is not object:
-            DirectRLEnvBase.__init__(self, config, render_mode=render_mode, **kwargs)
-
         self._pending_actions = None
-        self._step_count = None
         self._omega_max = config.config.get("edf", {}).get("omega_max") or 3000.0
         self._target_position = torch.tensor(
             config.config.get("task", {}).get("target_position", [0.0, 0.0, 5.0]),
             dtype=torch.float32,
         )
+        self._setup_scene()
 
-    # ---- Isaac Lab DirectRLEnv interface methods ----
+    # ---- Scene setup ----
 
     def _setup_scene(self) -> None:
         """Build scene, load asset, initialize all physics systems."""
@@ -65,23 +66,82 @@ class TVCDirectRLEnv(TVCEnvBase):
         metadata = load_asset_metadata(sim_root / "assets/metadata/edf_drone_v2.asset.yaml")
         vehicle_config = load_vehicle_config(sim_root / "configs/vehicle/edf_drone_v2.yaml")
 
-        with open(sim_root / "configs/params/edf_90mm.yaml", "r") as f:
+        with open(sim_root / "configs/params/edf_90mm.yaml", "r", encoding="utf-8") as f:
             edf_config = yaml.safe_load(f)
-        with open(sim_root / "configs/params/servo_mg996r.yaml", "r") as f:
+        with open(sim_root / "configs/params/servo_mg996r.yaml", "r", encoding="utf-8") as f:
             servo_config = yaml.safe_load(f)
 
         scene_config = SceneConfig.from_yaml(self._config.config)
-        self._scene = build_scene(scene_config)
-        self._drone = self._scene["drone"]
+        self._sim_scene = build_scene(scene_config)
+        self._drone = self._sim_scene["drone"]
 
         device = self._drone.device
         self._step_count = torch.zeros(self._config.num_envs, dtype=torch.int32, device=device)
 
         self._initialize_physics_systems(
-            self._scene, self._drone, metadata,
+            self._sim_scene, self._drone, metadata,
             vehicle_config, edf_config, servo_config,
             device=device,
         )
+
+    # ---- Gymnasium interface ----
+
+    @property
+    def device(self):
+        """The device on which the simulation is running."""
+        return self._drone.device
+
+    def step(self, action: Tensor) -> tuple[dict, Tensor, Tensor, Tensor, dict]:
+        """Execute one RL step: pre-physics → decimated substeps → obs/reward/done.
+
+        Args:
+            action: (num_envs, 5) — 4 fin angles + 1 throttle.
+
+        Returns:
+            (obs_dict, reward, terminated, truncated, info)
+        """
+        action = action.to(self.device)
+        self._pre_physics_step(action)
+
+        for _ in range(self._config.decimation):
+            self._apply_action()
+            self._sim_scene.step()
+
+        self._step_count += 1
+        terminated, time_out = self._get_dones()
+        reward = self._get_rewards()
+
+        # Auto-reset terminated/timed-out envs
+        reset_ids = (terminated | time_out).nonzero(as_tuple=False).squeeze(-1)
+        if len(reset_ids) > 0:
+            self._reset_manager.reset_envs(reset_ids)
+            self._step_count[reset_ids] = 0
+            self._sim_scene.step()  # propagate reset state
+
+        obs = self._get_observations()
+        truncated = time_out & ~terminated
+        return obs, reward, terminated, truncated, {}
+
+    def reset(self, seed: int | None = None, options: dict | None = None) -> tuple[dict, dict]:
+        """Reset all environments and return initial observations.
+
+        Returns:
+            (obs_dict, info)
+        """
+        indices = torch.arange(self._config.num_envs, device=self.device, dtype=torch.int64)
+        self._reset_manager.reset_envs(indices)
+        self._step_count.zero_()
+        self._pending_actions = None
+        self._sim_scene.step()  # propagate reset state
+        return self._get_observations(), {}
+
+    def close(self) -> None:
+        """Release the simulation context."""
+        if hasattr(self, "_sim_scene") and self._sim_scene is not None:
+            self._sim_scene.close()
+            self._sim_scene = None
+
+    # ---- Physics step hooks ----
 
     def _pre_physics_step(self, actions: Tensor) -> None:
         """Clamp and store actions before physics substeps.
@@ -122,13 +182,26 @@ class TVCDirectRLEnv(TVCEnvBase):
         # Compute aero forces and dispatch
         forces_body, cops = self._fin_dispatch.compute_body_frame_forces(new_servo_state, throttle)
 
-        # EDF thrust force in body-FRD frame (along thrust axis = +z in FRD)
+        # EDF reaction force on the body in body-FRD.
+        # Exhaust exits along +Z_frd (down), so body thrust is along -Z_frd (up).
         thrust = self._edf_model.compute_thrust(new_omega)  # (num_envs,)
         edf_force_body = torch.zeros(thrust.shape[0], 3, device=thrust.device)
-        edf_force_body[:, 2] = thrust  # +z direction in FRD = down = thrust direction
+        edf_force_body[:, 2] = -thrust
 
         q = self._body_iface.get_root_quaternion_wxyz()
-        self._wrench_dispatch.dispatch(forces_body, cops, q, edf_force_body)
+
+        # Wind drag force in body-FRD frame
+        wind_force_body = None
+        if self._wind_model is not None:
+            lin_vel_w = self._body_iface.get_root_linear_velocity_world()
+            wind_force_body = self._wind_model.compute_drag_force(lin_vel_w, q)
+            self._wind_model.update_gust(dt)
+
+        self._wrench_dispatch.dispatch(
+            forces_body, cops, q, edf_force_body, wind_force_body,
+        )
+
+    # ---- Observation / Reward / Done ----
 
     def _get_observations(self) -> dict:
         """Assemble observation dict with 'policy' key."""

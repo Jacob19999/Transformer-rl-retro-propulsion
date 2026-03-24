@@ -47,7 +47,10 @@ def wind_pid_env():
     )
     env = TVCDirectRLEnv(config)
     env.reset()
-    return env
+    try:
+        yield env
+    finally:
+        env.close()
 
 
 class TestSteadyHoverAllForces:

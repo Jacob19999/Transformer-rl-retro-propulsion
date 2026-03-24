@@ -13,6 +13,7 @@ import torch
 from torch import Tensor
 from tvc_env.common.constants import DispatchMode
 from tvc_env.common.frames import frd_force_to_isaac
+from tvc_env.common.quaternions import rotate_vector
 
 
 class WrenchDispatch:
@@ -23,6 +24,7 @@ class WrenchDispatch:
         mode: DispatchMode | str,
         link_force_interface=None,
         body_wrench_interface=None,
+        body_link_index: int = 0,
     ):
         if isinstance(mode, str):
             mode_map = {
@@ -33,6 +35,13 @@ class WrenchDispatch:
         self.mode = mode
         self._link_iface = link_force_interface
         self._body_iface = body_wrench_interface
+        self._body_link_index = body_link_index
+
+    @staticmethod
+    def _body_frd_to_world(vectors_body_frd: Tensor, quaternion_wxyz: Tensor) -> Tensor:
+        """Rotate body-FRD vectors into Isaac world frame."""
+        vectors_body_isaac = frd_force_to_isaac(vectors_body_frd)
+        return rotate_vector(quaternion_wxyz, vectors_body_isaac)
 
     def dispatch(
         self,
@@ -40,6 +49,7 @@ class WrenchDispatch:
         cop_positions: Tensor,          # (4, 3) in body-FRD
         root_quaternion_wxyz: Tensor,   # (num_envs, 4)
         edf_force_body: Tensor,         # (num_envs, 3) EDF thrust in body-FRD
+        wind_force_body: Tensor | None = None,  # (num_envs, 3) wind drag in body-FRD
     ) -> None:
         """Dispatch forces to simulation.
 
@@ -48,16 +58,23 @@ class WrenchDispatch:
             cop_positions: Fin COP positions in body-FRD frame (m).
             root_quaternion_wxyz: Body orientation (w,x,y,z).
             edf_force_body: EDF thrust force in body-FRD frame (N).
+            wind_force_body: Wind drag force in body-FRD frame (N), optional.
         """
+        # Combine all body-level forces
+        body_force = edf_force_body
+        if wind_force_body is not None:
+            body_force = body_force + wind_force_body
+
         if self.mode == DispatchMode.PER_LINK_FORCE:
-            self._dispatch_per_link(forces_body_frd, root_quaternion_wxyz)
+            self._dispatch_per_link(forces_body_frd, root_quaternion_wxyz, body_force)
         elif self.mode == DispatchMode.COLLAPSED_BODY_WRENCH:
-            self._dispatch_collapsed(forces_body_frd, cop_positions, root_quaternion_wxyz, edf_force_body)
+            self._dispatch_collapsed(forces_body_frd, cop_positions, root_quaternion_wxyz, body_force)
 
     def _dispatch_per_link(
         self,
         forces_body_frd: Tensor,
         root_quaternion_wxyz: Tensor,
+        body_force_frd: Tensor,
     ) -> None:
         """Per-link mode: apply force at each fin COP via link_force_interface."""
         if self._link_iface is None:
@@ -66,7 +83,8 @@ class WrenchDispatch:
         # Convert forces from body-FRD to Isaac world frame
         num_envs, num_fins, _ = forces_body_frd.shape
         forces_flat = forces_body_frd.reshape(-1, 3)  # (num_envs*4, 3)
-        forces_world_flat = frd_force_to_isaac(forces_flat)
+        q_flat = root_quaternion_wxyz.unsqueeze(1).expand(-1, num_fins, -1).reshape(-1, 4)
+        forces_world_flat = self._body_frd_to_world(forces_flat, q_flat)
         forces_world = forces_world_flat.reshape(num_envs, num_fins, 3)
 
         torques_world = torch.zeros_like(forces_world)
@@ -74,6 +92,14 @@ class WrenchDispatch:
         self._link_iface.apply_fin_forces_at_cop(
             forces_world, torques_world, root_quaternion_wxyz
         )
+
+        # Apply body-level forces (EDF thrust + wind drag) on the body link
+        body_force_world = self._body_frd_to_world(body_force_frd, root_quaternion_wxyz)
+        self._link_iface.apply_body_force(
+            body_force_world,
+            body_id=self._body_link_index,
+        )
+
         self._link_iface.write_data_to_sim()
 
     def _dispatch_collapsed(
@@ -81,14 +107,14 @@ class WrenchDispatch:
         forces_body_frd: Tensor,
         cop_positions: Tensor,
         root_quaternion_wxyz: Tensor,
-        edf_force_body: Tensor,
+        body_force_frd: Tensor,
     ) -> None:
         """Collapsed mode: sum all fin forces into net body wrench."""
         if self._body_iface is None:
             raise RuntimeError("collapsed_body_wrench mode requires a body wrench interface")
 
         # Sum forces
-        total_force_body = forces_body_frd.sum(dim=1) + edf_force_body  # (num_envs, 3)
+        total_force_body = forces_body_frd.sum(dim=1) + body_force_frd  # (num_envs, 3)
 
         # Compute torques from r × F for each fin
         # cop_positions: (4, 3), forces: (num_envs, 4, 3)
@@ -97,7 +123,7 @@ class WrenchDispatch:
         total_torque_body = torques.sum(dim=1)  # (num_envs, 3)
 
         # Convert to Isaac world frame
-        total_force_world = frd_force_to_isaac(total_force_body)
-        total_torque_world = frd_force_to_isaac(total_torque_body)
+        total_force_world = self._body_frd_to_world(total_force_body, root_quaternion_wxyz)
+        total_torque_world = self._body_frd_to_world(total_torque_body, root_quaternion_wxyz)
 
         self._body_iface.apply_body_wrench(total_force_world, total_torque_world)

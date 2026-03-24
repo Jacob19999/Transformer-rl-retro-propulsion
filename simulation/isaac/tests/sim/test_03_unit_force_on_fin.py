@@ -27,7 +27,7 @@ SIM_STEPS = 5  # Short burst to measure initial reaction
 FORCE_MAGNITUDE = 1.0  # N
 
 
-@pytest.fixture
+@pytest.fixture(scope="class")
 def setup_env():
     from tvc_env.asset.usd_loader import load_asset_metadata
     from tvc_env.asset.articulation_map import build_articulation_map
@@ -42,7 +42,10 @@ def setup_env():
     art_map = build_articulation_map(metadata, drone)
     cops = load_cop_positions(metadata, device=drone.device)
     force_iface = LinkForceInterface(drone, art_map, cops)
-    return scene, drone, art_map, force_iface, cops
+    try:
+        yield scene, drone, art_map, force_iface, cops
+    finally:
+        scene.close()
 
 
 class TestUnitForceOnFin:

@@ -118,20 +118,34 @@ def _validate_metadata_structure(metadata: dict[str, Any]) -> None:
 
 
 def _validate_usd_structure(metadata: dict[str, Any], stage, diagnostics: list[str]) -> None:
-    """Check USD prim hierarchy against metadata."""
+    """Check USD prim hierarchy against metadata.
+
+    Expected hierarchy (relative to stage defaultPrim, e.g. /Drone):
+      /<root>/Body          — ArticulationRootAPI applied
+      /<root>/FwdFin        — fin bodies as siblings of Body
+      /<root>/RightFin
+      /<root>/AftFin
+      /<root>/LeftFin
+      /<root>/Body/joint_FwdFin  — revolute joints under Body
+      ...
+    """
     try:
         import pxr.UsdPhysics as UsdPhysics
     except ImportError:
         diagnostics.append("WARNING: pxr not available, skipping USD prim checks")
         return
 
+    # Resolve root path from stage defaultPrim (e.g. "/Drone"); fallback to ""
+    default_prim = stage.GetDefaultPrim()
+    root_path = str(default_prim.GetPath()) if default_prim.IsValid() else ""
+
     body_link_name = metadata["body_link_name"]
-    body_path = f"/{body_link_name}"
+    body_path = f"{root_path}/{body_link_name}"
     body_prim = stage.GetPrimAtPath(body_path)
 
     if not body_prim.IsValid():
         raise AssetValidationError(
-            f"Body link prim not found at '{body_path}'. "
+            f"Body link prim not found in USD at '{body_path}'. "
             f"Check that USD asset has prim at this path."
         )
 
@@ -141,9 +155,9 @@ def _validate_usd_structure(metadata: dict[str, Any], stage, diagnostics: list[s
             f"USD asset must have PhysicsArticulationRootAPI applied to root link."
         )
 
-    # Check fin links
+    # Fin links are siblings of Body under the defaultPrim root
     for link_name in metadata["fin_link_names"]:
-        fin_path = f"/{body_link_name}/{link_name}"
+        fin_path = f"{root_path}/{link_name}"
         fin_prim = stage.GetPrimAtPath(fin_path)
         if not fin_prim.IsValid():
             raise AssetValidationError(
@@ -151,16 +165,16 @@ def _validate_usd_structure(metadata: dict[str, Any], stage, diagnostics: list[s
                 f"Check edf_drone_v2.asset.yaml fin_link_names match USD hierarchy."
             )
 
-    # Check fin joints
+    # Fin joints are children of Body
     for joint_name in metadata["fin_joint_names"]:
-        joint_path = f"/{body_link_name}/{joint_name}"
+        joint_path = f"{root_path}/{body_link_name}/{joint_name}"
         joint_prim = stage.GetPrimAtPath(joint_path)
         if not joint_prim.IsValid():
             raise AssetValidationError(
                 f"Fin joint '{joint_path}' not found in USD. "
                 f"Check edf_drone_v2.asset.yaml fin_joint_names match USD hierarchy."
             )
-        if not joint_prim.HasAPI(UsdPhysics.RevoluteJoint):
+        if not joint_prim.IsA(UsdPhysics.RevoluteJoint):
             raise AssetValidationError(
                 f"Joint '{joint_path}' is not a RevoluteJoint. "
                 f"All fin joints must use UsdPhysics.RevoluteJoint schema."

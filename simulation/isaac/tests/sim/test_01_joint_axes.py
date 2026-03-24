@@ -8,9 +8,16 @@ Requires Isaac Sim runtime.
 """
 
 from __future__ import annotations
+import os
 import pytest
 import torch
 from pathlib import Path
+
+# Set ISAAC_VIZ_SLOW=1 (via --slow in run_single_test.py) for GUI inspection mode.
+_SLOW = os.getenv("ISAAC_VIZ_SLOW", "0") == "1"
+_SIM_STEPS = 200 if _SLOW else 10        # physics steps per fin command
+_STEP_SLEEP = 1.0 / 60 if _SLOW else 0  # real-time pacing (~60 fps)
+_FIN_PAUSE = 2.0                         # seconds between fins in slow mode
 
 try:
     import omni.usd
@@ -26,17 +33,35 @@ DEFLECTION_ANGLE = 0.1  # rad — test command angle
 TOLERANCE = 0.01  # rad tolerance for actual vs commanded
 
 
-@pytest.fixture
-def scene_and_articulation():
-    """Set up minimal scene with a single drone for joint testing."""
-    from tvc_env.asset.usd_loader import load_asset_metadata
+@pytest.fixture(scope="module")
+def _joint_axes_sim_bundle():
+    """One SimulationContext + InteractiveScene for the whole module (Isaac Lab singleton)."""
+    from tvc_env.asset.usd_loader import load_asset_metadata, usd_stage_has_articulation_root
+
+    drone_usd = Path(__file__).parents[2] / "assets/usd/drone_v2_physics.usd"
+    if not usd_stage_has_articulation_root(drone_usd):
+        pytest.skip(
+            f"{drone_usd.name} has no UsdPhysics.ArticulationRootAPI (geometry-only). "
+            "Author PhysX articulation on Body and fin joints per edf_drone_v2.asset.yaml before running."
+        )
     from tvc_env.sim.scene_builder import SceneConfig, build_scene
 
     metadata = load_asset_metadata(METADATA_PATH)
     config = SceneConfig(num_envs=1, gizmos_enabled=False)
-    scene = build_scene(config)
-    drone = scene["drone"]
-    return scene, drone, metadata
+    bundle = build_scene(config)
+    return bundle, metadata
+
+
+@pytest.fixture
+def scene_and_articulation(_joint_axes_sim_bundle):
+    """Fresh articulation state for each test; shared sim/scene underneath."""
+    bundle, metadata = _joint_axes_sim_bundle
+    # sim.reset() re-initialises PhysX and re-applies ImplicitActuator drives;
+    # scene.reset() writes initial joint positions; scene.update() refreshes buffers.
+    bundle.sim.reset()
+    bundle.scene.reset()
+    bundle.scene.update(bundle.physics_dt)
+    yield bundle, bundle["drone"], metadata
 
 
 class TestJointAxes:
@@ -59,9 +84,16 @@ class TestJointAxes:
             target[0, joint_idx] = DEFLECTION_ANGLE
 
             drone.set_joint_position_target(target)
-            # Step simulation for N frames to let position settle
-            for _ in range(10):
+            if _SLOW:
+                print(f"\n  [VIZ] Commanding fin {i} ({joint_name}) → {DEFLECTION_ANGLE:.3f} rad")
+            for _ in range(_SIM_STEPS):
                 scene.step()
+                if _STEP_SLEEP:
+                    scene.wait(_STEP_SLEEP)
+            if _SLOW:
+                actual_preview = drone.data.joint_pos[0, joint_idx].item()
+                print(f"  [VIZ] Settled at {actual_preview:.4f} rad — pausing {_FIN_PAUSE}s")
+                scene.wait(_FIN_PAUSE)
 
             # Read actual joint position
             actual_angle = drone.data.joint_pos[0, joint_idx].item()

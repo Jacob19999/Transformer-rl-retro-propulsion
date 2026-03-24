@@ -6,6 +6,7 @@ Each test in the 13-step validation ladder can be run independently.
 
 Usage:
     python apps/run_single_test.py --test test_00_asset_validation
+    python apps/run_single_test.py --test test_01_joint_axes --no-headless
     python apps/run_single_test.py --test test_06_edf_spool_and_reaction --physics configs/physics/solver_high_fidelity.yaml
 """
 
@@ -32,9 +33,15 @@ def parse_args():
     )
     parser.add_argument(
         "--headless",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=True,
-        help="Run Isaac Sim in headless mode (default: True)",
+        help="Headless (no viewport) by default; use --no-headless for interactive Kit UI",
+    )
+    parser.add_argument(
+        "--slow",
+        action="store_true",
+        default=False,
+        help="Visual inspection mode: renders every step, prints per-fin status, pauses 2s between fins",
     )
     return parser.parse_args()
 
@@ -83,7 +90,7 @@ def run_test(test_name: str, physics_config: str | None = None):
         exit_code = pytest.main([
             str(tests_sim_dir / f"{test_name}.py"),
             "-v",
-            "--tb=short",
+            "--tb=long",
         ])
         return exit_code == 0
 
@@ -94,6 +101,10 @@ def main():
 
     simulation_app = None
     try:
+        if args.slow:
+            os.environ["ISAAC_VIZ_SLOW"] = "1"
+            print("[--slow] Visual inspection mode: 200 steps/fin, rendered, 2s pause between fins")
+
         print("Bootstrapping Isaac Sim...")
         simulation_app = bootstrap_isaac_sim(
             headless=args.headless,
@@ -104,14 +115,14 @@ def main():
         success = run_test(args.test, physics_config=args.physics)
 
         if success:
-            print(f"\n✓ PASS: {args.test}")
+            print(f"\nPASS: {args.test}")
             sys.exit(0)
         else:
-            print(f"\n✗ FAIL: {args.test}")
+            print(f"\nFAIL: {args.test}")
             sys.exit(1)
 
     except Exception as e:
-        print(f"\n✗ ERROR: {e}", file=sys.stderr)
+        print(f"\nERROR: {e}", file=sys.stderr)
         import traceback
         traceback.print_exc()
         sys.exit(2)

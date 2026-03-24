@@ -2,13 +2,13 @@
 # Source labels: measured / datasheet / estimate / to-be-calibrated / derived
 
 vehicle:
-  total_mass: 2.5                     # kg, source: measured
+  total_mass: 3.1                     # kg, source: measured
   body_com_offset: [0.0, 0.0, 0.01]  # m, in body-FRD frame, source: estimate
 
-  inertia_tensor:                     # kg·m², source: estimate
-    Ixx: 0.015
-    Iyy: 0.015
-    Izz: 0.025
+  inertia_tensor:                     # kg·m², source: measured (Isaac Sim MassAPI on /Drone/Body)
+    Ixx: 0.05
+    Iyy: 0.05
+    Izz: 0.02
 
   fins:
     count: 4

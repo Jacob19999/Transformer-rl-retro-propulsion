@@ -26,16 +26,33 @@ TEST_ANGLES = [0.0, 0.05, 0.1, 0.2, 0.262, -0.1, -0.262]
 TOLERANCE = 0.015  # rad
 
 
-@pytest.fixture
-def setup_env():
-    from tvc_env.asset.usd_loader import load_asset_metadata
+@pytest.fixture(scope="module")
+def _single_fin_sim_bundle():
+    from tvc_env.asset.usd_loader import load_asset_metadata, usd_stage_has_articulation_root
     from tvc_env.sim.scene_builder import SceneConfig, build_scene
+
+    drone_usd = Path(__file__).parents[2] / "assets/usd/drone_v2_physics.usd"
+    if not usd_stage_has_articulation_root(drone_usd):
+        pytest.skip(
+            f"{drone_usd.name} has no UsdPhysics.ArticulationRootAPI (geometry-only). "
+            "Author PhysX articulation on Body and fin joints per edf_drone_v2.asset.yaml before running."
+        )
 
     metadata = load_asset_metadata(METADATA_PATH)
     config = SceneConfig(num_envs=1, gizmos_enabled=False)
-    scene = build_scene(config)
-    drone = scene["drone"]
-    return scene, drone, metadata
+    bundle = build_scene(config)
+    return bundle, metadata
+
+
+@pytest.fixture
+def setup_env(_single_fin_sim_bundle):
+    bundle, metadata = _single_fin_sim_bundle
+    # sim.reset() re-initialises PhysX and re-applies ImplicitActuator drives;
+    # scene.reset() writes initial joint positions; scene.update() refreshes buffers.
+    bundle.sim.reset()
+    bundle.scene.reset()
+    bundle.scene.update(bundle.physics_dt)
+    yield bundle, bundle["drone"], metadata
 
 
 class TestSingleFinArticulation:

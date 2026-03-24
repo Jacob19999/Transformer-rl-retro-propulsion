@@ -149,12 +149,12 @@ class BodyInterface:
         self._art.write_root_state_to_sim(root_state)
 
     def get_altitude(self, ground_level: float = 0.0) -> Tensor:
-        """Compute altitude above ground from Isaac world frame y-coordinate.
+        """Compute altitude above ground from Isaac world frame z-coordinate.
 
-        In Isaac y-up frame, altitude = root_pos_y - ground_level.
+        In Isaac's Z-up frame, altitude = root_pos_z - ground_level.
 
         Returns:
             Tensor of shape (num_envs,) in meters.
         """
-        pos_y = self._art.data.root_pos_w[:, 1]  # y-up in Isaac
-        return pos_y - ground_level
+        pos_z = self._art.data.root_pos_w[:, 2]  # z-up in Isaac
+        return pos_z - ground_level

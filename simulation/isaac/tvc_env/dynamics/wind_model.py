@@ -48,10 +48,10 @@ class WindModel:
             steady_vector = [0.0, 0.0, 0.0]
         self._steady_wind = torch.tensor(steady_vector, dtype=torch.float32, device=device)
 
-        # Gust state
+        # Gust state — sample an initial cooldown so the first gust is delayed.
         self._gust_active = False
         self._gust_remaining = 0.0
-        self._gust_cooldown = 0.0
+        self._gust_cooldown = self._sample_gust_cooldown() if gust_enabled else 0.0
         self._gust_direction = torch.zeros(3, device=device)
 
     @classmethod
@@ -74,6 +74,18 @@ class WindModel:
             device=device,
         )
 
+    def _sample_gust_cooldown(self) -> float:
+        """Sample the wait time until the next gust begins."""
+        interval_span = max(self.gust_interval_max - self.gust_interval_min, 0.0)
+        if interval_span == 0.0:
+            return self.gust_interval_min
+
+        if self.device is not None:
+            rand = torch.rand(1, device=self.device).item()
+        else:
+            rand = torch.rand(1).item()
+        return self.gust_interval_min + rand * interval_span
+
     def update_gust(self, dt: float) -> None:
         """Update gust state machine (step dt seconds)."""
         if not self.gust_enabled:
@@ -83,19 +95,16 @@ class WindModel:
             self._gust_remaining -= dt
             if self._gust_remaining <= 0:
                 self._gust_active = False
-                self._gust_cooldown = (
-                    self.gust_interval_min +
-                    torch.rand(1).item() * (self.gust_interval_max - self.gust_interval_min)
-                )
+                self._gust_cooldown = self._sample_gust_cooldown()
         else:
             self._gust_cooldown -= dt
             if self._gust_cooldown <= 0:
                 self._gust_active = True
                 self._gust_remaining = self.gust_duration
-                # Random gust direction in horizontal plane (world frame)
+                # Random gust direction in the horizontal world plane (Z-up).
                 angle = torch.rand(1).item() * 6.283
                 self._gust_direction = torch.tensor(
-                    [torch.cos(torch.tensor(angle)).item(), 0.0, torch.sin(torch.tensor(angle)).item()],
+                    [torch.cos(torch.tensor(angle)).item(), torch.sin(torch.tensor(angle)).item(), 0.0],
                     device=self.device,
                 )
 

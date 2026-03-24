@@ -1,8 +1,13 @@
 """
-FRD ↔ Isaac frame conversion — SINGLE canonical conversion boundary.
+FRD <-> Isaac frame conversion -- SINGLE canonical conversion boundary.
 
 Body-FRD convention: x=forward, y=right, z=down
-Isaac/world convention: x=right, y=up, z=back (NED-like, per Isaac Sim default)
+Isaac/world convention in this repo: x=forward, y=left, z=up (Z-up stage)
+
+At neutral heading, the mapping is:
+  +X_frd -> +X_world
+  +Y_frd -> -Y_world
+  +Z_frd -> -Z_world
 
 All frame conversions in the entire codebase MUST pass through this module.
 No other module may implement frame transformations.
@@ -12,15 +17,15 @@ import torch
 from torch import Tensor
 
 
-# Rotation matrix: body-FRD → Isaac world frame
-# FRD (x_fwd, y_right, z_down) → Isaac (x_right, y_up, z_back)
-# x_isaac =  y_frd   (right)
-# y_isaac = -z_frd   (up = -down)
-# z_isaac = -x_frd   (back = -forward)
+# Rotation matrix: body-FRD -> Isaac world-aligned axes
+# FRD (x_fwd, y_right, z_down) -> Isaac world (x_fwd, y_left, z_up)
+# x_isaac =  x_frd
+# y_isaac = -y_frd
+# z_isaac = -z_frd
 _R_FRD_TO_ISAAC = torch.tensor([
-    [0.0,  1.0,  0.0],
+    [1.0,  0.0,  0.0],
+    [0.0, -1.0,  0.0],
     [0.0,  0.0, -1.0],
-    [-1.0, 0.0,  0.0],
 ], dtype=torch.float64)
 
 _R_ISAAC_TO_FRD = _R_FRD_TO_ISAAC.T  # Orthogonal, so inverse = transpose

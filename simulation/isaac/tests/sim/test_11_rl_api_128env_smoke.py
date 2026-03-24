@@ -38,7 +38,10 @@ def env_128():
         sim_root=SIM_ROOT,
     )
     env = TVCDirectRLEnv(config)
-    yield env
+    try:
+        yield env
+    finally:
+        env.close()
 
 
 class TestRL128EnvSmoke:

@@ -30,19 +30,27 @@ GOLDENS_PATH = Path(__file__).parents[2] / "tests/goldens/touchdown_cases"
 METADATA_PATH = Path(__file__).parents[2] / "assets/metadata/edf_drone_v2.asset.yaml"
 
 
-@pytest.fixture
-def env_setup():
+@pytest.fixture(scope="class")
+def scene_setup():
     from tvc_env.asset.usd_loader import load_asset_metadata
     from tvc_env.sim.scene_builder import SceneConfig, build_scene
-    from tvc_env.sim.sensor_interface import SensorInterface
-    from tvc_env.sim.contacts import ContactStateMachine
-    from tvc_env.sim.crash_logic import CrashDetector
 
     metadata = load_asset_metadata(METADATA_PATH)
     config = SceneConfig(num_envs=1, gizmos_enabled=False)
     scene = build_scene(config)
     drone = scene["drone"]
 
+    yield scene, drone, metadata
+
+    scene.close()
+
+
+@pytest.fixture
+def env_setup(scene_setup):
+    from tvc_env.sim.contacts import ContactStateMachine
+    from tvc_env.sim.crash_logic import CrashDetector
+
+    scene, drone, metadata = scene_setup
     contact_sm = ContactStateMachine(num_envs=1, dwell_frames=5)
     crash_detector = CrashDetector()
 

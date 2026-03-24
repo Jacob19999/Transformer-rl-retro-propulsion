@@ -4,61 +4,62 @@
 
 asset:
   name: edf_drone_v2
-  usd_path: "assets/usd/edf_drone_v2.usd"
+  usd_path: "simulation/isaac/assets/usd/drone_v2_physics.usd"  # relative to repo root
 
-  # Root body link name (ArticulationRootAPI prim)
-  body_link_name: "body"
+  # Root body link name (ArticulationRootAPI prim); lives at /<defaultPrim>/Body
+  body_link_name: "Body"
 
   # Fin link names in canonical order: +X, +Y, -X, -Y
+  # Fins are siblings of Body under the Drone defaultPrim
   fin_link_names:
-    - "fin_px"   # +X fin (forward fin)
-    - "fin_py"   # +Y fin (right fin)
-    - "fin_mx"   # -X fin (rear fin)
-    - "fin_my"   # -Y fin (left fin)
+    - "FwdFin"    # +X fin (forward fin)
+    - "RightFin"  # +Y fin (right fin)
+    - "AftFin"    # -X fin (rear fin)
+    - "LeftFin"   # -Y fin (left fin)
 
-  # Revolute joint names (parent: body → child: fin)
+  # Revolute joint names (parent: Body → child: fin); live at /<defaultPrim>/Body/<joint>
   fin_joint_names:
-    - "joint_fin_px"
-    - "joint_fin_py"
-    - "joint_fin_mx"
-    - "joint_fin_my"
+    - "joint_FwdFin"
+    - "joint_RightFin"
+    - "joint_AftFin"
+    - "joint_LeftFin"
 
   # Hinge axes for each fin joint in body-FRD frame (unit vectors)
   # Positive deflection rotates fin tip toward the hinge axis using right-hand rule
   hinge_axes:
-    - [0.0, 1.0, 0.0]   # fin_px: hinge along +Y (pitches body nose up on positive deflection)
-    - [-1.0, 0.0, 0.0]  # fin_py: hinge along -X (rolls body right on positive deflection)
-    - [0.0, -1.0, 0.0]  # fin_mx: hinge along -Y
-    - [1.0, 0.0, 0.0]   # fin_my: hinge along +X
+    - [0.0, 1.0, 0.0]   # FwdFin: hinge along +Y (pitches body nose up on positive deflection)
+    - [-1.0, 0.0, 0.0]  # RightFin: hinge along -X (rolls body right on positive deflection)
+    - [0.0, -1.0, 0.0]  # AftFin: hinge along -Y
+    - [1.0, 0.0, 0.0]   # LeftFin: hinge along +X
 
   # Joint limits [min_rad, max_rad] — must match USD PhysicsRevoluteJoint limits
   joint_limits:
-    - [-0.262, 0.262]   # fin_px, 15°
-    - [-0.262, 0.262]   # fin_py, 15°
-    - [-0.262, 0.262]   # fin_mx, 15°
-    - [-0.262, 0.262]   # fin_my, 15°
+    - [-0.262, 0.262]   # FwdFin, 15°
+    - [-0.262, 0.262]   # RightFin, 15°
+    - [-0.262, 0.262]   # AftFin, 15°
+    - [-0.262, 0.262]   # LeftFin, 15°
 
   # Center-of-pressure (COP) positions for each fin in body-FRD frame (m)
   # These are used for set_external_force_and_torque(positions=...) in Isaac Sim
   fin_cop_positions:
-    - [0.04, 0.0, 0.10]    # fin_px COP: forward-offset, at EDF exit plane z
-    - [0.0, 0.04, 0.10]    # fin_py COP
-    - [-0.04, 0.0, 0.10]   # fin_mx COP
-    - [0.0, -0.04, 0.10]   # fin_my COP
+    - [0.04, 0.0, 0.10]    # FwdFin COP: forward-offset, at EDF exit plane z
+    - [0.0, 0.04, 0.10]    # RightFin COP
+    - [-0.04, 0.0, 0.10]   # AftFin COP
+    - [0.0, -0.04, 0.10]   # LeftFin COP
 
   # Chord directions in fin-local frame (direction of fin-plane normal under deflection)
   fin_chord_directions:
-    - [1.0, 0.0, 0.0]   # fin_px chord
-    - [0.0, 1.0, 0.0]   # fin_py chord
-    - [1.0, 0.0, 0.0]   # fin_mx chord
-    - [0.0, 1.0, 0.0]   # fin_my chord
+    - [1.0, 0.0, 0.0]   # FwdFin chord
+    - [0.0, 1.0, 0.0]   # RightFin chord
+    - [1.0, 0.0, 0.0]   # AftFin chord
+    - [0.0, 1.0, 0.0]   # LeftFin chord
 
   # Normal directions (perpendicular to fin surface in zero-deflection position)
   fin_normal_directions:
-    - [0.0, 0.0, 1.0]   # fin_px: normal along -z (exhaust flow direction)
-    - [0.0, 0.0, 1.0]   # fin_py
-    - [0.0, 0.0, 1.0]   # fin_mx
-    - [0.0, 0.0, 1.0]   # fin_my
+    - [0.0, 0.0, 1.0]   # FwdFin: normal along -z (exhaust flow direction)
+    - [0.0, 0.0, 1.0]   # RightFin
+    - [0.0, 0.0, 1.0]   # AftFin
+    - [0.0, 0.0, 1.0]   # LeftFin
 
   # EDF thrust axis in body-FRD frame (exhaust exits downward = +z in FRD)
   edf_thrust_axis: [0.0, 0.0, 1.0]

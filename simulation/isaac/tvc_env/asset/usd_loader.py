@@ -57,6 +57,25 @@ def load_asset_metadata(metadata_yaml_path: str | Path) -> dict[str, Any]:
     return data.get("asset", data)
 
 
+def usd_stage_has_articulation_root(usd_path: str | Path) -> bool:
+    """True if the USD stage contains any prim with ``UsdPhysics.ArticulationRootAPI``.
+
+    Uses pxr only (no Isaac Sim). Geometry-only exports return False; PhysX needs an articulation root.
+    """
+    try:
+        from pxr import Usd, UsdPhysics
+    except ImportError:
+        return False
+    path = Path(usd_path)
+    stage = Usd.Stage.Open(str(path))
+    if stage is None:
+        return False
+    for prim in stage.Traverse():
+        if prim.HasAPI(UsdPhysics.ArticulationRootAPI):
+            return True
+    return False
+
+
 def load_usd_scene(usd_path: str | Path, metadata: dict[str, Any]) -> LoadedAsset:
     """Load USD scene and extract prim information.
 
@@ -91,10 +110,13 @@ def load_usd_scene(usd_path: str | Path, metadata: dict[str, Any]) -> LoadedAsse
     fin_link_names = metadata["fin_link_names"]
     fin_joint_names = metadata["fin_joint_names"]
 
-    # Resolve prim paths (assume prims live at /<name>)
-    body_path = f"/{body_name}"
-    fin_link_paths = [f"/{body_name}/{name}" for name in fin_link_names]
-    fin_joint_paths = [f"/{body_name}/{name}" for name in fin_joint_names]
+    # Resolve prim paths relative to the stage defaultPrim (e.g. /Drone).
+    # Fins are siblings of Body; joints are children of Body.
+    default_prim = stage.GetDefaultPrim()
+    root_path = str(default_prim.GetPath()) if default_prim.IsValid() else ""
+    body_path = f"{root_path}/{body_name}"
+    fin_link_paths = [f"{root_path}/{name}" for name in fin_link_names]
+    fin_joint_paths = [f"{root_path}/{body_name}/{name}" for name in fin_joint_names]
 
     # Extract body prim info
     body_prim_usd = stage.GetPrimAtPath(body_path)

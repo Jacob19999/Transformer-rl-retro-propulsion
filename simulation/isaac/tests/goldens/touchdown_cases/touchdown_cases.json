@@ -1,0 +1,6 @@
+{
+  "soft_touchdown": "AIRBORNE \u2192 CANDIDATE \u2192 LANDED (passed if test passes)",
+  "bounce": "CANDIDATE \u2192 AIRBORNE",
+  "hard_impact": "AIRBORNE/CANDIDATE \u2192 CRASHED",
+  "tip_over": "CANDIDATE \u2192 CRASHED"
+}

@@ -2,7 +2,7 @@
 Simulation test: Wind disturbance (test_08).
 
 Tests:
-  - Apply constant wind to hovering vehicle, verify drift direction matches wind vector
+  - Free-fall with zero thrust, verify horizontal drift direction matches steady wind vector
   - Rotate vehicle 90° and verify drag still opposes relative airflow correctly
   - Trigger gust event and verify transient force magnitude and duration
 
@@ -25,7 +25,20 @@ pytestmark = pytest.mark.skipif(not ISAAC_AVAILABLE, reason="Isaac Sim runtime n
 SIM_ROOT = Path(__file__).parents[2]
 
 
-@pytest.fixture
+def _set_deterministic_root_state(env) -> None:
+    """Remove randomized spawn drift so the steady wind signal is measurable."""
+    from tvc_env.common.quaternions import identity
+
+    position = env._body_iface.get_root_position().clone()
+    linear_vel = torch.zeros_like(position)
+    angular_vel = torch.zeros_like(position)
+    quaternion = identity(num=position.shape[0], device=env.device, dtype=position.dtype).reshape(-1, 4)
+
+    env._body_iface.set_root_state(position, quaternion, linear_vel, angular_vel)
+    env._sim_scene.step()
+
+
+@pytest.fixture(scope="class")
 def wind_env():
     from tvc_env.envs.base_env import BaseEnvConfig
     from tvc_env.envs.direct_rl_env import TVCDirectRLEnv
@@ -38,39 +51,42 @@ def wind_env():
     )
     env = TVCDirectRLEnv(config)
     env.reset()
-    return env
+    try:
+        yield env
+    finally:
+        env.close()
 
 
 class TestWindDisturbance:
     def test_drift_direction_matches_wind(self, wind_env):
-        """Vehicle should drift in wind direction when hovering at fixed throttle."""
-        import torch
-        from tvc_env.dynamics.wind_model import WindModel
+        """Free-falling drone (zero thrust) should drift in the steady-wind x direction.
+
+        Using free-fall instead of hovering avoids throttle-calibration and
+        auto-reset noise.  As the drone falls, |v_rel| grows, so the horizontal
+        wind-drag force increases — giving a clean, growing signal.
+        30 env-steps ≈ 1 s sim time; the vertical drop stays well inside the
+        10 m altitude-error termination limit.
+        """
         import yaml
+        from tvc_env.dynamics.wind_model import WindModel
 
         with open(SIM_ROOT / "configs/disturbances/wind.yaml") as f:
             wind_cfg = yaml.safe_load(f)
-        wind_model = WindModel.from_disturbance_config(wind_cfg)
-        wind_world = wind_model.get_effective_wind_world()
+        wind_x = WindModel.from_disturbance_config(wind_cfg).get_effective_wind_world()[0].item()
 
-        obs_dict, _ = wind_env.reset()
+        wind_env.reset()
+        _set_deterministic_root_state(wind_env)
         initial_pos = wind_env._body_iface.get_root_position()[0].clone()
 
-        # Hover with fixed throttle for several seconds
-        for _ in range(60):
-            action = torch.zeros(1, 5)
-            action[0, 4] = 0.75
-            wind_env.step(action)
+        # Zero throttle: drone free-falls; wind drag pushes it sideways.
+        for _ in range(30):
+            wind_env.step(torch.zeros(1, 5))
 
-        final_pos = wind_env._body_iface.get_root_position()[0]
-        drift = final_pos - initial_pos
+        drift_x = (wind_env._body_iface.get_root_position()[0] - initial_pos)[0].item()
 
-        # Drift x-component should align with wind x-component sign
-        wind_x = wind_world[0].item()
-        drift_x = drift[0].item()
         if abs(wind_x) > 0.1:
             assert wind_x * drift_x > 0, \
-                f"Drift x={drift_x:.3f} should align with wind x={wind_x:.3f}"
+                f"Drift x={drift_x:.4f} m should align with wind x={wind_x:.3f} m/s"
 
     def test_drag_opposes_relative_airflow(self, wind_env):
         """Body drag force should oppose relative wind in rotated vehicle."""
