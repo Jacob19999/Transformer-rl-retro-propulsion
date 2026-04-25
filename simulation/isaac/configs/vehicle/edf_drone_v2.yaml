@@ -1,0 +1,24 @@
+# Vehicle configuration for EDF Drone v2
+# Source labels: measured / datasheet / estimate / to-be-calibrated / derived
+
+vehicle:
+  total_mass: 3.1                     # kg, source: measured
+  body_com_offset: [0.0, 0.0, 0.01]  # m, in body-FRD frame, source: estimate
+
+  inertia_tensor:                     # kg·m², source: measured (Isaac Sim MassAPI on /Drone/Body)
+    Ixx: 0.05
+    Iyy: 0.05
+    Izz: 0.02
+
+  fins:
+    count: 4
+    area: 0.002                       # m², source: measured
+    max_deflection: 0.262             # rad (15°), source: measured
+    # COP offset from hinge joint origin in fin-local z-axis, source: estimate
+    cop_offset: [0.0, 0.0, -0.05]    # m
+
+  body:
+    length: 0.35                      # m, source: measured
+    diameter: 0.12                    # m, source: measured
+    cd_body: 1.0                      # source: estimate (bluff body)
+    reference_area: 0.011             # m² (π * (0.06)²), source: derived

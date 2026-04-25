@@ -1,0 +1,37 @@
+# Landing task configuration
+# Source: config_schema contract
+
+task:
+  name: landing
+  target_position: [0.0, 0.0, 0.0]   # m, landing pad center
+  episode_length_s: 60.0
+
+  spawn:
+    position_range: [[-2.0, -2.0, 8.0], [2.0, 2.0, 12.0]]  # m
+    velocity_range: [[-1.0, -1.0, -2.0], [1.0, 1.0, 0.0]]   # m/s (biased downward)
+    attitude_range: [[-0.1, -0.1, -0.2], [0.1, 0.1, 0.2]]   # rad
+
+  contact:
+    dwell_frames: 15
+    min_contact_force: 1.0             # N
+
+  reward:
+    alive_bonus: 0.5
+    position_error: -1.0
+    attitude_error: -1.5
+    angular_velocity: -0.5
+    control_effort: -0.1
+    crash_penalty: -100.0
+    touchdown_softness: 5.0
+    landing_success: 50.0
+    pad_accuracy: 10.0
+    vertical_speed_shaping: -2.0
+
+  success:
+    state: LANDED
+    max_pad_distance: 0.5             # m from pad center
+
+  termination:
+    max_tilt: 1.57                    # rad (90°)
+    max_altitude: 20.0                # m
+    crash: true

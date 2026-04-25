@@ -1,0 +1,38 @@
+# Hover task configuration
+# Source: config_schema contract
+
+task:
+  name: hover
+  target_position: [0.0, 0.0, 5.0]   # m, world frame (x, y, z in FRD/world)
+  episode_length_s: 30.0
+
+  spawn:
+    position_range: [[-1.0, -1.0, 4.0], [1.0, 1.0, 6.0]]  # m, world [min, max]
+    velocity_range: [[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]]   # m/s
+    attitude_range: [[-0.05, -0.05, -0.1], [0.05, 0.05, 0.1]]  # rad, [roll, pitch, yaw]
+
+  contact:
+    dwell_frames: 10
+    min_contact_force: 1.0             # N
+
+  reward:
+    alive_bonus: 1.0
+    position_error: -2.0
+    attitude_error: -1.0
+    angular_velocity: -0.5
+    control_effort: -0.1
+    control_rate: -0.05
+    hover_stability: 2.0
+    drift_penalty: -1.5
+    contact_penalty: -10.0
+
+  success:
+    max_position_error: 0.5           # m
+    max_tilt: 0.26                    # rad (15°)
+    max_angular_rate: 1.0             # rad/s
+    dwell_time: 3.0                   # s
+
+  termination:
+    max_tilt: 1.57                    # rad (90°)
+    max_altitude_error: 10.0          # m
+    crash: true

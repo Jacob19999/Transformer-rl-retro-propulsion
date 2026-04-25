@@ -1,0 +1,9 @@
+# Sensor noise disturbance configuration
+disturbances:
+  enabled: true
+  sensor_noise:
+    enabled: true
+    position_std: 0.01           # m
+    velocity_std: 0.05           # m/s
+    attitude_std: 0.005          # rad
+    angular_velocity_std: 0.02   # rad/s

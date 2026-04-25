@@ -1,0 +1,8008 @@
+{
+  "description": "EDF step-response from 0% to 100% throttle",
+  "tau_motor_s": 0.15,
+  "dt_s": 0.008333333333333333,
+  "n_steps": 400,
+  "steps": [
+    {
+      "t_s": 0.008333,
+      "omega_rad_s": 238.8889,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.00241975
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        5.73333311
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.016667,
+      "omega_rad_s": 464.5062,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.00914876
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        5.414814
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.025,
+      "omega_rad_s": 677.5892,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.01946758
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        5.11399174
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.033333,
+      "omega_rad_s": 878.8342,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.03274862
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        4.82988119
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.041667,
+      "omega_rad_s": 1068.899,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.0484454
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        4.56155539
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.05,
+      "omega_rad_s": 1248.4047,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.06608302
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        4.30813408
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.058333,
+      "omega_rad_s": 1417.9377,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.08524982
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        4.06879377
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.066667,
+      "omega_rad_s": 1578.0524,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.1055898
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        3.84275079
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.075,
+      "omega_rad_s": 1729.2717,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.12679602
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        3.62926435
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.083333,
+      "omega_rad_s": 1872.09,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.14860471
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        3.42763734
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.091667,
+      "omega_rad_s": 2006.9739,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.17079006
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        3.23721361
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.1,
+      "omega_rad_s": 2134.3643,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.19315958
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        3.05736876
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.108333,
+      "omega_rad_s": 2254.6772,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.21554995
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        2.88751149
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.116667,
+      "omega_rad_s": 2368.3064,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.23782358
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        2.72709942
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.125,
+      "omega_rad_s": 2475.6228,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.25986519
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        2.57559347
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.133333,
+      "omega_rad_s": 2576.9771,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.28157899
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        2.43250179
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.141667,
+      "omega_rad_s": 2672.7004,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.30288634
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        2.29736114
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.15,
+      "omega_rad_s": 2763.106,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.3237235
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        2.16973209
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.158333,
+      "omega_rad_s": 2848.489,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.34403944
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        2.04919314
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.166667,
+      "omega_rad_s": 2929.1284,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.36379436
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.93534541
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.175,
+      "omega_rad_s": 3005.2878,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.38295811
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.82782614
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.183333,
+      "omega_rad_s": 3077.2163,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.4015089
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.72628319
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.191667,
+      "omega_rad_s": 3145.1487,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.41943192
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.63037682
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.2,
+      "omega_rad_s": 3209.3071,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.43671861
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.53980255
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.208333,
+      "omega_rad_s": 3269.9011,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.45336539
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.4542557
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.216667,
+      "omega_rad_s": 3327.1289,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.46937332
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.37346661
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.225,
+      "omega_rad_s": 3381.1772,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.4847469
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.29716003
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.233333,
+      "omega_rad_s": 3432.2229,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.49949381
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.22509563
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.241667,
+      "omega_rad_s": 3480.4329,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.51362443
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.15703893
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.25,
+      "omega_rad_s": 3525.9644,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.52715093
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.09275568
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.258333,
+      "omega_rad_s": 3568.9663,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.5400874
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.03204679
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.266667,
+      "omega_rad_s": 3609.5793,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.55244917
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.97471279
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.275,
+      "omega_rad_s": 3647.936,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.56425256
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.92056054
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.283333,
+      "omega_rad_s": 3684.1619,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.57551485
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.86941987
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.291667,
+      "omega_rad_s": 3718.375,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.58625358
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.8211152
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.3,
+      "omega_rad_s": 3750.6875,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.59648693
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.77549994
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.308333,
+      "omega_rad_s": 3781.2048,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.60623294
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.73241597
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.316667,
+      "omega_rad_s": 3810.0269,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.61551017
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.69172847
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.325,
+      "omega_rad_s": 3837.2476,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.6243366
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.65329683
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.333333,
+      "omega_rad_s": 3862.9561,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.63273036
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.61700386
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.341667,
+      "omega_rad_s": 3887.2363,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.64070928
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.58272648
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.35,
+      "omega_rad_s": 3910.1677,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.64829087
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.55035347
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.358333,
+      "omega_rad_s": 3931.8252,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.65549219
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.51977921
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.366667,
+      "omega_rad_s": 3952.2793,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.66232997
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.49089837
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.375,
+      "omega_rad_s": 3971.5972,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.66882044
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.46362889
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.383333,
+      "omega_rad_s": 3989.8418,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.67497939
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.43787107
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.391667,
+      "omega_rad_s": 4007.0728,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.68082201
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.41354296
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.4,
+      "omega_rad_s": 4023.3464,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.68636322
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.39056832
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.408333,
+      "omega_rad_s": 4038.7161,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.69161719
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.36887106
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.416667,
+      "omega_rad_s": 4053.2319,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.6965977
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.34838083
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.425,
+      "omega_rad_s": 4066.9412,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.70131785
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.32902145
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.433333,
+      "omega_rad_s": 4079.8889,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.70579052
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.31074607
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.441667,
+      "omega_rad_s": 4092.1174,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.71002775
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.29348433
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.45,
+      "omega_rad_s": 4103.6665,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.71404117
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.27717769
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.458333,
+      "omega_rad_s": 4114.5737,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.71784192
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.26177341
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.466667,
+      "omega_rad_s": 4124.875,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.72144085
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.24723044
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.475,
+      "omega_rad_s": 4134.604,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.72484803
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.23349608
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.483333,
+      "omega_rad_s": 4143.7925,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.72807336
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.22052343
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.491667,
+      "omega_rad_s": 4152.4707,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.73112607
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.20827734
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.5,
+      "omega_rad_s": 4160.667,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.73401523
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.19671091
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.508333,
+      "omega_rad_s": 4168.4077,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.73674887
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.18577732
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.516667,
+      "omega_rad_s": 4175.7183,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.73933548
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.17545311
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.525,
+      "omega_rad_s": 4182.623,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.74178255
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.16571483
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.533333,
+      "omega_rad_s": 4189.144,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.74409729
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.15650389
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.541667,
+      "omega_rad_s": 4195.3027,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.74628681
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.14780858
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.55,
+      "omega_rad_s": 4201.1191,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.74835753
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.13959374
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.558333,
+      "omega_rad_s": 4206.6123,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.7503159
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.13183592
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.566667,
+      "omega_rad_s": 4211.8003,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.7521677
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.1245117
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.575,
+      "omega_rad_s": 4216.7002,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.75391883
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.11759764
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.583333,
+      "omega_rad_s": 4221.3281,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.75557464
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.11107031
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.591667,
+      "omega_rad_s": 4225.6987,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.75714004
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.10489453
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.6,
+      "omega_rad_s": 4229.8267,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.75862002
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0990703
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.608333,
+      "omega_rad_s": 4233.7251,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.760019
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.09356249
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.616667,
+      "omega_rad_s": 4237.4072,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.76134157
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.08837108
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.625,
+      "omega_rad_s": 4240.8848,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.76259172
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.08346093
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.633333,
+      "omega_rad_s": 4244.1689,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.76377326
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0788203
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.641667,
+      "omega_rad_s": 4247.2705,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.76488996
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.07443749
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.65,
+      "omega_rad_s": 4250.1997,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.76594543
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.07030077
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.658333,
+      "omega_rad_s": 4252.9663,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.76694286
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.06639843
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.666667,
+      "omega_rad_s": 4255.5791,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.76788551
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.06270702
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.675,
+      "omega_rad_s": 4258.0469,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.76877636
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.05922655
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.683333,
+      "omega_rad_s": 4260.3774,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.76961815
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.05593359
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.691667,
+      "omega_rad_s": 4262.5786,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.77041358
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.05282812
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.7,
+      "omega_rad_s": 4264.6577,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.77116537
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.04989843
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.708333,
+      "omega_rad_s": 4266.6211,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.77187556
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.04712109
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.716667,
+      "omega_rad_s": 4268.4756,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.77254671
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.04450781
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.725,
+      "omega_rad_s": 4270.2271,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.77318084
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.04203515
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.733333,
+      "omega_rad_s": 4271.8809,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.77377981
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0396914
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.741667,
+      "omega_rad_s": 4273.4429,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.77434582
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.03748828
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.75,
+      "omega_rad_s": 4274.9185,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.77488065
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.03541406
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.758333,
+      "omega_rad_s": 4276.312,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.77538592
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.03344531
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.766667,
+      "omega_rad_s": 4277.6279,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.77586317
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.03158203
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.775,
+      "omega_rad_s": 4278.8706,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.77631408
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.02982421
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.783333,
+      "omega_rad_s": 4280.0444,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.77674001
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.02817187
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.791667,
+      "omega_rad_s": 4281.1533,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.77714258
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.02661328
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.8,
+      "omega_rad_s": 4282.2002,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.77752268
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.025125
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.808333,
+      "omega_rad_s": 4283.189,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.7778818
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.02373047
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.816667,
+      "omega_rad_s": 4284.123,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.77822113
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.02241797
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.825,
+      "omega_rad_s": 4285.0049,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.77854151
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.02116406
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.833333,
+      "omega_rad_s": 4285.8379,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.77884424
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.01999219
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.841667,
+      "omega_rad_s": 4286.6245,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.77913016
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.01887891
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.85,
+      "omega_rad_s": 4287.3677,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.77940035
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.01783594
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.858333,
+      "omega_rad_s": 4288.0693,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.77965546
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.01683984
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.866667,
+      "omega_rad_s": 4288.7319,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.77989644
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.01590234
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.875,
+      "omega_rad_s": 4289.3579,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78012419
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.01502344
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.883333,
+      "omega_rad_s": 4289.9492,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78033924
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.01419141
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.891667,
+      "omega_rad_s": 4290.5078,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78054249
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.01340625
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.9,
+      "omega_rad_s": 4291.0352,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.7807343
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.01265625
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.908333,
+      "omega_rad_s": 4291.5332,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78091562
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.01195312
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.916667,
+      "omega_rad_s": 4292.0034,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78108674
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.01128516
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.925,
+      "omega_rad_s": 4292.4478,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78124845
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.01066406
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.933333,
+      "omega_rad_s": 4292.8672,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.7814011
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0100664
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.941667,
+      "omega_rad_s": 4293.2637,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78154546
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00951562
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.95,
+      "omega_rad_s": 4293.6377,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78168166
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00897656
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.958333,
+      "omega_rad_s": 4293.9912,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78181034
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00848437
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.966667,
+      "omega_rad_s": 4294.3252,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.781932
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00801562
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.975,
+      "omega_rad_s": 4294.6406,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78204691
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00757031
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.983333,
+      "omega_rad_s": 4294.9385,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78215533
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00714844
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 0.991667,
+      "omega_rad_s": 4295.2197,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.7822578
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00675
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.0,
+      "omega_rad_s": 4295.4854,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78235453
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.006375
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.008333,
+      "omega_rad_s": 4295.7363,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78244597
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00602344
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.016667,
+      "omega_rad_s": 4295.9731,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78253227
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00568359
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.025,
+      "omega_rad_s": 4296.1968,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78261369
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00536719
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.033333,
+      "omega_rad_s": 4296.4082,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78269082
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00507422
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.041667,
+      "omega_rad_s": 4296.6079,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78276354
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00479297
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.05,
+      "omega_rad_s": 4296.7964,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78283226
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00452344
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.058333,
+      "omega_rad_s": 4296.9746,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78289711
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00427734
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.066667,
+      "omega_rad_s": 4297.1426,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78295833
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00403125
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.075,
+      "omega_rad_s": 4297.3013,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.7830162
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00380859
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.083333,
+      "omega_rad_s": 4297.4512,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.7830708
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00359766
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.091667,
+      "omega_rad_s": 4297.5928,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78312242
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00339844
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.1,
+      "omega_rad_s": 4297.7266,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78317118
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00321094
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.108333,
+      "omega_rad_s": 4297.853,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78321725
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00303516
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.116667,
+      "omega_rad_s": 4297.9722,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78326064
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00285937
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.125,
+      "omega_rad_s": 4298.085,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78330177
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00270703
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.133333,
+      "omega_rad_s": 4298.1914,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78334063
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00255469
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.141667,
+      "omega_rad_s": 4298.292,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78337729
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00241406
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.15,
+      "omega_rad_s": 4298.3867,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.7834118
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00227344
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.158333,
+      "omega_rad_s": 4298.4766,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78344452
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00215625
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.166667,
+      "omega_rad_s": 4298.561,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78347528
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00202734
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.175,
+      "omega_rad_s": 4298.6411,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78350455
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00192187
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.183333,
+      "omega_rad_s": 4298.7168,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78353214
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00181641
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.191667,
+      "omega_rad_s": 4298.7881,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78355813
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00171094
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.2,
+      "omega_rad_s": 4298.8555,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78358269
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00161719
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.208333,
+      "omega_rad_s": 4298.9189,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78360581
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00152344
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.216667,
+      "omega_rad_s": 4298.979,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78362769
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00144141
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.225,
+      "omega_rad_s": 4299.0356,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78364837
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00135937
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.233333,
+      "omega_rad_s": 4299.0894,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78366798
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00128906
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.241667,
+      "omega_rad_s": 4299.1401,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78368646
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00121875
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.25,
+      "omega_rad_s": 4299.188,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78370392
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00114844
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.258333,
+      "omega_rad_s": 4299.2329,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78372031
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00107812
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.266667,
+      "omega_rad_s": 4299.2754,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78373575
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00101953
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.275,
+      "omega_rad_s": 4299.3154,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78375041
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00096094
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.283333,
+      "omega_rad_s": 4299.3535,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78376424
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00091406
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.291667,
+      "omega_rad_s": 4299.3896,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78377748
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00086719
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.3,
+      "omega_rad_s": 4299.4233,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78378975
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00080859
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.308333,
+      "omega_rad_s": 4299.4556,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78380144
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00077344
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.316667,
+      "omega_rad_s": 4299.4858,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78381246
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00072656
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.325,
+      "omega_rad_s": 4299.5146,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78382301
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00069141
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.333333,
+      "omega_rad_s": 4299.5415,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78383285
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00064453
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.341667,
+      "omega_rad_s": 4299.5669,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78384209
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00060937
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.35,
+      "omega_rad_s": 4299.5908,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78385079
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00057422
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.358333,
+      "omega_rad_s": 4299.6138,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78385913
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00055078
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.366667,
+      "omega_rad_s": 4299.6353,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.783867
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00051562
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.375,
+      "omega_rad_s": 4299.6558,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78387445
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00049219
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.383333,
+      "omega_rad_s": 4299.6748,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78388143
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00045703
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.391667,
+      "omega_rad_s": 4299.6929,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78388792
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00043359
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.4,
+      "omega_rad_s": 4299.71,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78389424
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00041016
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.408333,
+      "omega_rad_s": 4299.7261,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78390008
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00038672
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.416667,
+      "omega_rad_s": 4299.7412,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78390557
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00036328
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.425,
+      "omega_rad_s": 4299.7554,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78391075
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00033984
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.433333,
+      "omega_rad_s": 4299.769,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78391576
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00032812
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.441667,
+      "omega_rad_s": 4299.7817,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78392035
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00030469
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.45,
+      "omega_rad_s": 4299.7939,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78392482
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00029297
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.458333,
+      "omega_rad_s": 4299.8052,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78392893
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00026953
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.466667,
+      "omega_rad_s": 4299.8159,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78393281
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00025781
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.475,
+      "omega_rad_s": 4299.8262,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78393662
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00024609
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.483333,
+      "omega_rad_s": 4299.8359,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.7839402
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00023437
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.491667,
+      "omega_rad_s": 4299.8452,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78394347
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00022266
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.5,
+      "omega_rad_s": 4299.854,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78394669
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00021094
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.508333,
+      "omega_rad_s": 4299.8623,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78394979
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00019922
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.516667,
+      "omega_rad_s": 4299.8701,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78395265
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0001875
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.525,
+      "omega_rad_s": 4299.8774,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78395528
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00017578
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.533333,
+      "omega_rad_s": 4299.8843,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78395772
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00016406
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.541667,
+      "omega_rad_s": 4299.8906,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.7839601
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00015234
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.55,
+      "omega_rad_s": 4299.8965,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78396225
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00014062
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.558333,
+      "omega_rad_s": 4299.9023,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78396434
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00014062
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.566667,
+      "omega_rad_s": 4299.9077,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.7839663
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00012891
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.575,
+      "omega_rad_s": 4299.9131,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78396827
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00012891
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.583333,
+      "omega_rad_s": 4299.918,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78397006
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00011719
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.591667,
+      "omega_rad_s": 4299.9224,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78397167
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00010547
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.6,
+      "omega_rad_s": 4299.9268,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78397328
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.00010547
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.608333,
+      "omega_rad_s": 4299.9307,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78397471
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        9.375e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.616667,
+      "omega_rad_s": 4299.9346,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78397614
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        9.375e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.625,
+      "omega_rad_s": 4299.938,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78397733
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        8.203e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.633333,
+      "omega_rad_s": 4299.9414,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78397858
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        8.203e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.641667,
+      "omega_rad_s": 4299.9448,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78397989
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        8.203e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.65,
+      "omega_rad_s": 4299.9478,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78398091
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        7.031e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.658333,
+      "omega_rad_s": 4299.9507,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78398198
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        7.031e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.666667,
+      "omega_rad_s": 4299.9536,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78398311
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        7.031e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.675,
+      "omega_rad_s": 4299.9561,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78398395
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        5.859e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.683333,
+      "omega_rad_s": 4299.9585,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.7839849
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        5.859e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.691667,
+      "omega_rad_s": 4299.9609,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78398573
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        5.859e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.7,
+      "omega_rad_s": 4299.9629,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78398639
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        4.687e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.708333,
+      "omega_rad_s": 4299.9648,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78398716
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        4.687e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.716667,
+      "omega_rad_s": 4299.9668,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78398782
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        4.687e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.725,
+      "omega_rad_s": 4299.9688,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.7839886
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        4.687e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.733333,
+      "omega_rad_s": 4299.9707,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78398931
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        4.687e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.741667,
+      "omega_rad_s": 4299.9722,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78398979
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        3.516e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.75,
+      "omega_rad_s": 4299.9736,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399038
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        3.516e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.758333,
+      "omega_rad_s": 4299.9751,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399092
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        3.516e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.766667,
+      "omega_rad_s": 4299.9766,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.7839914
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        3.516e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.775,
+      "omega_rad_s": 4299.978,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399199
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        3.516e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.783333,
+      "omega_rad_s": 4299.9795,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399253
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        3.516e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.791667,
+      "omega_rad_s": 4299.9805,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399283
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        2.344e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.8,
+      "omega_rad_s": 4299.9814,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399318
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        2.344e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.808333,
+      "omega_rad_s": 4299.9824,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399354
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        2.344e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.816667,
+      "omega_rad_s": 4299.9834,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399396
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        2.344e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.825,
+      "omega_rad_s": 4299.9844,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399432
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        2.344e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.833333,
+      "omega_rad_s": 4299.9854,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399462
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        2.344e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.841667,
+      "omega_rad_s": 4299.9863,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399497
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        2.344e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.85,
+      "omega_rad_s": 4299.9873,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399533
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        2.344e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.858333,
+      "omega_rad_s": 4299.9878,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399557
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.172e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.866667,
+      "omega_rad_s": 4299.9883,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399575
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.172e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.875,
+      "omega_rad_s": 4299.9888,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399593
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.172e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.883333,
+      "omega_rad_s": 4299.9893,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399605
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.172e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.891667,
+      "omega_rad_s": 4299.9897,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399622
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.172e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.9,
+      "omega_rad_s": 4299.9902,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.7839964
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.172e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.908333,
+      "omega_rad_s": 4299.9907,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399658
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.172e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.916667,
+      "omega_rad_s": 4299.9912,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399676
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.172e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.925,
+      "omega_rad_s": 4299.9917,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399694
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.172e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.933333,
+      "omega_rad_s": 4299.9922,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399712
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.172e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.941667,
+      "omega_rad_s": 4299.9927,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399736
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.172e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.95,
+      "omega_rad_s": 4299.9932,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399754
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.172e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.958333,
+      "omega_rad_s": 4299.9937,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399771
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.172e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.966667,
+      "omega_rad_s": 4299.9941,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399783
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.172e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.975,
+      "omega_rad_s": 4299.9946,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399801
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.172e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.983333,
+      "omega_rad_s": 4299.9951,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399819
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.172e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 1.991667,
+      "omega_rad_s": 4299.9956,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399837
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.172e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.0,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        1.172e-05
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.008333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.016667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.025,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.033333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.041667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.05,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.058333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.066667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.075,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.083333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.091667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.1,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.108333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.116667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.125,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.133333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.141667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.15,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.158333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.166667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.175,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.183333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.191667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.2,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.208333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.216667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.225,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.233333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.241667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.25,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.258333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.266667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.275,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.283333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.291667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.3,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.308333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.316667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.325,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.333333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.341667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.35,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.358333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.366667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.375,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.383333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.391667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.4,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.408333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.416667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.425,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.433333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.441667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.45,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.458333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.466667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.475,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.483333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.491667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.5,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.508333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.516667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.525,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.533333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.541667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.55,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.558333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.566667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.575,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.583333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.591667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.6,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.608333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.616667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.625,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.633333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.641667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.65,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.658333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.666667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.675,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.683333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.691667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.7,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.708333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.716667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.725,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.733333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.741667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.75,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.758333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.766667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.775,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.783333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.791667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.8,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.808333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.816667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.825,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.833333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.841667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.85,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.858333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.866667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.875,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.883333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.891667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.9,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.908333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.916667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.925,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.933333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.941667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.95,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.958333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.966667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.975,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.983333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 2.991667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.0,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.008333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.016667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.025,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.033333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.041667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.05,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.058333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.066667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.075,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.083333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.091667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.1,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.108333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.116667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.125,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.133333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.141667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.15,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.158333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.166667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.175,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.183333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.191667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.2,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.208333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.216667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.225,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.233333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.241667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.25,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.258333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.266667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.275,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.283333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.291667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.3,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.308333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.316667,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.325,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "t_s": 3.333333,
+      "omega_rad_s": 4299.9961,
+      "throttle": 1.0,
+      "static_torque_Nm": [
+        -0.0,
+        -0.0,
+        -0.78399855
+      ],
+      "dynamic_spool_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gyro_precession_torque_Nm": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+# Nominal disturbance configuration (all disabled)
+disturbances:
+  enabled: false
+
+  wind:
+    enabled: false
+    steady_vector: [0.0, 0.0, 0.0]  # m/s, world frame
+
+  gust:
+    enabled: false
+    magnitude: 0.0
+    duration: 0.0
+    interval: [5.0, 15.0]
+
+  body_drag:
+    cd: 1.0
+    reference_area: 0.02
+
+  com_offset:
+    enabled: false
+
+  sensor_noise:
+    enabled: false

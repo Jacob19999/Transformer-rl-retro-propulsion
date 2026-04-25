@@ -1,0 +1,16 @@
+# 90mm EDF — hardware: FMS 90mm 12-blade 6S power system, 4068-KV1850 inrunner, metal duct (FMSDF010-1).
+# Retail specs vary slightly (e.g. ~4000g vs ~4200g static thrust); bench/thrust-stand values should replace estimates below.
+# All values include source label per config_schema contract
+
+edf:
+  max_thrust: 39.2                   # N, source: FMS/retailer (~4000g static @ 6S; e.g. 4-Max listing); 4200g → ~41.2 N if using that figure
+  diameter: 0.09                     # m, source: nominal 90mm class (some listings cite ~93mm duct OD; use measured if needed)
+  k_T: null                          # N·s²/rad², source: to-be-calibrated (thrust coefficient from thrust stand)
+  k_Q: null                          # N·m·s²/rad², source: to-be-calibrated (torque coefficient from thrust stand)
+  rotor_inertia: 0.0002              # kg·m², source: estimate from ~350 g spinning motor core + ~72 g rotor using plausible 90mm EDF effective radii; replace with measurement if available
+  tau_motor: 0.15                    # s, source: estimate (first-order spool lag for 90mm class)
+  omega_max: 4300.0                  # rad/s, source: calc from KV1850 × 22.2V nominal 6S × 2π/60 (~41k RPM no-load upper bound; loaded RPM lower)
+  d_omega_max: null                  # rad/s², source: to-be-calibrated (from bench step response)
+
+  # Order-of-magnitude jet velocity v ≈ sqrt(2T/(ρA)) using ~4780 mm² swept area (FMS/retailer) and max_thrust; tune after thrust stand.
+  exhaust_speed_nominal: 116.0       # m/s, source: estimate (ρ=1.225 kg/m³, A=4.78e-3 m², T=max_thrust)

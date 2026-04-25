@@ -1,0 +1,79 @@
+# Asset metadata for EDF Drone v2 USD scene
+# Maps USD prim names/paths to simulation indices and physical properties.
+# YAML is authoritative; USD must be validated against this via validate_usd_mass_props.py
+# Jet-vane force convention: chord = EDF flow axis (+Z_FRD), normal = hinge_axis x chord.
+
+asset:
+  name: edf_drone_v2
+  usd_path: "simulation/isaac/assets/usd/drone_v2_physics.usd"  # relative to repo root
+
+  # Root body link name (ArticulationRootAPI prim); lives at /<defaultPrim>/Body
+  body_link_name: "Body"
+
+  # Fin link names in canonical order: +X, +Y, -X, -Y
+  # Fins are siblings of Body under the Drone defaultPrim
+  fin_link_names:
+    - "FwdFin"    # +X fin (forward fin)
+    - "RightFin"  # +Y fin (right fin)
+    - "AftFin"    # -X fin (rear fin)
+    - "LeftFin"   # -Y fin (left fin)
+
+  # Revolute joint names (parent: Body → child: fin); live at /<defaultPrim>/Body/<joint>
+  fin_joint_names:
+    - "joint_FwdFin"
+    - "joint_RightFin"
+    - "joint_AftFin"
+    - "joint_LeftFin"
+
+  # Hinge axes for each fin joint in body-FRD frame (unit vectors)
+  # Positive deflection rotates fin tip toward the hinge axis using right-hand rule
+  hinge_axes:
+    - [0.0, 1.0, 0.0]   # FwdFin: hinge along +Y (pitches body nose up on positive deflection)
+    - [-1.0, 0.0, 0.0]  # RightFin: hinge along -X (rolls body right on positive deflection)
+    - [0.0, -1.0, 0.0]  # AftFin: hinge along -Y
+    - [1.0, 0.0, 0.0]   # LeftFin: hinge along +X
+
+  # Joint limits [min_rad, max_rad] — must match USD PhysicsRevoluteJoint limits
+  joint_limits:
+    - [-0.262, 0.262]   # FwdFin, 15°
+    - [-0.262, 0.262]   # RightFin, 15°
+    - [-0.262, 0.262]   # AftFin, 15°
+    - [-0.262, 0.262]   # LeftFin, 15°
+
+  # Center-of-pressure (COP) positions for each fin in body-FRD frame (m)
+  # These are used for set_external_force_and_torque(positions=...) in Isaac Sim
+  fin_cop_positions:
+    - [0.04, 0.0, 0.10]    # FwdFin COP: forward-offset, at EDF exit plane z
+    - [0.0, 0.04, 0.10]    # RightFin COP
+    - [-0.04, 0.0, 0.10]   # AftFin COP
+    - [0.0, -0.04, 0.10]   # LeftFin COP
+
+  # Chord directions in body-FRD frame at zero deflection.
+  # Chord is the EDF flow direction for every vane.
+  fin_chord_directions:
+    - [0.0, 0.0, 1.0]   # FwdFin chord: along EDF flow
+    - [0.0, 0.0, 1.0]   # RightFin chord
+    - [0.0, 0.0, 1.0]   # AftFin chord
+    - [0.0, 0.0, 1.0]   # LeftFin chord
+
+  # Normal directions in body-FRD frame at zero deflection.
+  # normal = hinge_axis x chord, giving radial vane side-force directions.
+  fin_normal_directions:
+    - [1.0, 0.0, 0.0]   # FwdFin: +X radial
+    - [0.0, 1.0, 0.0]   # RightFin: +Y radial
+    - [-1.0, 0.0, 0.0]  # AftFin: -X radial
+    - [0.0, -1.0, 0.0]  # LeftFin: -Y radial
+
+  # EDF thrust axis in body-FRD frame (exhaust exits downward = +z in FRD)
+  edf_thrust_axis: [0.0, 0.0, 1.0]
+
+  # Rotor spin axis in body-FRD frame (rotor spins around body z-axis)
+  rotor_spin_axis: [0.0, 0.0, 1.0]
+
+  # Contact regions — prim names that should contact ground on landing
+  # (not body or fin links)
+  landing_contact_regions:
+    - "landing_leg_px"
+    - "landing_leg_py"
+    - "landing_leg_mx"
+    - "landing_leg_my"

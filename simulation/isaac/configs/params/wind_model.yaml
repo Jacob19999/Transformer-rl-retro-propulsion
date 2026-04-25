@@ -1,0 +1,8 @@
+# Wind drag coefficient configuration
+# Source: estimate (bluff body approximation)
+
+wind_model:
+  body_drag_cd: 1.0              # source: estimate (cylinder-like body)
+  reference_area: 0.02           # m², source: estimate (frontal area)
+  exhaust_speed_nominal: 40.0    # m/s, source: estimate (from thrust/mass flow)
+  air_density: 1.225             # kg/m³, source: ISA sea level

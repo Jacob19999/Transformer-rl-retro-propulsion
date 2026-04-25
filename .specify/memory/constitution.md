@@ -1,22 +1,35 @@
 <!--
 Sync Impact Report
-- Version change: 1.0.0 → 1.1.0
+- Version change: 1.1.0 → 1.2.0
 - Modified principles:
-  - I. Physics Fidelity — expanded: mass property validation from USDC scene added
-  - II. Configuration-Driven Design — expanded: USDC ↔ YAML mass property reconciliation requirement added
-  - V. Sim-to-Real Integrity — expanded: environmental forces (wind disturbances) added
+  - I. Physics Fidelity — expanded: force-at-position requirement, subsonic EDF
+    modeling boundary, single physics core mandate added
+  - II. Configuration-Driven Design — expanded: parameter provenance
+    categorization (measured/datasheet/estimate/to-be-calibrated) added
+  - III. Test-Driven Validation — expanded: ordered validation ladder
+    requirement before RL training added
+  - V. Sim-to-Real Integrity — expanded: single conversion boundary for
+    frame/quaternion transforms added
 - Added sections:
-  - Technical Constraints: Isaac Sim status promoted from "future milestone" to active milestone
-  - Development Workflow: Isaac Sim thrust test env and mass validation script requirements added
-- Removed sections: None
+  - None (all changes expand existing sections)
+- Removed sections:
+  - None
+- Modified sections:
+  - Technical Constraints: PhysX-first backend policy, Newton behind
+    abstraction, wrench dispatch adapter targeting modern composable API,
+    Isaac Lab version pinned to 2.3.2
+  - Development Workflow: validation ladder enforcement before RL training,
+    Feature 001 reference updated to Feature 007 as the active Isaac Sim
+    milestone
 - Templates requiring updates:
-  - .specify/templates/plan-template.md — ✅ No updates needed (Constitution Check section is generic)
-  - .specify/templates/spec-template.md — ✅ No updates needed (requirements structure compatible)
-  - .specify/templates/tasks-template.md — ✅ No updates needed (phase structure compatible)
+  - .specify/templates/plan-template.md — ✅ No updates needed
+  - .specify/templates/spec-template.md — ✅ No updates needed
+  - .specify/templates/tasks-template.md — ✅ No updates needed
 - Follow-up TODOs:
-  - TODO(MASS_MIGRATION_DECISION): Decide whether mass properties are the source of truth in USDC or YAML.
-    Current guidance: YAML is authoritative; USDC is validated against YAML. Revisit if USDC becomes
-    the design-time source of truth.
+  - TODO(MASS_MIGRATION_DECISION): Decide whether mass properties are the
+    source of truth in USDC or YAML. Current guidance: YAML is authoritative;
+    USDC is validated against YAML. Revisit if USDC becomes the design-time
+    source of truth. (Carried forward from v1.1.0)
 -->
 
 # GTrXL-PPO Retro-Propulsion Constitution
@@ -42,10 +55,31 @@ resolved before simulation runs are used for training or benchmarking.
 YAML config remains the authoritative source of truth; the USDC scene
 MUST be regenerated or patched to match.
 
+Aerodynamic forces MUST be applied at the physical point of action (e.g.,
+fin center of pressure on the fin link), not synthesized as direct body
+torques. Body torque MUST emerge from articulation geometry and physics
+simulation. A collapsed-body-wrench mode MAY be supported as a
+performance fallback, but MUST NOT be the primary validation path.
+
+The same physics modules MUST power all execution modes — single-env
+debug, PID evaluation, hover test, landing test, and vectorized RL
+environments. Only wrappers, reward profiles, and visualization settings
+MAY differ. Physics code MUST NOT fork across modes.
+
+The EDF testbed is a subscale, subsonic proxy for powered-descent
+control and disturbance rejection. Simulation models MUST NOT import
+supersonic or full-scale rocket coefficient values without explicit
+subsonic adaptation and documented justification. Thrust-vectoring
+references are used for force decomposition geometry and moment-from-
+force structure, not for Mach-dependent coefficient transfer. All
+modeling limitations MUST be documented alongside the models they apply
+to.
+
 **Rationale**: The entire project hinges on sim-to-real transfer. A
 simulation that diverges from hardware physics — including incorrect mass
-or inertia in the Isaac Sim scene — produces policies that fail on the
-real drone.
+or inertia in the Isaac Sim scene, forces applied at wrong locations, or
+coefficient values from an inapplicable flow regime — produces policies
+that fail on the real drone.
 
 ### II. Configuration-Driven Design
 
@@ -62,11 +96,21 @@ maintained that reads both the YAML config and the USDC scene and asserts
 equivalence within tolerance. This script MUST be run as part of any
 workflow that modifies drone geometry or mass configuration.
 
+Config files for actuators and physical components MUST categorize each
+parameter value with its provenance: **measured** (from bench testing),
+**datasheet** (from manufacturer specs), **engineering estimate** (from
+analytical derivation or informed approximation), or **to-be-calibrated**
+(placeholder awaiting hardware data). This categorization enables
+systematic calibration campaigns and prevents silent use of unvalidated
+constants in training.
+
 **Rationale**: Separating configuration from code enables systematic
 sweeps, reproducible experiments, and clear audit trails for parameter
 changes without code diffs. Extending this discipline to USDC physics
 attributes prevents silent divergence between the Python simulation and
-the Isaac Sim environment.
+the Isaac Sim environment. Parameter provenance tracking ensures the
+team knows which values are trustworthy and which require future
+calibration.
 
 ### III. Test-Driven Validation
 
@@ -84,9 +128,20 @@ For Isaac Sim features, validation MUST include at minimum:
 - An environmental force test confirming wind disturbances produce
   measurable state changes consistent with expected dynamics.
 
+Isaac Sim environment changes MUST follow an ordered validation ladder
+before large-scale RL training begins. The ladder progresses from
+isolated subsystem checks (asset validation, joint axes, single-fin
+articulation) through integrated system tests (force superposition,
+propulsion, contacts) to closed-loop validation (PID hover, vectorized
+API smoke test, all-forces hover). Each ladder rung MUST pass before
+proceeding to the next. RL training on an environment that has not
+completed the validation ladder is not permitted.
+
 **Rationale**: In a research project with complex interacting subsystems,
 tests are the primary defense against silent regressions that corrupt
-experimental results.
+experimental results. The ordered validation ladder isolates failure
+sources systematically, preventing hours of debugging a training failure
+that originates from a sign error in a single fin joint.
 
 ### IV. Reproducibility
 
@@ -110,6 +165,14 @@ randomization MUST be applied per-episode at env reset to build robust
 policies. Observation noise injection MUST match expected sensor
 characteristics of the physical testbed.
 
+All frame and quaternion conversions between body-fixed (FRD) and
+simulator-native frames (Isaac Sim world: +X forward, +Z up,
+scalar-first `(w, x, y, z)`) MUST pass through a single dedicated
+conversion module (e.g., `common/frames.py`, `common/quaternions.py`,
+`common/transforms.py`). Conversion logic MUST NOT be scattered across
+files. This single-boundary rule prevents the class of bugs where a sign
+flip is correct in one file but contradicted in another.
+
 Environmental forces (wind gusts, atmospheric disturbances) MUST be
 applicable to Isaac Sim environments via the existing `WindModel` and
 `AtmosphereModel` abstractions, or via equivalent Isaac Sim force APIs
@@ -119,9 +182,9 @@ scene or script files are not permitted.
 
 **Rationale**: Convention mismatches between simulation and hardware are
 the most common and dangerous source of sim-to-real failure. Strict
-consistency prevents sign errors and frame confusion. Validating
-environmental forces in Isaac Sim ensures the training distribution
-matches expected real-world disturbances.
+consistency and a single conversion boundary prevent sign errors and
+frame confusion. Validating environmental forces in Isaac Sim ensures
+the training distribution matches expected real-world disturbances.
 
 ## Technical Constraints
 
@@ -131,9 +194,20 @@ matches expected real-world disturbances.
 - **Simulation Stack (active)**:
   - Custom 6-DOF rigid-body plant (`simulation/`) — baseline for physics
     validation and PID tuning
-  - NVIDIA Isaac Sim / IsaacLab — active parallel environment for
-    vectorized training; Feature 001 delivers a stable single-env with
-    fins articulation as the foundation for all subsequent Isaac Sim work
+  - NVIDIA Isaac Sim 5.1 / Isaac Lab 2.3.2 — active parallel environment
+    for vectorized training; Feature 007 delivers the validated Phase 1
+    Isaac Sim environment as the foundation for all subsequent work
+- **Physics Backend**: PhysX is the Phase 1 baseline. Newton MUST NOT be
+  adopted as the Phase 1 baseline. If explored later, Newton MUST be
+  introduced behind a backend abstraction layer only after the PhysX
+  environment is fully validated
+- **Force Application API**: Isaac Lab's composable wrench / forces-and-
+  torques path is the target API. A wrench dispatch adapter layer MUST
+  isolate force application from specific Isaac Lab API versions to
+  enable future migration without physics code changes
+- **Version Migration**: Phase 1 MUST NOT move to Isaac Lab 3.0 / Isaac
+  Sim 6.0. Newer releases are monitored but introduce unnecessary churn
+  before the first validated environment is established
 - **Gymnasium**: All environments MUST implement the Gymnasium API
   (`reset`, `step`, `observation_space`, `action_space`)
 - **State dimensions**: 18-dim state, 20-dim observation, 5-dim action
@@ -166,9 +240,13 @@ matches expected real-world disturbances.
   3. Run fin articulation diagnostic to confirm all four fins deflect
   4. Run environmental force diagnostic to confirm wind disturbances
      produce physically plausible state changes
-- Feature 001 (`001-isaac-sim-env`) MUST remain the stable baseline for
-  Isaac Sim work; subsequent features build on this foundation without
-  breaking its acceptance scenarios
+- For Isaac Sim environment changes, the full validation ladder (asset →
+  joints → articulation → force → superposition → propulsion → gyro →
+  wind → contacts → PID hover → vectorized API → all-forces hover) MUST
+  complete before the environment is used for RL training runs
+- Feature 007 (`007-isaac-sim-env`) delivers the validated Phase 1
+  Isaac Sim environment; subsequent features build on this foundation
+  without breaking its acceptance scenarios
 
 ## Governance
 
@@ -191,4 +269,4 @@ Versioning follows semantic versioning:
 Runtime development guidance is maintained in `CLAUDE.md` at the
 repository root.
 
-**Version**: 1.1.0 | **Ratified**: 2026-03-10 | **Last Amended**: 2026-03-11
+**Version**: 1.2.0 | **Ratified**: 2026-03-10 | **Last Amended**: 2026-03-22

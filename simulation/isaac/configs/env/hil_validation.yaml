@@ -1,0 +1,44 @@
+# Hardware-in-the-Loop (HIL) validation environment configuration
+#
+# Purpose: Sim-to-real validation scenarios where sensor readings and actuator
+# commands are bridged to physical hardware via HIL interface.
+#
+# Key differences from sim-only configs:
+#   - Single environment (1:1 with hardware)
+#   - Real-time physics step rate matching hardware control loop (500 Hz)
+#   - No domain randomization (deterministic for comparison)
+#   - Extended episode lengths for steady-state analysis
+#   - Gizmos enabled for live monitoring
+#   - Disturbances disabled (real-world disturbances come from hardware)
+
+env:
+  num_envs: 1
+  env_spacing: 4.0
+  dispatch_mode: per_link_force
+  gizmos_enabled: true
+
+  # Match hardware servo control loop (500 Hz = 0.002 s)
+  physics_dt: 0.002           # 500 Hz physics step (source: hardware control loop spec)
+  decimation: 16              # RL observation at 500/16 ≈ 31.25 Hz
+  replicate_physics: false
+
+  # HIL episode settings
+  episode_length_s: 120.0     # 2-minute episodes for steady-state analysis
+  reset_on_crash: false       # Operator-controlled resets in HIL mode
+
+  # Deterministic spawn for reproducible comparison
+  spawn:
+    randomize_position: false
+    randomize_orientation: false
+    initial_altitude: 5.0     # m — fixed hover altitude
+
+  # Sensor noise passthrough (real sensors provide noise)
+  sensor_noise_enabled: false
+
+  # COM offset from hardware measurement (override with measured value)
+  com_offset_enabled: false
+
+  # Telemetry
+  telemetry_enabled: true
+  telemetry_output_dir: "runs/hil_validation"
+  telemetry_flush_every: 50   # Flush every 50 steps (~1.6 s at 31 Hz)

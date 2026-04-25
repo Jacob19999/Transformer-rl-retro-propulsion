@@ -1,0 +1,11 @@
+# Hover task reward weights
+reward:
+  alive_bonus: 1.0
+  position_error: -2.0
+  attitude_error: -1.0
+  angular_velocity: -0.5
+  control_effort: -0.1
+  control_rate: -0.05
+  hover_stability: 2.0
+  drift_penalty: -1.5
+  contact_penalty: -10.0
