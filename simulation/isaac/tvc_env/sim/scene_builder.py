@@ -36,6 +36,16 @@ class SceneConfig:
     dispatch_mode: str = "per_link_force"
     physics_dt: float = 1.0 / 120.0        # s
     decimation: int = 4                     # physics substeps per RL step
+    gravity: tuple[float, float, float] = (0.0, 0.0, -9.81)
+    enable_scene_query_support: bool = False
+    solver_type: int = 1                    # 1 = TGS
+    num_position_iterations: int = 4
+    num_velocity_iterations: int = 1
+    enable_external_forces_every_iteration: bool = True
+    gpu_temp_buffer_capacity: int | None = None
+    gpu_max_rigid_contact_count: int | None = None
+    gpu_max_rigid_patch_count: int | None = None
+    gpu_found_lost_pairs_capacity: int | None = None
 
     # Asset paths — absolute, resolved from this file's location
     drone_usd_path: str = _DRONE_USD
@@ -46,14 +56,27 @@ class SceneConfig:
     def from_yaml(cls, env_config: dict[str, Any]) -> "SceneConfig":
         """Create SceneConfig from a parsed env YAML dict."""
         env = env_config.get("env", env_config)
+        physics = env_config.get("physics", {})
         return cls(
             num_envs=env.get("num_envs", 1),
             env_spacing=env.get("env_spacing", 4.0),
             replicate_physics=env.get("replicate_physics", True),
             gizmos_enabled=env.get("gizmos_enabled", False),
             dispatch_mode=env.get("dispatch_mode", "per_link_force"),
-            physics_dt=env.get("physics_dt", 1.0 / 120.0),
+            physics_dt=physics.get("dt", env.get("physics_dt", 1.0 / 120.0)),
             decimation=env.get("decimation", 4),
+            gravity=tuple(physics.get("gravity", [0.0, 0.0, -9.81])),
+            enable_scene_query_support=physics.get("enable_scene_query_support", False),
+            solver_type=physics.get("solver_type", 1),
+            num_position_iterations=physics.get("num_position_iterations", 4),
+            num_velocity_iterations=physics.get("num_velocity_iterations", 1),
+            enable_external_forces_every_iteration=physics.get(
+                "enable_external_forces_every_iteration", True
+            ),
+            gpu_temp_buffer_capacity=physics.get("gpu_temp_buffer_capacity"),
+            gpu_max_rigid_contact_count=physics.get("gpu_max_rigid_contact_count"),
+            gpu_max_rigid_patch_count=physics.get("gpu_max_rigid_patch_count"),
+            gpu_found_lost_pairs_capacity=physics.get("gpu_found_lost_pairs_capacity"),
         )
 
 
@@ -77,11 +100,9 @@ class TVCSimScene:
         self.sim.step(render=render)
         self.scene.update(self.physics_dt)
         if render:
-            try:
-                import omni.kit.app
-                omni.kit.app.get_app().update()
-            except Exception:
-                pass
+            # Use sim.render() which safely guards against extra physics
+            # steps, instead of raw app.update().
+            self.sim.render()
 
     def __getitem__(self, key: str) -> Any:
         return self.scene[key]
@@ -158,7 +179,7 @@ def build_scene(config: SceneConfig) -> TVCSimScene:
         RuntimeError: If a :class:`SimulationContext` already exists in this process.
     """
     try:
-        from isaaclab.sim import SimulationContext, SimulationCfg
+        from isaaclab.sim import PhysxCfg, SimulationContext, SimulationCfg
         from isaaclab.scene import InteractiveScene
         from isaaclab.sim.utils.stage import attach_stage_to_usd_context, use_stage
     except ImportError as e:
@@ -172,7 +193,28 @@ def build_scene(config: SceneConfig) -> TVCSimScene:
             "A SimulationContext already exists; only one TVC scene stack per process is supported."
         )
 
-    sim_cfg = SimulationCfg(dt=config.physics_dt)
+    physx_kwargs = {
+        "solver_type": config.solver_type,
+        "min_position_iteration_count": config.num_position_iterations,
+        "min_velocity_iteration_count": config.num_velocity_iterations,
+        "enable_external_forces_every_iteration": config.enable_external_forces_every_iteration,
+    }
+    for field_name in (
+        "gpu_temp_buffer_capacity",
+        "gpu_max_rigid_contact_count",
+        "gpu_max_rigid_patch_count",
+        "gpu_found_lost_pairs_capacity",
+    ):
+        value = getattr(config, field_name)
+        if value is not None:
+            physx_kwargs[field_name] = value
+
+    sim_cfg = SimulationCfg(
+        dt=config.physics_dt,
+        gravity=config.gravity,
+        enable_scene_query_support=config.enable_scene_query_support,
+        physx=PhysxCfg(**physx_kwargs),
+    )
     sim = SimulationContext(sim_cfg)
     scene_cfg = _create_scene_cfg(config)
     with use_stage(sim.get_initial_stage()):
@@ -299,8 +341,8 @@ def _create_scene_cfg(config: SceneConfig):
                 ),
                 articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                     enabled_self_collisions=False,
-                    solver_position_iteration_count=4,
-                    solver_velocity_iteration_count=0,
+                    solver_position_iteration_count=config.num_position_iterations,
+                    solver_velocity_iteration_count=config.num_velocity_iterations,
                 ),
             ),
             init_state=ArticulationCfg.InitialStateCfg(
@@ -310,8 +352,8 @@ def _create_scene_cfg(config: SceneConfig):
             actuators={
                 "fins": ImplicitActuatorCfg(
                     joint_names_expr=[".*"],
-                    stiffness=15.0,   # MG996R: ~1 N·m stall / ~0.1 rad error
-                    damping=0.1,      # MG996R: ~critically damped for small fins
+                    stiffness=80.0,
+                    damping=2.0,
                 ),
             },
         )

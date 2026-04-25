@@ -16,6 +16,7 @@ from tvc_env.common.transforms import axis_angle_to_quat
 # Canonical fin position labels in +X, +Y, -X, -Y order
 FIN_LABELS = ["+X", "+Y", "-X", "-Y"]
 NUM_FINS = 4
+EDF_FLOW_AXIS_FRD = torch.tensor([0.0, 0.0, 1.0], dtype=torch.float32)
 
 
 def load_cop_positions(metadata: dict[str, Any], device: torch.device = None, dtype: torch.dtype = torch.float32) -> Tensor:
@@ -50,6 +51,73 @@ def load_hinge_axes(metadata: dict[str, Any], device: torch.device = None, dtype
     if len(axes) != NUM_FINS:
         raise ValueError(f"Expected 4 hinge_axes in metadata, got {len(axes)}")
     return torch.tensor(axes, dtype=dtype, device=device)
+
+
+def load_fin_chord_directions(
+    metadata: dict[str, Any],
+    device: torch.device = None,
+    dtype: torch.dtype = torch.float32,
+) -> Tensor:
+    """Load zero-deflection fin chord/flow directions in body-FRD frame."""
+    chord_dirs = metadata["fin_chord_directions"]
+    if len(chord_dirs) != NUM_FINS:
+        raise ValueError(f"Expected 4 fin_chord_directions in metadata, got {len(chord_dirs)}")
+    return torch.tensor(chord_dirs, dtype=dtype, device=device)
+
+
+def load_fin_normal_directions(
+    metadata: dict[str, Any],
+    device: torch.device = None,
+    dtype: torch.dtype = torch.float32,
+) -> Tensor:
+    """Load zero-deflection fin normal directions in body-FRD frame."""
+    normal_dirs = metadata["fin_normal_directions"]
+    if len(normal_dirs) != NUM_FINS:
+        raise ValueError(f"Expected 4 fin_normal_directions in metadata, got {len(normal_dirs)}")
+    return torch.tensor(normal_dirs, dtype=dtype, device=device)
+
+
+def validate_fin_force_geometry(metadata: dict[str, Any], tolerance: float = 1e-5) -> None:
+    """Validate the jet-vane force basis in metadata.
+
+    The EDF flow/chord axis is +Z_frd. Each fin normal must be radial and
+    equal to ``hinge_axis x chord_axis`` so normal force cannot leak axial
+    thrust into symmetric fin commands.
+    """
+    axes = load_hinge_axes(metadata, dtype=torch.float64)
+    chords = load_fin_chord_directions(metadata, dtype=torch.float64)
+    normals = load_fin_normal_directions(metadata, dtype=torch.float64)
+    flow = torch.tensor(metadata.get("edf_thrust_axis", [0.0, 0.0, 1.0]), dtype=torch.float64)
+    flow = flow / flow.norm().clamp(min=1e-12)
+
+    issues = []
+    for i in range(NUM_FINS):
+        hinge_norm = axes[i].norm().clamp(min=1e-12)
+        chord_norm = chords[i].norm().clamp(min=1e-12)
+        normal_norm = normals[i].norm().clamp(min=1e-12)
+        hinge = axes[i] / hinge_norm
+        chord = chords[i] / chord_norm
+        normal = normals[i] / normal_norm
+        expected = torch.linalg.cross(hinge, flow)
+        expected = expected / expected.norm().clamp(min=1e-12)
+
+        if abs(float(chord_norm.item()) - 1.0) > tolerance:
+            issues.append(f"fin {i} chord is not unit length: {chords[i].tolist()}")
+        if abs(float(normal_norm.item()) - 1.0) > tolerance:
+            issues.append(f"fin {i} normal is not unit length: {normals[i].tolist()}")
+        if abs(float(torch.dot(normal, hinge).item())) > tolerance:
+            issues.append(f"fin {i} normal is not orthogonal to hinge")
+        if abs(float(torch.dot(normal, flow).item())) > tolerance:
+            issues.append(f"fin {i} normal is not orthogonal to EDF flow")
+        if not torch.allclose(chord, flow, atol=tolerance, rtol=0.0):
+            issues.append(f"fin {i} chord must equal EDF flow axis {flow.tolist()}")
+        if not torch.allclose(normal, expected, atol=tolerance, rtol=0.0):
+            issues.append(
+                f"fin {i} normal must equal hinge x flow; got {normal.tolist()}, expected {expected.tolist()}"
+            )
+
+    if issues:
+        raise ValueError("Invalid fin force geometry:\n" + "\n".join(issues))
 
 
 def compute_fin_body_transforms(

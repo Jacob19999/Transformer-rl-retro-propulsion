@@ -13,13 +13,13 @@ Mixing matrix in FRD frame (rows = fins, cols = [roll, pitch, yaw]):
 
          roll  pitch  yaw
   fin0:  [ 0,   +1,  +0.5 ]   (+X fin: pitch + yaw coupling)
-  fin1:  [+1,    0,  -0.5 ]   (+Y fin: roll - yaw coupling)
+  fin1:  [-1,    0,  -0.5 ]   (+Y fin: -roll - yaw coupling)
   fin2:  [ 0,   -1,  +0.5 ]   (-X fin: -pitch + yaw coupling)
-  fin3:  [-1,    0,  -0.5 ]   (-Y fin: -roll - yaw coupling)
+  fin3:  [+1,    0,  -0.5 ]   (-Y fin: roll - yaw coupling)
 
 Sign conventions (FRD):
-  +roll_cmd  → roll right  (right side down)  → +fin1, -fin3
-  +pitch_cmd → pitch down  (nose down)        → +fin0, -fin2
+  +roll_cmd  -> positive +X body torque        -> -fin1, +fin3
+  +pitch_cmd -> positive +Y body torque        -> +fin0, -fin2
   +yaw_cmd   → yaw right   (nose right)       → differential coupling
 """
 
@@ -45,9 +45,9 @@ class PIDFinMixer:
         self._mix = torch.tensor(
             [
                 [ 0.0,  1.0,  yaw_coupling],   # fin_+X: pitch + yaw
-                [ 1.0,  0.0, -yaw_coupling],   # fin_+Y: roll - yaw
+                [-1.0,  0.0, -yaw_coupling],   # fin_+Y: -roll - yaw
                 [ 0.0, -1.0,  yaw_coupling],   # fin_-X: -pitch + yaw
-                [-1.0,  0.0, -yaw_coupling],   # fin_-Y: -roll - yaw
+                [ 1.0,  0.0, -yaw_coupling],   # fin_-Y: roll - yaw
             ],
             dtype=torch.float32,
             device=device,

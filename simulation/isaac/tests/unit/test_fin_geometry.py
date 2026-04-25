@@ -9,10 +9,14 @@ import pytest
 import torch
 from pathlib import Path
 from tvc_env.dynamics.fin_geometry import (
+    EDF_FLOW_AXIS_FRD,
     load_cop_positions,
+    load_fin_chord_directions,
+    load_fin_normal_directions,
     load_hinge_axes,
     compute_fin_body_transforms,
     validate_fin_ordering,
+    validate_fin_force_geometry,
     FIN_LABELS,
     NUM_FINS,
 )
@@ -69,6 +73,31 @@ class TestHingeAxes:
         axes = load_hinge_axes(metadata)
         norms = axes.norm(dim=-1)
         assert torch.allclose(norms, torch.ones(4), atol=1e-5), f"Norms: {norms}"
+
+
+class TestFinForceGeometry:
+    def test_chord_is_edf_flow_axis(self, metadata):
+        """All fin chords should point along EDF flow (+Z_frd)."""
+        chords = load_fin_chord_directions(metadata)
+        expected = EDF_FLOW_AXIS_FRD.unsqueeze(0).expand(4, -1)
+        assert torch.allclose(chords, expected, atol=1e-6)
+
+    def test_normals_are_hinge_cross_flow(self, metadata):
+        """Fin normals should be unit radial vectors from hinge x flow."""
+        axes = load_hinge_axes(metadata)
+        normals = load_fin_normal_directions(metadata)
+        flow = EDF_FLOW_AXIS_FRD.to(axes)
+        expected = torch.linalg.cross(axes, flow.expand_as(axes))
+        expected = expected / expected.norm(dim=-1, keepdim=True)
+
+        assert torch.allclose(normals.norm(dim=-1), torch.ones(4), atol=1e-6)
+        assert torch.allclose((normals * axes).sum(dim=-1), torch.zeros(4), atol=1e-6)
+        assert torch.allclose((normals * flow).sum(dim=-1), torch.zeros(4), atol=1e-6)
+        assert torch.allclose(normals, expected, atol=1e-6)
+
+    def test_valid_force_geometry_passes(self, metadata):
+        """Metadata force basis should pass the geometry validator."""
+        validate_fin_force_geometry(metadata)
 
 
 class TestFinBodyTransforms:

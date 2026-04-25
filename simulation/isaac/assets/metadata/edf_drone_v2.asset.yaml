@@ -1,6 +1,7 @@
 # Asset metadata for EDF Drone v2 USD scene
 # Maps USD prim names/paths to simulation indices and physical properties.
 # YAML is authoritative; USD must be validated against this via validate_usd_mass_props.py
+# Jet-vane force convention: chord = EDF flow axis (+Z_FRD), normal = hinge_axis x chord.
 
 asset:
   name: edf_drone_v2
@@ -47,19 +48,21 @@ asset:
     - [-0.04, 0.0, 0.10]   # AftFin COP
     - [0.0, -0.04, 0.10]   # LeftFin COP
 
-  # Chord directions in fin-local frame (direction of fin-plane normal under deflection)
+  # Chord directions in body-FRD frame at zero deflection.
+  # Chord is the EDF flow direction for every vane.
   fin_chord_directions:
-    - [1.0, 0.0, 0.0]   # FwdFin chord
-    - [0.0, 1.0, 0.0]   # RightFin chord
-    - [1.0, 0.0, 0.0]   # AftFin chord
-    - [0.0, 1.0, 0.0]   # LeftFin chord
+    - [0.0, 0.0, 1.0]   # FwdFin chord: along EDF flow
+    - [0.0, 0.0, 1.0]   # RightFin chord
+    - [0.0, 0.0, 1.0]   # AftFin chord
+    - [0.0, 0.0, 1.0]   # LeftFin chord
 
-  # Normal directions (perpendicular to fin surface in zero-deflection position)
+  # Normal directions in body-FRD frame at zero deflection.
+  # normal = hinge_axis x chord, giving radial vane side-force directions.
   fin_normal_directions:
-    - [0.0, 0.0, 1.0]   # FwdFin: normal along -z (exhaust flow direction)
-    - [0.0, 0.0, 1.0]   # RightFin
-    - [0.0, 0.0, 1.0]   # AftFin
-    - [0.0, 0.0, 1.0]   # LeftFin
+    - [1.0, 0.0, 0.0]   # FwdFin: +X radial
+    - [0.0, 1.0, 0.0]   # RightFin: +Y radial
+    - [-1.0, 0.0, 0.0]  # AftFin: -X radial
+    - [0.0, -1.0, 0.0]  # LeftFin: -Y radial
 
   # EDF thrust axis in body-FRD frame (exhaust exits downward = +z in FRD)
   edf_thrust_axis: [0.0, 0.0, 1.0]

@@ -68,12 +68,14 @@ class ResetManager:
         edf_model,
         contact_state_machine,
         task_config: dict[str, Any],
+        env_origins: Tensor | None = None,
     ):
         self._body = body_interface
         self._servo = servo_model
         self._edf = edf_model
         self._contacts = contact_state_machine
         self._task_config = task_config
+        self._env_origins = env_origins
 
         # Persistent actuator states
         self._servo_state = None
@@ -85,6 +87,10 @@ class ResetManager:
         self._servo_state = self._servo.reset(num_envs, device)
         self._omega_state = self._edf.reset(num_envs, device)
         self._omega_prev = self._omega_state.clone()
+        if self._env_origins is None:
+            self._env_origins = torch.zeros(num_envs, 3, dtype=torch.float32, device=device)
+        else:
+            self._env_origins = self._env_origins.to(device=device, dtype=torch.float32)
 
     def reset_envs(self, env_ids: Tensor) -> None:
         """Reset specified environments to randomized initial conditions.
@@ -99,13 +105,15 @@ class ResetManager:
         positions, quaternions, linear_vels, angular_vels = sample_spawn_state(
             self._task_config, env_ids, device
         )
+        positions = positions + self._env_origins[env_ids]
 
         # Set root state via body interface
-        self._body.set_root_state(positions, quaternions, linear_vels, angular_vels)
+        self._body.set_root_state(positions, quaternions, linear_vels, angular_vels, env_ids=env_ids)
 
         # Reset servo and EDF states for these envs
         if self._servo_state is not None:
             self._servo_state[env_ids] = 0.0
+            self._body.set_fin_joint_targets(self._servo_state)
         if self._omega_state is not None:
             self._omega_state[env_ids] = 0.0
             self._omega_prev[env_ids] = 0.0

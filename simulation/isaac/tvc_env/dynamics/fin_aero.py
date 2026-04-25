@@ -12,13 +12,14 @@ Where:
   C_D(α) = C_D_0 + C_D_alpha2 * α²            — drag vs angle squared
 
 All computations are vectorized for (num_envs, 4) fin arrays.
-Forces are in fin-local frame (normal to fin surface, tangential in fin plane).
+The scalar normal force is later oriented by fin_force_dispatch.py using
+metadata directions. Tangential drag is exposed as thrust-loss; it is not
+applied as a separate COP force to avoid double-counting axial thrust loss.
 """
 
 from __future__ import annotations
 import torch
 from torch import Tensor
-import math
 from tvc_env.common.datatypes import FinForceResult
 from tvc_env.common.constants import AIR_DENSITY
 
@@ -94,15 +95,15 @@ class FinAeroModel:
         C_D = self.C_D_0 + self.C_D_alpha2 * alpha_sq
         F_t = q * C_D  # (num_envs, 4), always positive (opposing flow)
 
-        # Thrust loss from fin blockage: proportional to fin area projected onto exhaust axis
-        thrust_loss = F_t.sum(dim=-1, keepdim=False) * 0.1  # (num_envs,), rough estimate
+        # Thrust loss from fin blockage / drag. Dispatch clamps the total
+        # loss against available EDF thrust before applying it.
+        thrust_loss = F_t.sum(dim=-1, keepdim=False)  # (num_envs,)
 
-        # Force vector in fin-local frame:
-        # normal force is along fin's normal axis (+z in fin-local when positive deflection)
-        # tangential drag opposes flow direction (-z in fin-local)
-        # We return scalars here; fin_force_dispatch.py combines with geometry
+        # Compatibility diagnostic only. The dispatch path uses the scalar
+        # normal/tangential fields with metadata-derived body-frame bases.
         force_vector = torch.zeros(*fin_angles.shape, 3, device=fin_angles.device, dtype=fin_angles.dtype)
-        force_vector[..., 2] = F_n  # normal direction (fin-local z)
+        force_vector[..., 0] = F_n
+        force_vector[..., 2] = -F_t
 
         return FinForceResult(
             force_vector=force_vector,

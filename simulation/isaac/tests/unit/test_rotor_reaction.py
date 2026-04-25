@@ -62,20 +62,20 @@ class TestStaticReactionTorque:
 
 
 class TestDynamicSpoolTorque:
-    def test_positive_during_acceleration(self):
-        """Spool torque should be along spin axis during rotor acceleration."""
+    def test_negative_during_acceleration(self):
+        """Body spool reaction torque should oppose rotor acceleration."""
         omega_prev = torch.tensor([500.0])
         omega = torch.tensor([1000.0])
         torque = compute_dynamic_spool_torque(omega, omega_prev, I_ROTOR, SPIN_AXIS, DT)
         # Accelerating → positive spool torque along spin axis (+z)
-        assert torque[0, 2].item() > 0.0, f"Expected positive z-torque, got {torque[0, 2]}"
+        assert torque[0, 2].item() < 0.0, f"Expected negative z-torque, got {torque[0, 2]}"
 
-    def test_negative_during_deceleration(self):
-        """Spool torque should oppose spin axis during deceleration."""
+    def test_positive_during_deceleration(self):
+        """Body spool reaction torque should reverse during rotor deceleration."""
         omega_prev = torch.tensor([1000.0])
         omega = torch.tensor([500.0])
         torque = compute_dynamic_spool_torque(omega, omega_prev, I_ROTOR, SPIN_AXIS, DT)
-        assert torque[0, 2].item() < 0.0, f"Expected negative z-torque, got {torque[0, 2]}"
+        assert torque[0, 2].item() > 0.0, f"Expected positive z-torque, got {torque[0, 2]}"
 
     def test_zero_at_steady_state(self):
         """No spool torque when rotor speed is constant."""

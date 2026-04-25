@@ -21,6 +21,7 @@ class BaseEnvConfig:
         self,
         task_name: str,
         env_config_path: str | Path | None = None,
+        physics_config_path: str | Path | None = None,
         disturbance_config_path: str | Path | None = None,
         overrides: dict | None = None,
         sim_root: str | Path | None = None,
@@ -37,6 +38,13 @@ class BaseEnvConfig:
             with open(env_config_path, "r") as f:
                 env_config = yaml.safe_load(f)
 
+        physics_config = None
+        if physics_config_path is None:
+            physics_config_path = self._default_physics_config_path(sim_root, env_config, overrides)
+        if physics_config_path is not None:
+            with open(physics_config_path, "r") as f:
+                physics_config = yaml.safe_load(f)
+
         # Load disturbance config if provided
         disturbance_config = None
         if disturbance_config_path is not None:
@@ -46,6 +54,7 @@ class BaseEnvConfig:
         self.config = load_merged_config(
             task_name=task_name,
             env_config=env_config,
+            physics_config=physics_config,
             disturbance_config=disturbance_config,
             overrides=overrides,
             sim_root=sim_root,
@@ -57,9 +66,24 @@ class BaseEnvConfig:
         self.env_spacing: float = env.get("env_spacing", 4.0)
         self.gizmos_enabled: bool = env.get("gizmos_enabled", False)
         self.dispatch_mode: str = env.get("dispatch_mode", "per_link_force")
-        self.physics_dt: float = env.get("physics_dt", 1.0 / 120.0)
+        physics = self.config.get("physics", {})
+        self.physics_dt: float = physics.get("dt", env.get("physics_dt", 1.0 / 120.0))
         self.decimation: int = env.get("decimation", 4)
         self.task_name: str = task_name
+
+    @staticmethod
+    def _default_physics_config_path(
+        sim_root: str | Path,
+        env_config: dict | None,
+        overrides: dict | None = None,
+    ) -> Path:
+        """Select the default PhysX config from env size/replication settings."""
+        env = (env_config or {}).get("env", {}).copy()
+        env.update((overrides or {}).get("env", {}))
+        num_envs = int(env.get("num_envs", 1))
+        replicate = bool(env.get("replicate_physics", num_envs > 1))
+        filename = "physx_train.yaml" if num_envs > 1 or replicate else "physx_single.yaml"
+        return Path(sim_root) / "configs" / "physics" / filename
 
     def validate_for_training(self) -> None:
         """Validate config is safe for RL training (no null to-be-calibrated values).
@@ -169,7 +193,15 @@ class TVCEnvBase:
         crash_detector = CrashDetector.from_task_config(self._config.config)
 
         # Reset manager
-        reset_mgr = ResetManager(body_iface, servo_model, edf_model, contact_sm, self._config.config)
+        env_origins = scene.scene.env_origins if hasattr(scene, "scene") else None
+        reset_mgr = ResetManager(
+            body_iface,
+            servo_model,
+            edf_model,
+            contact_sm,
+            self._config.config,
+            env_origins=env_origins,
+        )
         reset_mgr.initialize(num_envs, device)
 
         # Store as instance attributes
@@ -179,7 +211,12 @@ class TVCEnvBase:
         self._wrench_dispatch = wrench_dispatch
         self._wind_model = wind_model
         self._aero_model = aero_model
-        self._fin_dispatch = FinForceDispatch(aero_model, cops, hinge_axes)
+        self._fin_dispatch = FinForceDispatch.from_metadata_and_config(
+            metadata,
+            vehicle_config,
+            edf_config,
+            device=device,
+        )
         self._servo_model = servo_model
         self._edf_model = edf_model
         self._contact_sm = contact_sm

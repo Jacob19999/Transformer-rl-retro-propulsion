@@ -3,7 +3,7 @@ Rotor reaction torque computation.
 
 Computes:
   - Static reaction torque: Q = k_Q * omega^2 (opposes spin direction)
-  - Dynamic spool torque: I_rotor * d_omega/dt
+  - Dynamic spool reaction torque: -I_rotor * d_omega/dt
   - Gyroscopic precession: tau = omega_body x H_rotor
 
 All outputs are separate vec3 tensors for independent logging per FR-018.
@@ -38,11 +38,11 @@ def compute_dynamic_spool_torque(
     spin_axis: Tensor,      # (3,) unit vector
     dt: float,
 ) -> Tensor:
-    """Compute dynamic torque from rotor angular acceleration."""
+    """Compute body reaction torque from rotor angular acceleration."""
     spin_axis = _coerce_spin_axis(spin_axis, omega)
     d_omega = (omega - omega_prev) / max(dt, 1e-8)  # (num_envs,)
     torque_magnitude = rotor_inertia * d_omega
-    return spin_axis.unsqueeze(0) * torque_magnitude.unsqueeze(-1)
+    return -spin_axis.unsqueeze(0) * torque_magnitude.unsqueeze(-1)
 
 
 def compute_gyroscopic_precession(

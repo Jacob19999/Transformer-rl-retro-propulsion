@@ -46,11 +46,12 @@ class TVCDirectRLEnv(TVCEnvBase):
     ):
         TVCEnvBase.__init__(self, config)
         self._pending_actions = None
-        self._omega_max = config.config.get("edf", {}).get("omega_max") or 3000.0
-        self._target_position = torch.tensor(
+        self._omega_max = 3000.0
+        self._target_position_local = torch.tensor(
             config.config.get("task", {}).get("target_position", [0.0, 0.0, 5.0]),
             dtype=torch.float32,
         )
+        self._target_position = self._target_position_local
         self._setup_scene()
 
     # ---- Scene setup ----
@@ -83,6 +84,17 @@ class TVCDirectRLEnv(TVCEnvBase):
             vehicle_config, edf_config, servo_config,
             device=device,
         )
+
+        edf_params = edf_config.get("edf", edf_config)
+        self._omega_max = edf_params.get("omega_max") or self._omega_max
+        env_origins = getattr(self._sim_scene.scene, "env_origins", None)
+        if env_origins is None:
+            env_origins = torch.zeros(self._config.num_envs, 3, dtype=torch.float32, device=device)
+        else:
+            env_origins = env_origins.to(device=device, dtype=torch.float32)
+        self._env_origins = env_origins
+        self._target_position = env_origins + self._target_position_local.to(device).unsqueeze(0)
+        self._config.config["_target_position_world"] = self._target_position
 
     # ---- Gymnasium interface ----
 
@@ -171,24 +183,44 @@ class TVCDirectRLEnv(TVCEnvBase):
         servo_state = self._reset_manager.servo_state
         new_servo_state = self._servo_model.update(servo_state, fin_commands, dt)
         self._reset_manager._servo_state = new_servo_state
+        self._body_iface.set_fin_joint_targets(new_servo_state)
 
         # Update EDF spool state
-        omega_prev = self._reset_manager.omega_prev
         omega_state = self._reset_manager.omega_state
         new_omega = self._edf_model.update(omega_state, throttle, dt)
         self._reset_manager._omega_prev = omega_state.clone()
         self._reset_manager._omega_state = new_omega
 
-        # Compute aero forces and dispatch
-        forces_body, cops = self._fin_dispatch.compute_body_frame_forces(new_servo_state, throttle)
+        # Compute aero forces from measured PhysX joint angles, not the target cache.
+        measured_fin_angles = self._body_iface.get_fin_joint_positions()
+        fin_dispatch = self._fin_dispatch.compute_body_frame_forces(measured_fin_angles, throttle)
 
-        # EDF reaction force on the body in body-FRD.
+        # EDF reaction force and torque on the body in body-FRD.
         # Exhaust exits along +Z_frd (down), so body thrust is along -Z_frd (up).
-        thrust = self._edf_model.compute_thrust(new_omega)  # (num_envs,)
+        body_ang_frd = self._body_iface.get_angular_velocity_body_frd()
+        spin_axis = self._edf_model.thrust_axis.to(device=new_omega.device, dtype=new_omega.dtype)
+        edf_output = self._edf_model.compute_output(
+            new_omega,
+            omega_state,
+            body_ang_frd,
+            dt,
+            spin_axis=spin_axis,
+        )
+        raw_thrust = edf_output.thrust_force
+        max_loss = torch.full_like(raw_thrust, 0.3 * self._edf_model.max_thrust)
+        thrust_loss = torch.minimum(fin_dispatch.thrust_loss.clamp(min=0.0), max_loss)
+        thrust_loss = torch.minimum(thrust_loss, raw_thrust)
+        thrust = raw_thrust - thrust_loss
         edf_force_body = torch.zeros(thrust.shape[0], 3, device=thrust.device)
         edf_force_body[:, 2] = -thrust
+        edf_torque_body = (
+            edf_output.static_reaction_torque
+            + edf_output.dynamic_spool_torque
+            + edf_output.gyro_precession_torque
+        )
 
         q = self._body_iface.get_root_quaternion_wxyz()
+        pos = self._body_iface.get_root_position()
 
         # Wind drag force in body-FRD frame
         wind_force_body = None
@@ -198,7 +230,13 @@ class TVCDirectRLEnv(TVCEnvBase):
             self._wind_model.update_gust(dt)
 
         self._wrench_dispatch.dispatch(
-            forces_body, cops, q, edf_force_body, wind_force_body,
+            fin_dispatch.forces_body,
+            fin_dispatch.cop_positions,
+            q,
+            pos,
+            edf_force_body,
+            edf_torque_body,
+            wind_force_body,
         )
 
     # ---- Observation / Reward / Done ----
@@ -255,7 +293,7 @@ class TVCDirectRLEnv(TVCEnvBase):
         ang_vel_w = self._body_iface.get_root_angular_velocity_world()
         lin_vel_frd = self._body_iface.get_linear_velocity_body_frd()
         ang_vel_frd = self._body_iface.get_angular_velocity_body_frd()
-        fin_angles = self._reset_manager.servo_state
+        fin_angles = self._body_iface.get_fin_joint_positions()
         fin_rates = self._body_iface.get_fin_joint_velocities()
         omega = self._reset_manager.omega_state
         contact = self._contact_sm.state

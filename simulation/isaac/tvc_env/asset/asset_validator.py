@@ -80,6 +80,12 @@ def validate_asset(
                 f"Hinge axis {i} is not a unit vector: {axis} (norm={norm:.4f})"
             )
 
+    try:
+        from tvc_env.dynamics.fin_geometry import validate_fin_force_geometry
+        validate_fin_force_geometry(metadata, tolerance=1e-4)
+    except ValueError as exc:
+        raise AssetValidationError(str(exc)) from exc
+
     # Validate joint limits
     config_max_deflection = vehicle_config.get("fins", {}).get("max_deflection", 0.262)
     for i, (lo, hi) in enumerate(joint_limits):

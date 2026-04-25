@@ -1,12 +1,13 @@
 # Single-environment PhysX settings
 physics:
   dt: 0.00833              # 1/120 s
-  gravity: [0.0, -9.81, 0.0]
+  gravity: [0.0, 0.0, -9.81]
   enable_scene_query_support: true
   gpu_pipeline: false
   num_threads: 4
   solver_type: 1           # TGS solver
   num_position_iterations: 4
-  num_velocity_iterations: 0
+  num_velocity_iterations: 1
+  enable_external_forces_every_iteration: true
   contact_offset: 0.001
   rest_offset: 0.0

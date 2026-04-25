@@ -75,6 +75,7 @@ def deep_merge(base: dict, overlay: dict) -> dict:
 def load_merged_config(
     task_name: str,
     env_config: dict | None = None,
+    physics_config: dict | None = None,
     disturbance_config: dict | None = None,
     overrides: dict | None = None,
     sim_root: str | Path | None = None,
@@ -97,6 +98,8 @@ def load_merged_config(
 
     if env_config:
         config = deep_merge(config, env_config)
+    if physics_config:
+        config = deep_merge(config, physics_config)
     if disturbance_config:
         config = deep_merge(config, disturbance_config)
     if overrides:

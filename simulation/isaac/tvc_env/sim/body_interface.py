@@ -136,6 +136,7 @@ class BodyInterface:
         quaternion_wxyz: Tensor,
         linear_vel: Tensor,
         angular_vel: Tensor,
+        env_ids: Tensor | None = None,
     ) -> None:
         """Set root body state for episode reset.
 
@@ -144,9 +145,10 @@ class BodyInterface:
             quaternion_wxyz: Tensor (num_envs, 4) in (w,x,y,z).
             linear_vel: Tensor (num_envs, 3) in Isaac world frame (m/s).
             angular_vel: Tensor (num_envs, 3) in Isaac world frame (rad/s).
+            env_ids: Optional environment IDs matching the leading state dimension.
         """
         root_state = torch.cat([position, quaternion_wxyz, linear_vel, angular_vel], dim=-1)
-        self._art.write_root_state_to_sim(root_state)
+        self._art.write_root_state_to_sim(root_state, env_ids=env_ids)
 
     def get_altitude(self, ground_level: float = 0.0) -> Tensor:
         """Compute altitude above ground from Isaac world frame z-coordinate.

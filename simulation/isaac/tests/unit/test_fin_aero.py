@@ -99,6 +99,14 @@ class TestTangentialForce:
         r_neg = aero_model.compute_forces(a_neg, throttle)
         assert torch.allclose(r_pos.tangential_force, r_neg.tangential_force, atol=1e-6)
 
+    def test_thrust_loss_is_sum_of_fin_drag(self, aero_model):
+        """Thrust loss should equal the total per-fin drag before dispatch clamps it."""
+        throttle = torch.ones(2)
+        angles = torch.tensor([[0.0, 0.1, -0.1, 0.2], [0.05, -0.05, 0.15, -0.15]])
+        result = aero_model.compute_forces(angles, throttle)
+        expected = result.tangential_force.sum(dim=-1)
+        assert torch.allclose(result.thrust_loss, expected, atol=1e-6)
+
 
 class TestVectorization:
     def test_batch_dimension(self, aero_model):

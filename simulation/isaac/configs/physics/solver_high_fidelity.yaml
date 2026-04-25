@@ -1,11 +1,12 @@
 # High-fidelity solver settings for validation ladder tests
 physics:
   dt: 0.001                # 1000 Hz for high-fidelity sim
-  gravity: [0.0, -9.81, 0.0]
+  gravity: [0.0, 0.0, -9.81]
   enable_scene_query_support: true
   gpu_pipeline: false
   solver_type: 1
   num_position_iterations: 16
   num_velocity_iterations: 1
+  enable_external_forces_every_iteration: true
   contact_offset: 0.0005
   rest_offset: 0.0

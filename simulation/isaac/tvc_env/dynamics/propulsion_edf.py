@@ -36,6 +36,7 @@ class EDFModel:
         self.omega_max = omega_max
         self.d_omega_max = d_omega_max
         self.rotor_inertia = rotor_inertia
+        self.max_thrust = max_thrust
         # Thrust axis in body-FRD: EDF exhaust is +z (downward thrust)
         self.thrust_axis = torch.tensor(thrust_axis or [0.0, 0.0, 1.0], dtype=torch.float32)
 
@@ -165,9 +166,9 @@ class EDFModel:
         Q_magnitude = self.k_Q * omega ** 2
         static_reaction = -spin_axis.unsqueeze(0) * Q_magnitude.unsqueeze(-1)  # (num_envs, 3)
 
-        # Dynamic spool torque: I_rotor * dω/dt along spin axis
+        # Dynamic spool reaction torque on the body.
         d_omega = (omega - omega_prev) / max(dt, 1e-8)
-        dynamic_spool = spin_axis.unsqueeze(0) * (self.rotor_inertia * d_omega).unsqueeze(-1)  # (num_envs, 3)
+        dynamic_spool = -spin_axis.unsqueeze(0) * (self.rotor_inertia * d_omega).unsqueeze(-1)  # (num_envs, 3)
 
         # Gyroscopic precession: τ = ω_body × H_rotor = ω_body × (I_rotor * ω_rotor * spin_axis)
         H_rotor = spin_axis.unsqueeze(0) * (self.rotor_inertia * omega).unsqueeze(-1)  # (num_envs, 3)

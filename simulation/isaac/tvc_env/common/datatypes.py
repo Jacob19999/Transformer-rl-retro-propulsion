@@ -4,8 +4,7 @@ Typed data structures for the TVC environment.
 All tensor fields follow (num_envs, ...) batch convention.
 """
 
-from dataclasses import dataclass, field
-import torch
+from dataclasses import dataclass
 from torch import Tensor
 
 
@@ -19,7 +18,22 @@ class FinForceResult:
     force_vector: Tensor        # N, force vector in fin-local frame (num_envs, 4, 3)
     normal_force: Tensor        # N, force component normal to fin plane (num_envs, 4)
     tangential_force: Tensor    # N, force component in fin plane (drag) (num_envs, 4)
-    thrust_loss: Tensor         # N, EDF thrust reduction due to fin blockage (num_envs, 4)
+    thrust_loss: Tensor         # N, total EDF thrust reduction due to fin blockage (num_envs,)
+
+
+@dataclass
+class FinDispatchResult:
+    """Per-fin force dispatch result in body-FRD coordinates."""
+    forces_body: Tensor         # N, force per fin in body-FRD frame (num_envs, 4, 3)
+    cop_positions: Tensor       # m, COP offsets in body-FRD frame (4, 3)
+    thrust_loss: Tensor         # N, unclamped EDF thrust loss from fin drag (num_envs,)
+    normal_force: Tensor        # N, per-fin normal force magnitudes (num_envs, 4)
+    tangential_force: Tensor    # N, per-fin drag magnitudes (num_envs, 4)
+
+    def __iter__(self):
+        """Preserve legacy two-value unpacking: forces_body, cop_positions."""
+        yield self.forces_body
+        yield self.cop_positions
 
 
 @dataclass
@@ -50,7 +64,7 @@ class VehicleState:
     angular_vel_world: Tensor   # rad/s, world frame (num_envs, 3)
     linear_vel_frd: Tensor      # m/s, body-FRD frame (num_envs, 3)
     angular_vel_frd: Tensor     # rad/s, body-FRD frame (num_envs, 3)
-    fin_angles: Tensor          # rad, actual fin angles from servo state (num_envs, 4)
+    fin_angles: Tensor          # rad, actual fin joint angles from PhysX (num_envs, 4)
     fin_rates: Tensor           # rad/s, fin angular rates (num_envs, 4)
     motor_omega: Tensor         # rad/s, current rotor speed (num_envs,)
     contact_state: Tensor       # ContactState enum value, int (num_envs,)

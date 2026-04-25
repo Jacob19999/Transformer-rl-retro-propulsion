@@ -15,6 +15,20 @@ from tvc_env.common.constants import ContactState
 from tvc_env.common.quaternions import to_euler
 
 
+def _target_position(env_state, config: dict, default: list[float]) -> Tensor:
+    """Return a target tensor broadcast to the env batch."""
+    target = config.get("_target_position_world")
+    if target is None:
+        target = config.get("task", config).get("target_position", default)
+    if not isinstance(target, Tensor):
+        target = torch.tensor(target, dtype=env_state.position.dtype, device=env_state.position.device)
+    else:
+        target = target.to(dtype=env_state.position.dtype, device=env_state.position.device)
+    if target.dim() == 1:
+        target = target.unsqueeze(0).expand(env_state.position.shape[0], -1)
+    return target
+
+
 # ---- Shared reward terms ----
 
 def compute_alive_bonus(env_state, config: dict) -> Tensor:
@@ -33,11 +47,7 @@ def compute_position_error_reward(env_state, config: dict) -> Tensor:
     Returns:
         Tensor (num_envs,) — position error magnitude (positive, weight applies negative sign).
     """
-    target = torch.tensor(
-        config.get("task", config).get("target_position", [0, 0, 5]),
-        dtype=env_state.position.dtype,
-        device=env_state.position.device,
-    )
+    target = _target_position(env_state, config, [0, 0, 5])
     error = (env_state.position - target).norm(dim=-1)  # (num_envs,)
     return error
 
@@ -92,11 +102,7 @@ def compute_hover_stability_reward(env_state, config: dict) -> Tensor:
     max_pos_err = success_cfg.get("max_position_error", 0.5)
     max_tilt = success_cfg.get("max_tilt", 0.26)
 
-    target = torch.tensor(
-        config.get("task", config).get("target_position", [0, 0, 5]),
-        dtype=env_state.position.dtype,
-        device=env_state.position.device,
-    )
+    target = _target_position(env_state, config, [0, 0, 5])
     pos_err = (env_state.position - target).norm(dim=-1)
     roll, pitch, _ = to_euler(env_state.quaternion_wxyz)
     tilt = torch.sqrt(roll ** 2 + pitch ** 2)
@@ -168,11 +174,7 @@ def compute_pad_accuracy_reward(env_state, config: dict) -> Tensor:
         Tensor (num_envs,) — accuracy score, higher for closer to pad.
     """
     is_landed = env_state.contact_state == ContactState.LANDED
-    target = torch.tensor(
-        config.get("task", config).get("target_position", [0, 0, 0]),
-        dtype=env_state.position.dtype,
-        device=env_state.position.device,
-    )
+    target = _target_position(env_state, config, [0, 0, 0])
     # Horizontal distance from pad center
     horiz_dist = (env_state.position[:, :2] - target[:2]).norm(dim=-1)
     accuracy = torch.exp(-2.0 * horiz_dist)  # Exp decay with horizontal distance
