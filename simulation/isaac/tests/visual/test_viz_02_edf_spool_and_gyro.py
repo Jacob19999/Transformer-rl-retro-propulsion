@@ -33,22 +33,30 @@ def run(
     )
 
     def setup_fn(debug_env) -> None:
-        reset_to_state(debug_env, position=[0.0, 0.0, 5.0])
+        # Start in free-flight with a modest downward speed, then verify the EDF
+        # spool-up arrests descent and transitions into climb.
+        reset_to_state(
+            debug_env,
+            position=[0.0, 0.0, 8.0],
+            linear_vel=[0.0, 0.0, -1.0],  # world frame: -Z is downward
+        )
+        # Pre-spool near hover thrust so the episode demonstrates descent arrest
+        # and climb rather than a ground impact from a cold-start free-fall.
+        debug_env._reset_manager._omega_state.fill_(debug_env._edf_model.omega_max * 0.95)
+        debug_env._reset_manager._omega_prev.copy_(debug_env._reset_manager._omega_state)
 
     def action_fn(step: int, debug_env, obs) -> torch.Tensor:
         del obs
         device = debug_env._drone.device
         action = torch.zeros(1, 5, dtype=torch.float32, device=device)
 
-        if step < 30:
-            action[0, 4] = step / 29.0
-        else:
-            action[0, 4] = 1.0
+        # Hold full throttle immediately; pre-spooled omega still reveals motor lag.
+        action[0, 4] = 1.0
 
-        if 60 <= step < 80:
+        if 50 <= step < 70:
             action[0, 1] = 0.18
             action[0, 3] = -0.18
-        elif step >= 80:
+        elif step >= 70:
             action[0, 1] = -0.18
             action[0, 3] = 0.18
 
@@ -56,11 +64,9 @@ def run(
 
     def note_fn(step: int, debug_env, obs) -> list[str]:
         del debug_env, obs
-        if step < 30:
-            phase = "phase=spool ramp 0->100%"
-        elif step < 60:
+        if step < 50:
             phase = "phase=hold full throttle / watch spool and reaction torque arrows"
-        elif step < 80:
+        elif step < 70:
             phase = "phase=deflect +Y/-Y fin pair"
         else:
             phase = "phase=reverse fin-pair deflection"

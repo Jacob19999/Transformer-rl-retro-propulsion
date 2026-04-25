@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Callable
 
 import torch
+from tvc_env.common.frames import frd_force_to_isaac
+from tvc_env.common.quaternions import rotate_vector
 
 
 def sim_root_from_here() -> Path:
@@ -89,7 +91,31 @@ def _print_step_detail(step: int, episode_steps: int, env, action: torch.Tensor,
         env._reset_manager.servo_state, throttle,
     )
     thrust_N = float(env._edf_model.compute_thrust(state.motor_omega)[0].item())
+    edf_force_body_frd = torch.tensor(
+        [0.0, 0.0, -thrust_N], dtype=torch.float32, device=state.position.device
+    )
+    edf_force_body_isaac = frd_force_to_isaac(edf_force_body_frd).unsqueeze(0)
+    edf_force_world_expected = rotate_vector(
+        quat.unsqueeze(0), edf_force_body_isaac
+    )[0]
     aero_sum = fin_forces[0].sum(dim=0)
+    composed_msg = "unavailable"
+    body_link_idx = None
+    if hasattr(env, "_drone") and hasattr(env, "_art_map"):
+        try:
+            body_link_idx = int(env._art_map.body_index)
+            composer = env._drone.permanent_wrench_composer
+            composed = composer.composed_force_as_torch
+            if composed is None:
+                composed_msg = "no tensor"
+            elif composed.numel() == 0:
+                composed_msg = f"empty tensor shape={list(composed.shape)}"
+            elif 0 <= body_link_idx < composed.shape[1]:
+                composed_msg = f"body_id={body_link_idx} composed_force={_fmt_vec(composed[0, body_link_idx].detach())}"
+            else:
+                composed_msg = f"body_id={body_link_idx} out_of_range shape={list(composed.shape)}"
+        except Exception as exc:
+            composed_msg = f"error={type(exc).__name__}: {exc}"
 
     reward_val = float(reward[0]) if reward is not None else 0.0
 
@@ -104,6 +130,8 @@ def _print_step_detail(step: int, episode_steps: int, env, action: torch.Tensor,
         f"thrust={thrust_N:.2f}N  omega={omega:.0f}rad/s  "
         f"aero_sum_frd={_fmt_vec(aero_sum)}  reward={reward_val:.3f}"
     )
+    print(f"    expected_body_force_world={_fmt_vec(edf_force_world_expected)}")
+    print(f"    wrench_composer {composed_msg}")
     if notes:
         print(f"    {' | '.join(notes)}")
 
@@ -128,17 +156,22 @@ def play_scripted_episode(
     # Sim time per env.step() = decimation * physics_dt
     sim_dt = env._config.decimation * env._config.physics_dt
 
-    # Kit event-loop pump for real-time gap filling (non-blocking)
-    try:
-        import omni.kit.app
-        _kit_app = omni.kit.app.get_app()
-    except Exception:
-        _kit_app = None
+    # Safe render-only pump: use sim.render() which disables physics
+    # auto-stepping before calling app.update(), preventing extra unforced
+    # physics steps that would dilute external wrenches.
+    _sim_ctx = env._sim_scene.sim if hasattr(env, "_sim_scene") else None
 
     loop_label = "∞" if num_episodes == 0 else str(num_episodes)
     print(f"=== Visual Scenario: {scenario_name} (episodes={loop_label}) ===")
     print(f"    {description}")
     print(f"    sim_dt={sim_dt:.4f}s  decimation={env._config.decimation}  physics_dt={env._config.physics_dt:.5f}s")
+    if hasattr(env, "_drone") and hasattr(env, "_art_map"):
+        try:
+            body_idx = int(env._art_map.body_index)
+            body_name = env._drone.body_names[body_idx]
+            print(f"    body_link_index={body_idx} body_link_name={body_name}")
+        except Exception:
+            pass
     print()
 
     ep = 0
@@ -165,16 +198,20 @@ def play_scripted_episode(
                 print_terminal=False,
             )
             obs, reward, terminated, truncated, info = env.step(action)
-            simulation_app.update()
+            if _sim_ctx is not None:
+                _sim_ctx.render()
+            else:
+                simulation_app.update()
 
             if step % max(print_every, 1) == 0:
                 _print_step_detail(step, episode_steps, env, action, obs, reward, notes)
 
-            # Real-time pacing via Kit event loop (non-blocking)
+            # Real-time pacing — use sim.render() to keep the viewport alive
+            # without triggering extra physics steps.
             target_wall = wall_start + (step + 1) * sim_dt
             while time.perf_counter() < target_wall:
-                if _kit_app is not None:
-                    _kit_app.update()
+                if _sim_ctx is not None:
+                    _sim_ctx.render()
                 else:
                     remaining = target_wall - time.perf_counter()
                     if remaining > 0.001:

@@ -4,7 +4,7 @@ Simulation test: PID hover smoke test (test_10).
 Tests:
   - PID controller hovers for 10+ seconds with full physics enabled
   - Position error stays < 0.5 m throughout
-  - Tilt stays < 15° (0.262 rad) throughout
+  - Tilt stays < 15 deg (0.262 rad) throughout
   - Angular rate stays < 1.0 rad/s on average
   - No NaN in any state variable
   - No ground contact during hover
@@ -79,8 +79,9 @@ class TestPIDHoverSmoke:
         assert max_pos_err < 0.5, f"Max position error {max_pos_err:.3f}m exceeds 0.5m threshold"
 
     def test_tilt_within_bounds(self, pid_env):
-        """Tilt angle should stay below 15° (0.262 rad) during PID hover."""
+        """Tilt angle should stay below 15 deg (0.262 rad) during PID hover."""
         from tvc_env.controllers.pid_adapter import PIDController
+        from tvc_env.common.quaternions import to_euler
 
         pid = PIDController(num_envs=1, device=pid_env.device)
         obs_dict, _ = pid_env.reset()
@@ -96,9 +97,9 @@ class TestPIDHoverSmoke:
             obs_dict, _, terminated, truncated, _ = pid_env.step(action)
             obs = obs_dict["policy"]
 
-            # Tilt from quaternion w component: tilt = 2 * acos(|w|)
-            w = obs[0, 3].item()
-            tilt = 2.0 * math.acos(min(abs(w), 1.0))
+            quat_wxyz = obs[0, 3:7].unsqueeze(0)
+            roll, pitch, _ = to_euler(quat_wxyz)
+            tilt = torch.sqrt(roll * roll + pitch * pitch)[0].item()
             max_tilt = max(max_tilt, tilt)
 
             if (terminated | truncated)[0].item():
@@ -107,7 +108,7 @@ class TestPIDHoverSmoke:
                 pid.reset()
 
         assert max_tilt < 0.262, (
-            f"Max tilt {math.degrees(max_tilt):.1f}° exceeds 15° (0.262 rad) threshold"
+            f"Max tilt {math.degrees(max_tilt):.1f} deg exceeds 15 deg (0.262 rad) threshold"
         )
 
     def test_angular_rate_bounded(self, pid_env):

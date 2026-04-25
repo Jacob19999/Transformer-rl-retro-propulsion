@@ -5,11 +5,12 @@ Implements first-order lag, angular rate limiting, clamping, and deadband
 for servo actuators. Vectorized state update for (num_envs, 4) servo arrays.
 
 Model equations per action_space contract:
-  ẋ = (x_cmd - x) / τ_servo   [first-order lag]
+  e = x_cmd - x               [tracking error]
+  if deadband: e = 0 when |e| < deadband
+  ẋ = e / τ_servo             [first-order lag]
   ẋ_clamped = clip(ẋ, -ω_max, ω_max)
   x_new = x + ẋ_clamped * dt
   x_final = clip(x_new, -max_cmd, max_cmd)
-  if deadband: x_final[|x_final| < deadband] = 0
 """
 
 from __future__ import annotations
@@ -68,8 +69,19 @@ class ServoModel:
         # Clamp command to physical limits
         cmd_clamped = command.clamp(-self.max_command_angle, self.max_command_angle)
 
+        # Tracking error (command deadband is applied on error, not on state).
+        # Applying deadband directly on state each substep can pin the actuator
+        # at zero under high-rate integration.
+        error = cmd_clamped - state
+        if self.apply_deadband:
+            error = torch.where(
+                error.abs() < self.deadband,
+                torch.zeros_like(error),
+                error,
+            )
+
         # First-order lag: rate of change
-        rate = (cmd_clamped - state) / self.tau_servo
+        rate = error / self.tau_servo
 
         # Rate limit
         rate_limited = rate.clamp(-self.max_angular_velocity, self.max_angular_velocity)
@@ -79,14 +91,6 @@ class ServoModel:
 
         # Clamp to position limits
         new_state = new_state.clamp(-self.max_command_angle, self.max_command_angle)
-
-        # Deadband
-        if self.apply_deadband:
-            new_state = torch.where(
-                new_state.abs() < self.deadband,
-                torch.zeros_like(new_state),
-                new_state,
-            )
 
         return new_state
 

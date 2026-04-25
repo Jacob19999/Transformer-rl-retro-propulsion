@@ -8,7 +8,12 @@
       "Bash(powershell -ExecutionPolicy Bypass -Command \"& ''./.specify/scripts/powershell/setup-plan.ps1'' -Json\")",
       "Bash(powershell -ExecutionPolicy Bypass -Command \"& ''./.specify/scripts/powershell/check-prerequisites.ps1'' -Json\")",
       "Bash(powershell -ExecutionPolicy Bypass -Command \"& ''./.specify/scripts/powershell/check-prerequisites.ps1'' -Json -RequireTasks -IncludeTasks\")",
-      "Bash(powershell -File \".specify/scripts/powershell/check-prerequisites.ps1\" -Json -RequireTasks -IncludeTasks)"
+      "Bash(powershell -File \".specify/scripts/powershell/check-prerequisites.ps1\" -Json -RequireTasks -IncludeTasks)",
+      "Bash(find /c/Transformer-rl-retro-propulsion/env_isaaclab -name *.py -exec grep -l \"permanent_wrench\\\\|wrench_composer\\\\|WrenchComposer\" {})",
+      "Bash(2)",
+      "Bash(grep -r \"permanent_wrench\\\\|wrench_composer\\\\|WrenchComposer\\\\|composed_force\" /c/Transformer-rl-retro-propulsion/env_isaaclab/Lib/site-packages/isaaclab/ --include=*.py -l)",
+      "Bash(grep -r wrench /c/Transformer-rl-retro-propulsion/env_isaaclab/Lib/site-packages/isaaclab/ --include=*.py -l)",
+      "Bash(python -c \"import __editable___isaaclab_0_54_3_finder; print\\(__editable___isaaclab_0_54_3_finder.MAPPING\\)\")"
     ]
   },
   "hooks": {

@@ -36,6 +36,7 @@ except ImportError:
 
 pytestmark = pytest.mark.skipif(not ISAAC_AVAILABLE, reason="Isaac Sim runtime not available")
 
+SIM_ROOT = Path(__file__).parents[2]
 VEHICLE_CONFIG_PATH = Path(__file__).parents[2] / "configs/vehicle/edf_drone_v2.yaml"
 GOLDENS_PATH = (
     Path(__file__).parents[2] / "tests/goldens/reaction_torque_curves/edf_step.json"
@@ -65,6 +66,36 @@ def scene_and_drone():
     scene = build_scene(config)
     drone = scene["drone"]
     return scene, drone
+
+
+@pytest.fixture
+def spool_env():
+    """Build a single-env TVC environment for thrust-direction integration tests."""
+    from tvc_env.envs.base_env import BaseEnvConfig
+    from tvc_env.envs.direct_rl_env import TVCDirectRLEnv
+
+    config = BaseEnvConfig(
+        task_name="hover",
+        env_config_path=SIM_ROOT / "configs/env/single_env_debug.yaml",
+        disturbance_config_path=SIM_ROOT / "configs/disturbances/nominal.yaml",
+        overrides={
+            "task": {
+                "episode_length_s": 10.0,
+                "termination": {
+                    "crash": False,
+                    "max_tilt": 3.14,
+                    "max_altitude_error": 100.0,
+                },
+            }
+        },
+        sim_root=SIM_ROOT,
+    )
+    env = TVCDirectRLEnv(config)
+    env.reset()
+    try:
+        yield env
+    finally:
+        env.close()
 
 
 class TestEDFSpoolAndReaction:
@@ -239,4 +270,53 @@ class TestEDFSpoolAndReaction:
         assert omega[0].item() > 0.0, "Motor omega should be positive after stepping"
         assert omega[0].item() < edf_model.omega_max, (
             "Motor should not have instantly reached omega_max"
+        )
+
+    def test_pre_spooled_full_throttle_lifts_and_keeps_orientation(self, spool_env, edf_model):
+        """With pre-spooled EDF and full throttle, vehicle should climb and stay reasonably upright."""
+        from tvc_env.common.quaternions import to_euler
+
+        device = spool_env.device
+
+        # Deterministic spawn with enough clearance to avoid touchdown artifacts.
+        pos = torch.tensor([[0.0, 0.0, 1.0]], dtype=torch.float32, device=device)
+        quat = torch.tensor([[1.0, 0.0, 0.0, 0.0]], dtype=torch.float32, device=device)
+        lin = torch.zeros(1, 3, dtype=torch.float32, device=device)
+        ang = torch.zeros(1, 3, dtype=torch.float32, device=device)
+        spool_env._body_iface.set_root_state(pos, quat, lin, ang)
+
+        # Pre-spool close to steady-state so this test isolates thrust sign/application.
+        spool_env._reset_manager._servo_state.zero_()
+        spool_env._reset_manager._omega_state.fill_(edf_model.omega_max * 0.95)
+        spool_env._reset_manager._omega_prev.copy_(spool_env._reset_manager._omega_state)
+        spool_env._sim_scene.step()
+
+        action = torch.zeros(1, 5, dtype=torch.float32, device=device)
+        action[0, 4] = 1.0
+
+        heights: list[float] = []
+        vz_frd: list[float] = []
+        tilt_rad: list[float] = []
+
+        for _ in range(40):
+            _, _, terminated, truncated, _ = spool_env.step(action)
+            assert not terminated.any(), "Unexpected termination during thrust-direction check"
+            assert not truncated.any(), "Unexpected timeout during thrust-direction check"
+
+            state = spool_env._build_vehicle_state()
+            heights.append(float(state.height[0]))
+            vz_frd.append(float(state.linear_vel_frd[0, 2]))  # FRD: +z is down, -z is up
+
+            roll, pitch, _ = to_euler(state.quaternion_wxyz)
+            tilt = torch.sqrt(roll[0] ** 2 + pitch[0] ** 2)
+            tilt_rad.append(float(tilt))
+
+        assert heights[-1] > heights[0] + 0.20, (
+            f"Expected climb under full throttle, got h0={heights[0]:.3f} h_end={heights[-1]:.3f}"
+        )
+        assert min(vz_frd[5:]) < -0.10, (
+            "Expected upward FRD velocity (negative z_frd) once thrust is applied"
+        )
+        assert max(tilt_rad) < 0.35, (
+            f"Orientation became unstable during thrust check (max tilt={math.degrees(max(tilt_rad)):.1f} deg)"
         )

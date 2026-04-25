@@ -37,13 +37,16 @@ def run(
     segment_steps = max(episode_steps // 4, 1)
 
     def setup_fn(debug_env) -> None:
+        # The body root sits around z~=0.31 m when the landing legs are on the
+        # ground, so a 0.5 m spawn leaves very little clearance while the EDF
+        # spools toward hover thrust. Start higher so the fin sweep stays airborne.
         reset_to_state(debug_env, position=[0.0, 0.0, 1.5])
 
     def action_fn(step: int, debug_env, obs) -> torch.Tensor:
         del obs
         device = debug_env._drone.device
         action = torch.zeros(1, 5, dtype=torch.float32, device=device)
-        action[0, 4] = 0.95
+        action[0, 4] = 1.0
         active_fin = min(step // segment_steps, 3)
         local_step = min(step % segment_steps, segment_steps - 1)
         fraction = 0.0 if segment_steps == 1 else local_step / (segment_steps - 1)

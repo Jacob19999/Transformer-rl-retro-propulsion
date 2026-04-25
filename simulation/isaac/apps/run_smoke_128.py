@@ -6,6 +6,7 @@ reports tensor shape validation, NaN check, reset count, and performance metrics
 
 Usage:
     python apps/run_smoke_128.py --task hover --steps 1000
+    python apps/run_smoke_128.py --task hover --steps 1000 --no-headless
     python apps/run_smoke_128.py --override env.num_envs=64
 """
 
@@ -20,6 +21,8 @@ def parse_args():
     parser.add_argument("--task", default="hover", choices=["hover", "landing"])
     parser.add_argument("--env-config", default="configs/env/train_128.yaml")
     parser.add_argument("--steps", type=int, default=1000)
+    parser.add_argument("--headless", action="store_true", default=True)
+    parser.add_argument("--no-headless", dest="headless", action="store_false")
     parser.add_argument("--override", nargs="*", default=[])
     return parser.parse_args()
 
@@ -31,7 +34,7 @@ def main():
 
     try:
         from isaacsim import SimulationApp
-        simulation_app = SimulationApp({"headless": True})
+        simulation_app = SimulationApp({"headless": args.headless})
     except ImportError:
         print("ERROR: Isaac Sim not available.", file=sys.stderr)
         sys.exit(1)
