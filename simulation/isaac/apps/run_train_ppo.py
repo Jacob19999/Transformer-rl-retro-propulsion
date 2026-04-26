@@ -30,6 +30,7 @@ def parse_args():
     parser.add_argument("--clip-coef", type=float, default=0.2)
     parser.add_argument("--ent-coef", type=float, default=0.0)
     parser.add_argument("--vf-coef", type=float, default=0.5)
+    parser.add_argument("--reward-scale", type=float, default=1.0)
     parser.add_argument("--max-grad-norm", type=float, default=0.5)
     parser.add_argument("--target-kl", type=float, default=0.03)
     parser.add_argument("--bc-steps", type=int, default=2_000)
@@ -43,6 +44,15 @@ def parse_args():
     parser.add_argument("--fixed-hover-spawn", action="store_true")
     parser.add_argument("--residual-pid", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--residual-scale", type=float, default=0.05)
+    parser.add_argument("--landing-descent-rate", type=float, default=1.0)
+    parser.add_argument("--landing-flare-alt", type=float, default=0.5)
+    parser.add_argument("--landing-flare-descent-rate", type=float, default=0.25)
+    parser.add_argument("--landing-xy-gate-radius", type=float, default=0.75)
+    parser.add_argument("--landing-far-descent-rate", type=float, default=0.15)
+    parser.add_argument("--landing-descent-brake-gain", type=float, default=0.35)
+    parser.add_argument("--landing-min-descent-throttle", type=float, default=0.30)
+    parser.add_argument("--landing-touchdown-speed-limit", type=float, default=1.5)
+    parser.add_argument("--landing-pad-distance-limit", type=float, default=0.5)
     parser.add_argument(
         "--max-wall-time",
         type=float,
@@ -63,6 +73,22 @@ class EvalMetrics:
     passed: bool
 
 
+@dataclass
+class LandingEvalMetrics:
+    landed_fraction: float
+    crashed_fraction: float
+    mean_touchdown_speed: float
+    max_touchdown_speed: float
+    mean_pad_distance: float
+    max_pad_distance: float
+    mean_delta_v_proxy: float
+    mean_eval_throttle: float
+    max_eval_throttle: float
+    max_upward_speed: float
+    max_downward_speed: float
+    passed: bool
+
+
 def main():
     args = parse_args()
     max_wall_time = args.max_wall_time
@@ -78,6 +104,10 @@ def main():
     output_dir = sim_root / args.output_dir / run_name
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "args.json").write_text(json.dumps(vars(args), indent=2), encoding="utf-8")
+
+    def append_jsonl(name: str, record: dict) -> None:
+        with (output_dir / name).open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, sort_keys=True) + "\n")
 
     simulation_app = None
     env = None
@@ -101,7 +131,9 @@ def main():
         import torch.nn.functional as F
         from torch.distributions import Normal
 
+        from tvc_env.common.constants import ContactState
         from tvc_env.common.quaternions import to_euler
+        from tvc_env.controllers.landing_guidance import LandingGuidance
         from tvc_env.controllers.pid_adapter import PIDController
         from tvc_env.envs.base_env import BaseEnvConfig
         from tvc_env.envs.direct_rl_env import TVCDirectRLEnv
@@ -173,18 +205,21 @@ def main():
                 action_raw = action_raw.clamp(-1.0, 1.0)
                 return action_raw, logprob, entropy, value
 
-        def raw_to_env_action(action_raw, obs_for_pid=None, pid_for_residual=None):
+        def raw_to_env_action(action_raw, obs_for_pid=None, pid_for_residual=None, guidance=None):
             if args.residual_pid:
                 if obs_for_pid is None or pid_for_residual is None:
                     raise ValueError("residual PID action conversion requires obs and PID controller")
+                pid_obs = guidance.modify_obs(obs_for_pid) if guidance is not None else obs_for_pid
                 with torch.no_grad():
-                    base_action = pid_for_residual.compute_action(obs_for_pid)
+                    base_action = pid_for_residual.compute_action(pid_obs)
                 residual_fins = action_raw[:, :4].clamp(-1.0, 1.0) * max_fin_angle
                 residual_throttle = action_raw[:, 4:5].clamp(-1.0, 1.0) * 0.5
                 residual = torch.cat([residual_fins, residual_throttle], dim=-1)
                 action = base_action + args.residual_scale * residual
                 action[:, :4] = action[:, :4].clamp(-max_fin_angle, max_fin_angle)
                 action[:, 4] = action[:, 4].clamp(0.0, 1.0)
+                if guidance is not None:
+                    action = guidance.post_action(action, obs_for_pid)
                 return action
             fins = action_raw[:, :4].clamp(-1.0, 1.0) * max_fin_angle
             throttle = (action_raw[:, 4:5].clamp(-1.0, 1.0) + 1.0) * 0.5
@@ -197,6 +232,112 @@ def main():
             return torch.cat([fins, throttle], dim=-1)
 
         eval_pid = PIDController(num_envs=num_envs, device=device)
+        is_landing = args.task == "landing"
+        rl_dt = config.physics_dt * config.decimation
+
+        def make_guidance() -> LandingGuidance:
+            return LandingGuidance(
+                num_envs=num_envs,
+                device=device,
+                target_position=env._target_position,
+                descent_rate=args.landing_descent_rate,
+                flare_alt=args.landing_flare_alt,
+                flare_descent_rate=args.landing_flare_descent_rate,
+                xy_gate_radius=args.landing_xy_gate_radius,
+                far_descent_rate=args.landing_far_descent_rate,
+                descent_brake_gain=args.landing_descent_brake_gain,
+                min_descent_throttle=args.landing_min_descent_throttle,
+                dt=rl_dt,
+            )
+
+        eval_guidance = make_guidance() if is_landing else None
+        train_guidance = make_guidance() if is_landing else None
+
+        def evaluate_landing(policy, seconds: float) -> LandingEvalMetrics:
+            assert eval_guidance is not None
+            obs_dict, _ = env.reset(seed=args.seed)
+            obs = obs_dict["policy"]
+            eval_pid.reset()
+            eval_guidance.reset(obs=obs)
+            n_steps = int(seconds / rl_dt)
+            landed_step = torch.full((num_envs,), -1, dtype=torch.int64, device=device)
+            touchdown_speed = torch.zeros(num_envs, device=device)
+            touchdown_pad_dist = torch.zeros(num_envs, device=device)
+            crashed = torch.zeros(num_envs, dtype=torch.bool, device=device)
+            delta_v_proxy = torch.zeros(num_envs, device=device)
+            throttle_sum = 0.0
+            throttle_count = 0
+            max_eval_throttle = 0.0
+            max_upward_speed = 0.0
+            max_downward_speed = 0.0
+            prev_contact = torch.full((num_envs,), int(ContactState.AIRBORNE), dtype=torch.int64, device=device)
+            omega_max = max(float(env._omega_max), 1.0)
+            with torch.no_grad():
+                for step in range(n_steps):
+                    raw_action, _, _, _ = policy.get_action_and_value(obs, deterministic=True)
+                    env_action = raw_to_env_action(raw_action, obs, eval_pid, eval_guidance)
+                    throttle = env_action[:, 4]
+                    throttle_sum += float(throttle.sum().item())
+                    throttle_count += int(throttle.numel())
+                    max_eval_throttle = max(max_eval_throttle, float(throttle.max().item()))
+                    obs_dict, _, done, trunc, _ = env.step(env_action)
+                    next_obs = obs_dict["policy"]
+                    contact_int = next_obs[:, 23].long()
+                    just_landed = (
+                        (landed_step == -1)
+                        & (prev_contact != int(ContactState.LANDED))
+                        & (contact_int == int(ContactState.LANDED))
+                    )
+                    if just_landed.any():
+                        state = env._build_vehicle_state()
+                        landed_step = torch.where(just_landed, torch.full_like(landed_step, step), landed_step)
+                        td_speed = state.linear_vel_frd[:, 2].clamp(min=0.0)
+                        touchdown_speed = torch.where(just_landed, td_speed, touchdown_speed)
+                        pad_xy = env._target_position[:, :2]
+                        pad_dist = (state.position[:, :2] - pad_xy).norm(dim=-1)
+                        touchdown_pad_dist = torch.where(just_landed, pad_dist, touchdown_pad_dist)
+                    crashed = crashed | (contact_int == int(ContactState.CRASHED))
+                    state = env._build_vehicle_state()
+                    vertical_down_speed = state.linear_vel_frd[:, 2]
+                    max_downward_speed = max(max_downward_speed, float(vertical_down_speed.max().item()))
+                    max_upward_speed = max(max_upward_speed, float((-vertical_down_speed).max().item()))
+                    ratio = (state.motor_omega / omega_max).clamp(min=0.0, max=1.0).pow(2)
+                    delta_v_proxy = delta_v_proxy + ratio * rl_dt
+                    prev_contact = contact_int
+                    reset_ids = (done | trunc).nonzero(as_tuple=False).squeeze(-1)
+                    if len(reset_ids) > 0:
+                        eval_pid.reset(reset_ids)
+                        eval_guidance.reset(obs=next_obs, env_ids=reset_ids)
+                    obs = next_obs
+                    simulation_app.update()
+            landed_mask = landed_step >= 0
+            landed_fraction = float(landed_mask.float().mean().item())
+            crashed_fraction = float(crashed.float().mean().item())
+            mean_td = float(touchdown_speed[landed_mask].mean().item()) if landed_mask.any() else float("nan")
+            max_td = float(touchdown_speed[landed_mask].max().item()) if landed_mask.any() else float("nan")
+            mean_pd = float(touchdown_pad_dist[landed_mask].mean().item()) if landed_mask.any() else float("nan")
+            max_pd = float(touchdown_pad_dist[landed_mask].max().item()) if landed_mask.any() else float("nan")
+            mean_dv = float(delta_v_proxy.mean().item())
+            passed = (
+                landed_fraction >= 0.8
+                and crashed_fraction <= 0.05
+                and (max_td if max_td == max_td else float("inf")) < args.landing_touchdown_speed_limit
+                and (max_pd if max_pd == max_pd else float("inf")) < args.landing_pad_distance_limit
+            )
+            return LandingEvalMetrics(
+                landed_fraction=landed_fraction,
+                crashed_fraction=crashed_fraction,
+                mean_touchdown_speed=mean_td,
+                max_touchdown_speed=max_td,
+                mean_pad_distance=mean_pd,
+                max_pad_distance=max_pd,
+                mean_delta_v_proxy=mean_dv,
+                mean_eval_throttle=throttle_sum / max(throttle_count, 1),
+                max_eval_throttle=max_eval_throttle,
+                max_upward_speed=max_upward_speed,
+                max_downward_speed=max_downward_speed,
+                passed=passed,
+            )
 
         def evaluate(policy, seconds: float) -> EvalMetrics:
             obs_dict, _ = env.reset(seed=args.seed)
@@ -209,11 +350,16 @@ def main():
             with torch.no_grad():
                 for _ in range(n_steps):
                     raw_action, _, _, _ = policy.get_action_and_value(obs, deterministic=True)
-                    obs_dict, _, done, trunc, _ = env.step(raw_to_env_action(raw_action, obs, eval_pid))
+                    obs_dict, _, done, trunc, _ = env.step(
+                        raw_to_env_action(raw_action, obs, eval_pid, eval_guidance)
+                    )
+                    next_obs = obs_dict["policy"]
                     reset_ids = (done | trunc).nonzero(as_tuple=False).squeeze(-1)
                     if len(reset_ids) > 0:
                         eval_pid.reset(reset_ids)
-                    obs = obs_dict["policy"]
+                        if eval_guidance is not None:
+                            eval_guidance.reset(obs=next_obs, env_ids=reset_ids)
+                    obs = next_obs
                     pos_errors.extend(obs[:, 0:3].norm(dim=-1).detach().cpu().tolist())
                     roll, pitch, _yaw = to_euler(obs[:, 3:7])
                     tilts.extend(torch.sqrt(roll * roll + pitch * pitch).detach().cpu().tolist())
@@ -239,14 +385,22 @@ def main():
         optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, eps=1e-5)
         obs_dict, _ = env.reset(seed=args.seed)
         obs = obs_dict["policy"]
+        if train_guidance is not None:
+            train_guidance.reset(obs=obs)
 
         if args.bc_steps > 0 and not args.residual_pid:
             print(f"PID behavior-cloning warm start: {args.bc_steps} gradient steps", flush=True)
             pid = PIDController(num_envs=num_envs, device=device)
             pid.reset()
+            bc_guidance = make_guidance() if is_landing else None
+            if bc_guidance is not None:
+                bc_guidance.reset(obs=obs)
             for step in range(args.bc_steps):
                 with torch.no_grad():
-                    teacher_action = pid.compute_action(obs)
+                    pid_obs = bc_guidance.modify_obs(obs) if bc_guidance is not None else obs
+                    teacher_action = pid.compute_action(pid_obs)
+                    if bc_guidance is not None:
+                        teacher_action = bc_guidance.post_action(teacher_action, obs)
                     target_raw = env_to_raw_action(teacher_action)
                 pred_raw, _value = model(obs)
                 loss = F.mse_loss(pred_raw, target_raw)
@@ -256,10 +410,13 @@ def main():
                 optimizer.step()
 
                 obs_dict, _, done, trunc, _ = env.step(teacher_action)
+                next_obs = obs_dict["policy"]
                 reset_ids = (done | trunc).nonzero(as_tuple=False).squeeze(-1)
                 if len(reset_ids) > 0:
                     pid.reset(reset_ids)
-                obs = obs_dict["policy"]
+                    if bc_guidance is not None:
+                        bc_guidance.reset(obs=next_obs, env_ids=reset_ids)
+                obs = next_obs
                 simulation_app.update()
 
                 if (step + 1) % max(1, args.bc_steps // 5) == 0:
@@ -284,13 +441,18 @@ def main():
         reward_buf = torch.zeros((rollout_steps, num_envs), device=device)
         done_buf = torch.zeros((rollout_steps, num_envs), device=device)
         value_buf = torch.zeros((rollout_steps, num_envs), device=device)
+        throttle_buf = torch.zeros((rollout_steps, num_envs), device=device)
 
         global_step = 0
         update = 0
         best_eval = None
+        last_eval_bucket = -1
+        last_save_bucket = -1
         start_time = time.time()
         train_pid = PIDController(num_envs=num_envs, device=device)
         train_pid.reset()
+        if train_guidance is not None:
+            train_guidance.reset(obs=obs)
 
         while global_step < args.total_steps:
             update += 1
@@ -303,16 +465,19 @@ def main():
                 logprob_buf[t] = logprob
                 value_buf[t] = value
 
-                obs_dict, reward, terminated, truncated, _ = env.step(
-                    raw_to_env_action(action_raw, obs, train_pid)
-                )
+                env_action = raw_to_env_action(action_raw, obs, train_pid, train_guidance)
+                throttle_buf[t] = env_action[:, 4]
+                obs_dict, reward, terminated, truncated, _ = env.step(env_action)
                 done = terminated | truncated
+                next_obs = obs_dict["policy"]
                 reset_ids = done.nonzero(as_tuple=False).squeeze(-1)
                 if len(reset_ids) > 0:
                     train_pid.reset(reset_ids)
-                reward_buf[t] = reward
+                    if train_guidance is not None:
+                        train_guidance.reset(obs=next_obs, env_ids=reset_ids)
+                reward_buf[t] = reward * args.reward_scale
                 done_buf[t] = done.float()
-                obs = obs_dict["policy"]
+                obs = next_obs
                 simulation_app.update()
 
             with torch.no_grad():
@@ -342,6 +507,11 @@ def main():
             inds = torch.randperm(batch_size, device=device)
             clipfracs = []
             approx_kl = torch.tensor(0.0, device=device)
+            pg_loss_acc = 0.0
+            v_loss_acc = 0.0
+            entropy_acc = 0.0
+            loss_acc = 0.0
+            n_minibatches = 0
             for _epoch in range(args.update_epochs):
                 for start in range(0, batch_size, minibatch_size):
                     mb_inds = inds[start : start + minibatch_size]
@@ -370,19 +540,81 @@ def main():
                     loss.backward()
                     nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
                     optimizer.step()
+
+                    pg_loss_acc += float(pg_loss.detach().item())
+                    v_loss_acc += float(v_loss.detach().item())
+                    entropy_acc += float(entropy_loss.detach().item())
+                    loss_acc += float(loss.detach().item())
+                    n_minibatches += 1
                 if approx_kl > args.target_kl:
                     break
 
-            if global_step % args.save_interval < num_envs or global_step >= args.total_steps:
+            denom = max(n_minibatches, 1)
+            mean_pg = pg_loss_acc / denom
+            mean_v = v_loss_acc / denom
+            mean_ent = entropy_acc / denom
+            mean_loss = loss_acc / denom
+            mean_clipfrac = sum(clipfracs) / max(len(clipfracs), 1)
+            wall_elapsed = time.time() - start_time
+            sps = global_step / max(wall_elapsed, 1e-6)
+            log_record = {
+                "type": "train_update",
+                "update": update,
+                "global_step": global_step,
+                "wall_s": round(wall_elapsed, 2),
+                "sps": round(sps, 1),
+                "loss": round(mean_loss, 6),
+                "pg_loss": round(mean_pg, 6),
+                "v_loss": round(mean_v, 6),
+                "entropy": round(mean_ent, 6),
+                "approx_kl": round(float(approx_kl.item()), 6),
+                "clipfrac": round(mean_clipfrac, 4),
+                "reward_mean": round(float(reward_buf.mean().item()), 4),
+                "reward_std": round(float(reward_buf.std().item()), 4),
+                "reward_min": round(float(reward_buf.min().item()), 4),
+                "reward_max": round(float(reward_buf.max().item()), 4),
+                "reward_scale": args.reward_scale,
+                "throttle_mean": round(float(throttle_buf.mean().item()), 4),
+                "throttle_min": round(float(throttle_buf.min().item()), 4),
+                "throttle_max": round(float(throttle_buf.max().item()), 4),
+            }
+            print(json.dumps(log_record, separators=(",", ":")), flush=True)
+            append_jsonl("train_log.jsonl", log_record)
+
+            save_bucket = global_step // max(args.save_interval, 1)
+            if save_bucket > last_save_bucket or global_step >= args.total_steps:
                 ckpt = output_dir / f"ppo_step_{global_step}.pt"
                 torch.save({"model": model.state_dict(), "args": vars(args), "step": global_step}, ckpt)
+                last_save_bucket = save_bucket
 
-            if global_step % args.eval_interval < num_envs or global_step >= args.total_steps:
-                metrics = evaluate(model, args.eval_seconds)
-                best_eval = metrics if best_eval is None or metrics.mean_pos < best_eval.mean_pos else best_eval
+            eval_bucket = global_step // max(args.eval_interval, 1)
+            if eval_bucket > last_eval_bucket or global_step >= args.total_steps:
+                last_eval_bucket = eval_bucket
+                if is_landing:
+                    metrics = evaluate_landing(model, args.eval_seconds)
+                    best_eval = (
+                        metrics
+                        if best_eval is None or metrics.mean_delta_v_proxy < best_eval.mean_delta_v_proxy
+                        else best_eval
+                    )
+                else:
+                    metrics = evaluate(model, args.eval_seconds)
+                    best_eval = (
+                        metrics
+                        if best_eval is None or metrics.mean_pos < best_eval.mean_pos
+                        else best_eval
+                    )
                 (output_dir / "eval_latest.json").write_text(
                     json.dumps(asdict(metrics), indent=2), encoding="utf-8"
                 )
+                eval_record = {
+                    "type": "eval",
+                    "global_step": global_step,
+                    "update": update,
+                    "wall_s": round(time.time() - start_time, 2),
+                    **asdict(metrics),
+                }
+                append_jsonl("eval_log.jsonl", eval_record)
                 print(
                     f"step={global_step:,} reward_mean={reward_buf.mean().item():.3f} "
                     f"kl={approx_kl.item():.5f} clipfrac={sum(clipfracs)/max(len(clipfracs),1):.3f} "
@@ -391,11 +623,23 @@ def main():
                 )
                 obs_dict, _ = env.reset(seed=args.seed)
                 obs = obs_dict["policy"]
+                if train_guidance is not None:
+                    train_guidance.reset(obs=obs)
 
         elapsed = time.time() - start_time
-        final_metrics = evaluate(model, args.eval_seconds)
+        final_metrics = evaluate_landing(model, args.eval_seconds) if is_landing else evaluate(model, args.eval_seconds)
         torch.save({"model": model.state_dict(), "args": vars(args), "step": global_step}, output_dir / "ppo_final.pt")
         (output_dir / "eval_final.json").write_text(json.dumps(asdict(final_metrics), indent=2), encoding="utf-8")
+        append_jsonl(
+            "eval_log.jsonl",
+            {
+                "type": "final_eval",
+                "global_step": global_step,
+                "update": update,
+                "wall_s": round(time.time() - start_time, 2),
+                **asdict(final_metrics),
+            },
+        )
         print(f"Training complete in {elapsed:.1f}s, steps={global_step:,}", flush=True)
         print(f"Final eval: {asdict(final_metrics)}", flush=True)
         print(f"Run directory: {output_dir}", flush=True)

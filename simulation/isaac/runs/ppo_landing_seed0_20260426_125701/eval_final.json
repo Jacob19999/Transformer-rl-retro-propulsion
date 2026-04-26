@@ -1,0 +1,10 @@
+{
+  "landed_fraction": 0.9140625,
+  "crashed_fraction": 0.0,
+  "mean_touchdown_speed": 0.014226425439119339,
+  "max_touchdown_speed": 0.1388608068227768,
+  "mean_pad_distance": 0.48679259419441223,
+  "max_pad_distance": 4.775712966918945,
+  "mean_delta_v_proxy": 15.841230392456055,
+  "passed": false
+}

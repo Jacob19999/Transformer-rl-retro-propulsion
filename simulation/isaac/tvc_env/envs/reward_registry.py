@@ -12,6 +12,7 @@ from typing import Callable
 from tvc_env.envs.rewards import (
     compute_alive_bonus,
     compute_position_error_reward,
+    compute_horizontal_position_error_reward,
     compute_attitude_error_reward,
     compute_angular_velocity_reward,
     compute_control_effort_reward,
@@ -24,6 +25,7 @@ from tvc_env.envs.rewards import (
     compute_landing_success_reward,
     compute_pad_accuracy_reward,
     compute_vertical_speed_shaping,
+    compute_delta_v_cost,
 )
 
 # Registry: term name → reward function
@@ -31,6 +33,7 @@ _REGISTRY: dict[str, Callable] = {
     # Shared terms
     "alive_bonus": compute_alive_bonus,
     "position_error": compute_position_error_reward,
+    "horizontal_position_error": compute_horizontal_position_error_reward,
     "attitude_error": compute_attitude_error_reward,
     "angular_velocity": compute_angular_velocity_reward,
     "control_effort": compute_control_effort_reward,
@@ -47,6 +50,7 @@ _REGISTRY: dict[str, Callable] = {
     "landing_success": compute_landing_success_reward,
     "pad_accuracy": compute_pad_accuracy_reward,
     "vertical_speed_shaping": compute_vertical_speed_shaping,
+    "delta_v_cost": compute_delta_v_cost,
 }
 
 

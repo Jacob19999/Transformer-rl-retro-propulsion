@@ -95,6 +95,7 @@ class TVCDirectRLEnv(TVCEnvBase):
         self._env_origins = env_origins
         self._target_position = env_origins + self._target_position_local.to(device).unsqueeze(0)
         self._config.config["_target_position_world"] = self._target_position
+        self._config.config["_omega_max_world"] = float(self._omega_max)
 
     # ---- Gymnasium interface ----
 
@@ -119,6 +120,7 @@ class TVCDirectRLEnv(TVCEnvBase):
             self._apply_action()
             self._sim_scene.step()
 
+        self._update_contact_state()
         self._step_count += 1
         terminated, time_out = self._get_dones()
         reward = self._get_rewards()
@@ -323,6 +325,39 @@ class TVCDirectRLEnv(TVCEnvBase):
             (self._config.physics_dt * self._config.decimation)
         )
         return dones, time_out
+
+    def _update_contact_state(self) -> None:
+        """Advance the contact state machine using kinematic proxy.
+
+        The original `SensorInterface` requires an Isaac Lab `ContactSensor` that
+        is not currently wired into the scene. As a stand-in, we treat a low,
+        slow vehicle as `in_contact` and pipe that plus crash heuristics into the
+        ContactStateMachine so reward/termination logic actually fire on
+        touchdown. Replace with a real contact sensor once available.
+        """
+        device = self._drone.device
+        height = self._body_iface.get_altitude()
+        lin_vel_w = self._body_iface.get_root_linear_velocity_world()
+        vz = lin_vel_w[:, 2]
+        in_contact = (height < 0.40) & (vz.abs() < 0.50)
+
+        impact_speed = (-vz).clamp(min=0.0)
+        ang_vel_frd = self._body_iface.get_angular_velocity_body_frd()
+        ang_rate = ang_vel_frd.norm(dim=-1)
+        q = self._body_iface.get_root_quaternion_wxyz()
+
+        is_crashed = self._crash_detector.check_impact_speed(impact_speed, in_contact)
+        is_crashed = is_crashed | self._crash_detector.check_tilt_at_contact(q, in_contact)
+        is_crashed = is_crashed | self._crash_detector.check_angular_rate_at_contact(ang_rate, in_contact)
+        is_crashed = is_crashed | self._crash_detector.check_excessive_tilt(q)
+
+        # Force surrogate (any positive value above threshold registers as contact).
+        contact_force = torch.where(
+            in_contact,
+            torch.full_like(height, 5.0),
+            torch.zeros_like(height),
+        ).to(device=device)
+        self._contact_sm.update(in_contact, is_crashed, contact_force)
 
     def _build_vehicle_state(self) -> VehicleState:
         """Collect all state into a VehicleState dataclass."""

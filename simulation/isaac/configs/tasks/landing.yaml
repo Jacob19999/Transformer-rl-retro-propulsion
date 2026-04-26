@@ -4,7 +4,7 @@
 task:
   name: landing
   target_position: [0.0, 0.0, 0.0]   # m, landing pad center
-  episode_length_s: 60.0
+  episode_length_s: 30.0
 
   spawn:
     position_range: [[-2.0, -2.0, 8.0], [2.0, 2.0, 12.0]]  # m
@@ -18,14 +18,17 @@ task:
   reward:
     alive_bonus: 0.5
     position_error: -1.0
+    horizontal_position_error: -3.0
     attitude_error: -1.5
     angular_velocity: -0.5
     control_effort: -0.1
+    control_rate: -0.05
     crash_penalty: -100.0
     touchdown_softness: 5.0
-    landing_success: 50.0
-    pad_accuracy: 10.0
+    landing_success: 75.0
+    pad_accuracy: 25.0
     vertical_speed_shaping: -2.0
+    delta_v_cost: -2.0                  # per-step thrust ratio (T/T_max)^2; integrates to delta-v proxy
 
   success:
     state: LANDED
@@ -33,5 +36,5 @@ task:
 
   termination:
     max_tilt: 1.57                    # rad (90°)
-    max_altitude: 20.0                # m
+    max_altitude_error: 25.0          # m, 3D distance from pad before fail-stop (covers spawn box + margin)
     crash: true

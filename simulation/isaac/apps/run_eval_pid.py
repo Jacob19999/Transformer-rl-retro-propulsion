@@ -132,6 +132,36 @@ def parse_args():
         help="Diagnostic reset: spawn at the hover target with zero velocity and level attitude.",
     )
     parser.add_argument(
+        "--landing-descent-rate",
+        type=float,
+        default=1.0,
+        help="Descent rate (m/s) commanded by the landing guidance trajectory.",
+    )
+    parser.add_argument(
+        "--landing-flare-alt",
+        type=float,
+        default=0.5,
+        help="Altitude above pad (m) at which the guidance switches to flare descent rate.",
+    )
+    parser.add_argument(
+        "--landing-flare-descent-rate",
+        type=float,
+        default=0.25,
+        help="Descent rate (m/s) used during the final flare phase.",
+    )
+    parser.add_argument(
+        "--landing-touchdown-speed-limit",
+        type=float,
+        default=1.5,
+        help="Pass criterion: max downward speed (m/s) at touchdown.",
+    )
+    parser.add_argument(
+        "--landing-pad-distance-limit",
+        type=float,
+        default=0.5,
+        help="Pass criterion: max horizontal distance (m) from pad center at touchdown.",
+    )
+    parser.add_argument(
         "--spawn-position",
         type=float,
         nargs=3,
@@ -267,7 +297,9 @@ def main():
         return 1
 
     try:
+        from tvc_env.common.constants import ContactState
         from tvc_env.common.quaternions import to_euler
+        from tvc_env.controllers.landing_guidance import LandingGuidance
         from tvc_env.controllers.pid_adapter import PIDController
         from tvc_env.envs.base_env import BaseEnvConfig
         from tvc_env.envs.direct_rl_env import TVCDirectRLEnv
@@ -344,9 +376,21 @@ def main():
         obs_dict, _ = env.reset(seed=args.seed)
         obs = obs_dict["policy"]
         pid.reset()
-        print("Environment reset complete.", flush=True)
 
         dt = 1.0 / 30.0
+        guidance: LandingGuidance | None = None
+        if args.task == "landing":
+            guidance = LandingGuidance(
+                num_envs=1,
+                device=env.device,
+                target_position=env._target_position,
+                descent_rate=args.landing_descent_rate,
+                flare_alt=args.landing_flare_alt,
+                flare_descent_rate=args.landing_flare_descent_rate,
+                dt=dt,
+            )
+            guidance.reset(obs=obs)
+        print("Environment reset complete.", flush=True)
         n_steps = int(args.duration / dt)
         if n_steps <= 0:
             raise ValueError("Duration too short; increase --duration")
@@ -354,6 +398,15 @@ def main():
         pos_errors: list[float] = []
         tilts: list[float] = []
         ang_rates: list[float] = []
+        # Landing-only metrics (collected only when task=landing).
+        thrust_ratios: list[float] = []
+        landed_step: int | None = None
+        touchdown_speed: float | None = None
+        touchdown_pad_distance: float | None = None
+        crashed: bool = False
+        min_altitude: float = float("inf")
+        final_pad_distance: float | None = None
+        prev_contact: int = int(ContactState.AIRBORNE)
 
         print(
             f"PID hover eval: task={args.task}, duration={args.duration:.1f}s ({n_steps} steps), "
@@ -415,9 +468,39 @@ def main():
                 _print_state_block(initial_payload, n_steps=n_steps, dt=dt, decimals=args.log_decimals)
 
         for step in range(n_steps):
-            action = pid.compute_action(obs)
+            if guidance is not None:
+                pid_obs = guidance.modify_obs(obs)
+                action = pid.compute_action(pid_obs)
+                action = guidance.post_action(action)
+            else:
+                action = pid.compute_action(obs)
             obs_dict, rewards, terminated, truncated, _ = env.step(action)
             obs = obs_dict["policy"]
+
+            if guidance is not None:
+                # Landing telemetry: detect first AIRBORNE→LANDED transition,
+                # log thrust ratio for delta-v proxy, and watch for crashes.
+                contact_int = int(obs[0, 23].item())
+                state = env._build_vehicle_state()
+                pos_world = state.position[0]
+                pad_xy = env._target_position[0, :2].to(pos_world.device)
+                pad_dist = float((pos_world[:2] - pad_xy).norm().item())
+                final_pad_distance = pad_dist
+                min_altitude = min(min_altitude, float(pos_world[2].item()))
+                omega_max = max(float(env._omega_max), 1.0)
+                ratio = float((state.motor_omega[0] / omega_max).clamp(min=0.0, max=1.0).item())
+                thrust_ratios.append(ratio * ratio)
+                if (
+                    landed_step is None
+                    and prev_contact != int(ContactState.LANDED)
+                    and contact_int == int(ContactState.LANDED)
+                ):
+                    landed_step = step
+                    touchdown_speed = float(state.linear_vel_frd[0, 2].clamp(min=0.0).item())
+                    touchdown_pad_distance = pad_dist
+                if contact_int == int(ContactState.CRASHED):
+                    crashed = True
+                prev_contact = contact_int
 
             pos_err_xyz = obs[0, 0:3]
             quat_wxyz = obs[0, 3:7]
@@ -482,6 +565,17 @@ def main():
                     _print_state_block(payload, n_steps=n_steps, dt=dt, decimals=args.log_decimals)
 
             done = bool((terminated | truncated)[0].item())
+            if guidance is not None:
+                # Single-shot landing run: stop after the first crash, or once
+                # the vehicle has settled on the pad for a short dwell window.
+                if crashed:
+                    if args.log_state and args.log_format == "json":
+                        print(json.dumps({"type": "episode_end", "reason": "crash", "step": step}, separators=(",", ":")), flush=True)
+                    break
+                if landed_step is not None and step - landed_step >= 15:
+                    if args.log_state and args.log_format == "json":
+                        print(json.dumps({"type": "episode_end", "reason": "landed", "step": step}, separators=(",", ":")), flush=True)
+                    break
             if done:
                 if args.log_state:
                     reset_payload = {
@@ -502,18 +596,68 @@ def main():
                 obs_dict, _ = env.reset()
                 obs = obs_dict["policy"]
                 pid.reset()
+                if guidance is not None:
+                    guidance.reset(obs=obs)
 
             simulation_app.update()
 
         elapsed = time.time() - t_start
 
         d = args.summary_decimals
-        mean_pos = statistics.mean(pos_errors)
-        max_pos = max(pos_errors)
-        mean_tilt = statistics.mean(tilts)
-        max_tilt = max(tilts)
-        mean_rate = statistics.mean(ang_rates)
-        max_rate = max(ang_rates)
+        mean_pos = statistics.mean(pos_errors) if pos_errors else 0.0
+        max_pos = max(pos_errors) if pos_errors else 0.0
+        mean_tilt = statistics.mean(tilts) if tilts else 0.0
+        max_tilt = max(tilts) if tilts else 0.0
+        mean_rate = statistics.mean(ang_rates) if ang_rates else 0.0
+        max_rate = max(ang_rates) if ang_rates else 0.0
+
+        if args.task == "landing":
+            delta_v_proxy = sum(thrust_ratios) * dt  # seconds-of-full-thrust
+            print("\n=== PID Landing Evaluation Results ===", flush=True)
+            print(f"Duration: {args.duration:.0f}s budget ({n_steps} steps), wall time: {elapsed:.1f}s")
+            print("")
+            print("Tilt (rad):")
+            print(
+                f"  mean={mean_tilt:.{d}f}  max={max_tilt:.{d}f}  "
+                f"({math.degrees(mean_tilt):.1f} deg mean, {math.degrees(max_tilt):.1f} deg max)"
+            )
+            print("Angular rate (rad/s):")
+            print(f"  mean={mean_rate:.{d}f}  max={max_rate:.{d}f}")
+            print("")
+            print(f"Min altitude reached: {min_altitude:.{d}f} m")
+            print(f"Final pad horizontal distance: {final_pad_distance if final_pad_distance is not None else float('nan'):.{d}f} m")
+            print(f"Crashed: {crashed}")
+            if landed_step is not None:
+                print(
+                    f"Touchdown: step={landed_step} t={landed_step*dt:.{d}f}s "
+                    f"speed={touchdown_speed:.{d}f} m/s pad_dist={touchdown_pad_distance:.{d}f} m"
+                )
+            else:
+                print("Touchdown: did not land within duration budget")
+            print(f"Delta-v proxy (sum of (T/T_max)^2 * dt): {delta_v_proxy:.{d}f} s")
+
+            landed_ok = landed_step is not None
+            speed_ok = landed_ok and (touchdown_speed is not None) and touchdown_speed < args.landing_touchdown_speed_limit
+            pad_ok = landed_ok and (touchdown_pad_distance is not None) and touchdown_pad_distance < args.landing_pad_distance_limit
+            crash_ok = not crashed
+            tilt_ok = max_tilt < 0.262
+
+            print("\nPass criteria:")
+            print(f"  landed within duration:  {'PASS' if landed_ok else 'FAIL'}")
+            print(f"  not crashed:  {'PASS' if crash_ok else 'FAIL'}")
+            print(
+                f"  touchdown speed < {args.landing_touchdown_speed_limit:.2f} m/s:  "
+                f"{'PASS' if speed_ok else 'FAIL'}"
+            )
+            print(
+                f"  pad distance < {args.landing_pad_distance_limit:.2f} m:  "
+                f"{'PASS' if pad_ok else 'FAIL'}"
+            )
+            print(f"  max tilt < 15 deg:  {'PASS' if tilt_ok else 'FAIL'}")
+            overall = landed_ok and speed_ok and pad_ok and crash_ok and tilt_ok
+            print(f"\n{'PASS' if overall else 'FAIL'}: PID landing evaluation")
+            exit_code = 0 if overall else 1
+            return exit_code
 
         print("\n=== PID Hover Evaluation Results ===", flush=True)
         print(f"Duration: {args.duration:.0f}s ({n_steps} steps), wall time: {elapsed:.1f}s")

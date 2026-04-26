@@ -52,6 +52,12 @@ def compute_position_error_reward(env_state, config: dict) -> Tensor:
     return error
 
 
+def compute_horizontal_position_error_reward(env_state, config: dict) -> Tensor:
+    """Horizontal distance from the target pad center."""
+    target = _target_position(env_state, config, [0, 0, 0])
+    return (env_state.position[:, :2] - target[:, :2]).norm(dim=-1)
+
+
 def compute_attitude_error_reward(env_state, config: dict) -> Tensor:
     """Negative reward proportional to tilt (deviation from level flight).
 
@@ -192,3 +198,24 @@ def compute_vertical_speed_shaping(env_state, config: dict) -> Tensor:
     # Penalize both upward flight and very fast descent
     target_descent = 0.5  # m/s ideal descent rate
     return (downward_speed - target_descent).abs()
+
+
+def compute_delta_v_cost(env_state, config: dict) -> Tensor:
+    """Per-step thrust-fraction proxy for cumulative delta-v consumption.
+
+    Approximates instantaneous thrust as T = T_max * (omega/omega_max)^2 and
+    returns the dimensionless ratio T/T_max in [0, 1] per environment. Summed
+    over an episode (with a negative weight in the reward), this acts as a
+    proxy for delta-v: lower sustained thrust → lower delta-v cost. Multiply
+    the weight by the RL step duration (physics_dt * decimation) if you want
+    the integrated value to be interpretable in seconds-of-thrust units.
+
+    Returns:
+        Tensor (num_envs,) — thrust ratio in [0, 1].
+    """
+    omega_max = config.get("_omega_max_world", 4300.0)
+    if isinstance(omega_max, Tensor):
+        omega_max = float(omega_max.item())
+    omega_max = max(float(omega_max), 1.0)
+    omega = env_state.motor_omega.clamp(min=0.0)
+    return (omega / omega_max).clamp(max=1.0).pow(2)
