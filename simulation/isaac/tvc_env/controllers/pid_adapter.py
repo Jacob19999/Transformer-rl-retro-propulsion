@@ -34,28 +34,28 @@ class PIDController(BaseController):
         ki_alt: float = 0.01,
         kd_alt: float = 0.10,
         # Attitude gains (roll/pitch shared, yaw separate)
-        kp_att: float = 0.45,
+        kp_att: float = 0.24,
         ki_att: float = 0.00,
-        kd_att: float = 0.28,
-        kp_yaw: float = 0.20,
+        kd_att: float = 0.36,
+        kp_yaw: float = 0.00,
         ki_yaw: float = 0.00,
-        kd_yaw: float = 0.20,
+        kd_yaw: float = 0.00,
         # XY position hold -> desired attitude
-        k_pos_xy: float = 0.12,
-        ki_pos_xy: float = 0.008,
-        k_vel_xy: float = 0.14,
-        max_tilt_cmd: float = 0.13,
-        max_tilt_rate: float = 0.20,
+        k_pos_xy: float = 0.055,
+        ki_pos_xy: float = 0.001,
+        k_vel_xy: float = 0.30,
+        max_tilt_cmd: float = 0.055,
+        max_tilt_rate: float = 0.08,
         # Lateral authority scheduling for stability under recovery load
         tilt_recovery_alt_err: float = 0.50,
         tilt_recovery_ang_rate: float = 1.20,
         min_lateral_scale: float = 0.60,
         # Deadband-aware lateral actuation floor (servo deadband ~= 0.017 rad)
-        min_fin_cmd_xy: float = 0.0,
+        min_fin_cmd_xy: float = 0.018,
         xy_active_error: float = 0.20,
         # Throttle bias for gravity compensation
         throttle_hover: float = 0.90,
-        max_fin_angle: float = 0.2,
+        max_fin_angle: float = 0.08,
         num_envs: int = 1,
         config: dict[str, Any] | None = None,
         device: torch.device | None = None,
@@ -165,7 +165,10 @@ class PIDController(BaseController):
         self._desired_tilt_cmd = self._desired_tilt_cmd + desired_tilt_delta
         desired_xy = self._desired_tilt_cmd
 
-        desired_pitch = desired_xy[:, 0]
+        # Body-FRD thrust acts along -Z. Positive pitch tilts lift toward +X in
+        # the rigid-body dynamics, so X position error must command opposite pitch.
+        # Positive roll tilts lift toward body +Y.
+        desired_pitch = -desired_xy[:, 0]
         desired_roll = desired_xy[:, 1]
         desired_yaw = torch.zeros(num_envs, device=device, dtype=obs.dtype)
 
@@ -220,15 +223,31 @@ class PIDController(BaseController):
             - kd_vec * ang_vel_frd
         )
 
-        # Mix to fin angles
-        fin_angles = self._fin_mixer.mix(rate_cmd[:, 0], rate_cmd[:, 1], rate_cmd[:, 2])
-
         # Ensure roll/pitch authority clears servo deadband while lateral error is active.
+        # Apply this before mixing so a small cross-axis command is not promoted
+        # into an unintended four-fin floor after the mixer.
         lateral_active = pos_error_xy_norm > self.xy_active_error
-        fin_mag = fin_angles.abs()
-        fin_sign = torch.sign(fin_angles)
-        needs_floor = lateral_active.unsqueeze(-1) & (fin_mag > 1e-6) & (fin_mag < self.min_fin_cmd_xy)
-        fin_angles = torch.where(needs_floor, fin_sign * self.min_fin_cmd_xy, fin_angles)
+        rate_cmd_for_mix = rate_cmd.clone()
+        roll_pitch_cmd = rate_cmd_for_mix[:, 0:2]
+        roll_pitch_mag = roll_pitch_cmd.abs()
+        roll_pitch_sign = torch.sign(roll_pitch_cmd)
+        needs_floor = (
+            lateral_active.unsqueeze(-1)
+            & (roll_pitch_mag > 1e-6)
+            & (roll_pitch_mag < self.min_fin_cmd_xy)
+        )
+        rate_cmd_for_mix[:, 0:2] = torch.where(
+            needs_floor,
+            roll_pitch_sign * self.min_fin_cmd_xy,
+            roll_pitch_cmd,
+        )
+
+        # Mix to fin angles
+        fin_angles = self._fin_mixer.mix(
+            rate_cmd_for_mix[:, 0],
+            rate_cmd_for_mix[:, 1],
+            rate_cmd_for_mix[:, 2],
+        )
 
         action = torch.cat([fin_angles, throttle.unsqueeze(-1)], dim=-1)
 
@@ -243,6 +262,7 @@ class PIDController(BaseController):
             "attitude_error_rpy": att_err.detach(),
             "angular_rate_frd": ang_vel_frd.detach(),
             "rate_cmd_rpy": rate_cmd.detach(),
+            "rate_cmd_mixed_rpy": rate_cmd_for_mix.detach(),
             "alt_err": alt_err.detach(),
             "alt_vel_down": alt_vel_down.detach(),
             "throttle_unsat": throttle_unsat.detach(),

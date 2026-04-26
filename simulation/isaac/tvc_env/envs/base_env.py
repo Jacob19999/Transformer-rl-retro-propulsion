@@ -168,6 +168,8 @@ class TVCEnvBase:
             k_T=edf_params.get("k_T"),
             k_Q=edf_params.get("k_Q"),
             rotor_inertia=edf_params.get("rotor_inertia", 0.0005),
+            dynamic_torque_scale=edf_params.get("dynamic_torque_scale", 1.0),
+            gyro_torque_scale=edf_params.get("gyro_torque_scale", 1.0),
         )
 
         # Wind model (only if disturbance config enables it)

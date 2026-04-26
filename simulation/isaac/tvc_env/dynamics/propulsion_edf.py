@@ -30,12 +30,16 @@ class EDFModel:
         k_T: float | None = None,          # N·s²/rad², source: to-be-calibrated
         k_Q: float | None = None,          # N·m·s²/rad², source: to-be-calibrated
         rotor_inertia: float = 0.0005,     # kg·m², source: estimate
+        dynamic_torque_scale: float = 1.0,
+        gyro_torque_scale: float = 1.0,
         thrust_axis: list[float] | None = None,  # in body-FRD frame
     ):
         self.tau_motor = tau_motor
         self.omega_max = omega_max
         self.d_omega_max = d_omega_max
         self.rotor_inertia = rotor_inertia
+        self.dynamic_torque_scale = dynamic_torque_scale
+        self.gyro_torque_scale = gyro_torque_scale
         self.max_thrust = max_thrust
         # Thrust axis in body-FRD: EDF exhaust is +z (downward thrust)
         self.thrust_axis = torch.tensor(thrust_axis or [0.0, 0.0, 1.0], dtype=torch.float32)
@@ -89,6 +93,8 @@ class EDFModel:
             k_T=k_T,
             k_Q=k_Q,
             rotor_inertia=edf.get("rotor_inertia", 0.0005),
+            dynamic_torque_scale=edf.get("dynamic_torque_scale", 1.0),
+            gyro_torque_scale=edf.get("gyro_torque_scale", 1.0),
         )
 
     def update(
@@ -168,13 +174,15 @@ class EDFModel:
 
         # Dynamic spool reaction torque on the body: -I_rotor * dω/dt along spin axis.
         d_omega = (omega - omega_prev) / max(dt, 1e-8)
-        dynamic_spool = -spin_axis.unsqueeze(0) * (self.rotor_inertia * d_omega).unsqueeze(-1)  # (num_envs, 3)
+        dynamic_spool = -spin_axis.unsqueeze(0) * (
+            self.dynamic_torque_scale * self.rotor_inertia * d_omega
+        ).unsqueeze(-1)  # (num_envs, 3)
 
         # Gyroscopic precession on body: -ω_body × H_rotor (Newton's third law on
         # the rotor's precession torque). PhysX has no virtual rotor, so we
         # apply this reaction as an external body torque.
         H_rotor = spin_axis.unsqueeze(0) * (self.rotor_inertia * omega).unsqueeze(-1)  # (num_envs, 3)
-        gyro_precession = -torch.linalg.cross(body_angular_vel, H_rotor)  # (num_envs, 3)
+        gyro_precession = -self.gyro_torque_scale * torch.linalg.cross(body_angular_vel, H_rotor)  # (num_envs, 3)
 
         return EDFOutput(
             thrust_force=thrust_magnitude,

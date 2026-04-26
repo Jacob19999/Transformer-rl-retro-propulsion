@@ -115,8 +115,13 @@ class ResetManager:
             self._servo_state[env_ids] = 0.0
             self._body.set_fin_joint_targets(self._servo_state)
         if self._omega_state is not None:
-            self._omega_state[env_ids] = 0.0
-            self._omega_prev[env_ids] = 0.0
+            task = self._task_config.get("task", self._task_config)
+            spawn = task.get("spawn", {})
+            omega_fraction = float(spawn.get("initial_motor_omega_fraction", 0.0))
+            omega_fraction = max(0.0, min(omega_fraction, 1.0))
+            initial_omega = omega_fraction * float(self._edf.omega_max)
+            self._omega_state[env_ids] = initial_omega
+            self._omega_prev[env_ids] = initial_omega
 
         # Reset contact state machine
         self._contacts.reset(env_ids)

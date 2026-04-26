@@ -194,6 +194,14 @@ class TVCDirectRLEnv(TVCEnvBase):
         # Compute aero forces from measured PhysX joint angles, not the target cache.
         measured_fin_angles = self._body_iface.get_fin_joint_positions()
         fin_dispatch = self._fin_dispatch.compute_body_frame_forces(measured_fin_angles, throttle)
+        dynamics_cfg = self._config.config.get("dynamics", {})
+        enable_fin_forces = dynamics_cfg.get("enable_fin_forces", True)
+        enable_thrust_loss = dynamics_cfg.get("enable_thrust_loss", True)
+        if not enable_fin_forces:
+            fin_dispatch.forces_body.zero_()
+            fin_dispatch.normal_force.zero_()
+            fin_dispatch.tangential_force.zero_()
+            fin_dispatch.thrust_loss.zero_()
 
         # EDF reaction force and torque on the body in body-FRD.
         # Exhaust exits along +Z_frd (down), so body thrust is along -Z_frd (up).
@@ -210,24 +218,51 @@ class TVCDirectRLEnv(TVCEnvBase):
         max_loss = torch.full_like(raw_thrust, 0.3 * self._edf_model.max_thrust)
         thrust_loss = torch.minimum(fin_dispatch.thrust_loss.clamp(min=0.0), max_loss)
         thrust_loss = torch.minimum(thrust_loss, raw_thrust)
+        if not enable_thrust_loss:
+            thrust_loss = torch.zeros_like(thrust_loss)
         thrust = raw_thrust - thrust_loss
         edf_force_body = torch.zeros(thrust.shape[0], 3, device=thrust.device)
         edf_force_body[:, 2] = -thrust
-        edf_torque_body = (
-            edf_output.static_reaction_torque
-            + edf_output.dynamic_spool_torque
-            + edf_output.gyro_precession_torque
-        )
+        static_torque = edf_output.static_reaction_torque
+        dynamic_torque = edf_output.dynamic_spool_torque
+        gyro_torque = edf_output.gyro_precession_torque
+        if not dynamics_cfg.get("enable_edf_static_torque", True):
+            static_torque = torch.zeros_like(static_torque)
+        if not dynamics_cfg.get("enable_edf_dynamic_torque", True):
+            dynamic_torque = torch.zeros_like(dynamic_torque)
+        if not dynamics_cfg.get("enable_edf_gyro_torque", True):
+            gyro_torque = torch.zeros_like(gyro_torque)
+        gyro_torque = gyro_torque * float(dynamics_cfg.get("edf_gyro_torque_scale", 1.0))
+        edf_torque_body = static_torque + dynamic_torque + gyro_torque
 
         q = self._body_iface.get_root_quaternion_wxyz()
         pos = self._body_iface.get_root_position()
 
         # Wind drag force in body-FRD frame
         wind_force_body = None
-        if self._wind_model is not None:
+        if self._wind_model is not None and dynamics_cfg.get("enable_wind_force", True):
             lin_vel_w = self._body_iface.get_root_linear_velocity_world()
             wind_force_body = self._wind_model.compute_drag_force(lin_vel_w, q)
             self._wind_model.update_gust(dt)
+
+        cops = fin_dispatch.cop_positions.unsqueeze(0).expand_as(fin_dispatch.forces_body)
+        fin_torque_body = torch.linalg.cross(cops, fin_dispatch.forces_body).sum(dim=1)
+        self._last_dynamics_debug = {
+            "fin_force_body_frd_N": fin_dispatch.forces_body.sum(dim=1).detach(),
+            "fin_torque_body_frd_Nm": fin_torque_body.detach(),
+            "thrust_loss_N": thrust_loss.detach(),
+            "edf_raw_thrust_N": raw_thrust.detach(),
+            "edf_applied_thrust_N": thrust.detach(),
+            "edf_static_torque_body_frd_Nm": static_torque.detach(),
+            "edf_dynamic_torque_body_frd_Nm": dynamic_torque.detach(),
+            "edf_gyro_torque_body_frd_Nm": gyro_torque.detach(),
+            "edf_total_torque_body_frd_Nm": edf_torque_body.detach(),
+            "wind_force_body_frd_N": (
+                wind_force_body.detach()
+                if wind_force_body is not None
+                else torch.zeros_like(edf_force_body).detach()
+            ),
+        }
 
         self._wrench_dispatch.dispatch(
             fin_dispatch.forces_body,

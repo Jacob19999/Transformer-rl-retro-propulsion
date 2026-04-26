@@ -132,3 +132,96 @@ class TestGyroPrecession:
         body_ang_vel = torch.randn(16, 3)
         torque = compute_gyroscopic_precession(omega, body_ang_vel, I_ROTOR, SPIN_AXIS)
         assert torque.shape == (16, 3)
+
+
+class TestEDFTorqueScales:
+    """EDFModel scale knobs (dynamic_torque_scale, gyro_torque_scale).
+
+    Locks in the calibration override pattern: defaults from edf_90mm.yaml
+    keep gyro at 0.1 and dynamic spool at 0.0 until bench data justifies
+    otherwise. Tests assert linear scaling so future re-enabling is obvious.
+    """
+
+    def _model(self, dynamic_scale: float = 1.0, gyro_scale: float = 1.0):
+        from tvc_env.dynamics.propulsion_edf import EDFModel
+        return EDFModel(
+            max_thrust=39.2,
+            tau_motor=0.15,
+            omega_max=4300.0,
+            k_T=39.2 / (4300.0 ** 2),
+            k_Q=1e-5,
+            rotor_inertia=I_ROTOR,
+            dynamic_torque_scale=dynamic_scale,
+            gyro_torque_scale=gyro_scale,
+        )
+
+    def test_dynamic_scale_zero_disables_spool_torque(self):
+        """dynamic_torque_scale=0.0 must zero out the spool reaction torque."""
+        model = self._model(dynamic_scale=0.0)
+        omega = torch.tensor([1000.0])
+        omega_prev = torch.tensor([500.0])  # accelerating → would be non-zero at scale=1
+        body_ang_vel = torch.zeros(1, 3)
+        out = model.compute_output(omega, omega_prev, body_ang_vel, DT, SPIN_AXIS)
+        assert out.dynamic_spool_torque.abs().max().item() < 1e-9
+
+    def test_dynamic_scale_is_linear(self):
+        """Spool torque magnitude must scale linearly with dynamic_torque_scale."""
+        omega = torch.tensor([1000.0])
+        omega_prev = torch.tensor([500.0])
+        body_ang_vel = torch.zeros(1, 3)
+        t1 = self._model(dynamic_scale=1.0).compute_output(
+            omega, omega_prev, body_ang_vel, DT, SPIN_AXIS
+        ).dynamic_spool_torque.norm().item()
+        t2 = self._model(dynamic_scale=0.25).compute_output(
+            omega, omega_prev, body_ang_vel, DT, SPIN_AXIS
+        ).dynamic_spool_torque.norm().item()
+        assert abs(t2 / t1 - 0.25) < 1e-4
+
+    def test_gyro_scale_zero_disables_precession_torque(self):
+        """gyro_torque_scale=0.0 must zero out the gyro reaction torque."""
+        model = self._model(gyro_scale=0.0)
+        omega = torch.tensor([1000.0])
+        body_ang_vel = torch.tensor([[1.0, 0.0, 0.0]])  # rolling: gyro nonzero at scale=1
+        out = model.compute_output(omega, omega.clone(), body_ang_vel, DT, SPIN_AXIS)
+        assert out.gyro_precession_torque.abs().max().item() < 1e-9
+
+    def test_gyro_scale_is_linear(self):
+        """Gyro torque magnitude must scale linearly with gyro_torque_scale."""
+        omega = torch.tensor([1000.0])
+        body_ang_vel = torch.tensor([[1.0, 0.0, 0.0]])
+        t_full = self._model(gyro_scale=1.0).compute_output(
+            omega, omega.clone(), body_ang_vel, DT, SPIN_AXIS
+        ).gyro_precession_torque.norm().item()
+        t_calibrated = self._model(gyro_scale=0.1).compute_output(
+            omega, omega.clone(), body_ang_vel, DT, SPIN_AXIS
+        ).gyro_precession_torque.norm().item()
+        assert abs(t_calibrated / t_full - 0.1) < 1e-4
+
+    def test_gyro_scale_preserves_sign(self):
+        """Scaling must not flip the body-side sign convention."""
+        omega = torch.tensor([1000.0])
+        body_ang_vel = torch.tensor([[1.0, 0.0, 0.0]])  # +x roll, rotor +z spin
+        # body-side gyro is -ω×H = +y; scaling by 0.1 keeps it +y, just smaller.
+        out = self._model(gyro_scale=0.1).compute_output(
+            omega, omega.clone(), body_ang_vel, DT, SPIN_AXIS
+        )
+        assert out.gyro_precession_torque[0, 1].item() > 0.0
+
+    def test_default_scales_pass_through(self):
+        """Default constructor (no scale args) must apply unit scaling."""
+        from tvc_env.dynamics.propulsion_edf import EDFModel
+        model = EDFModel(
+            max_thrust=39.2, tau_motor=0.15, omega_max=4300.0,
+            k_T=39.2 / (4300.0 ** 2), k_Q=1e-5, rotor_inertia=I_ROTOR,
+        )
+        assert model.dynamic_torque_scale == 1.0
+        assert model.gyro_torque_scale == 1.0
+
+    def test_yaml_default_gyro_scale_matches_override(self):
+        """The committed YAML override (gyro=0.1, dynamic=0.0) must be loaded."""
+        from pathlib import Path
+        from tvc_env.dynamics.propulsion_edf import EDFModel
+        edf_yaml = Path(__file__).parents[2] / "configs/params/edf_90mm.yaml"
+        model = EDFModel.from_yaml(edf_yaml)
+        assert model.gyro_torque_scale == pytest.approx(0.1)
+        assert model.dynamic_torque_scale == pytest.approx(0.0)

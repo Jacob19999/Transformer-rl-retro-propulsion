@@ -135,26 +135,33 @@ class TVCSimScene:
 
     def close(self) -> None:
         """Release the active Isaac Lab simulation context for the current process."""
-        try:
-            if not self.sim.has_gui():
-                self.sim.stop()
-        except Exception:
-            pass
+        fast_close = os.getenv("TVC_ISAAC_FAST_CLOSE", "1") == "1"
+
+        # IsaacLab 2.3.x can hang inside SimulationContext.stop() in headless
+        # command-line runs on Windows. Keep it opt-in so tests and eval runners
+        # can terminate reliably after logging their final state.
+        if not fast_close and os.getenv("TVC_ISAAC_CALL_SIM_STOP_ON_CLOSE", "0") == "1":
+            try:
+                if not self.sim.has_gui():
+                    self.sim.stop()
+            except Exception:
+                pass
 
         try:
             self.sim.clear_all_callbacks()
         except Exception:
             pass
 
-        # Detach the USD stage from the omni context before clearing the singleton,
-        # so a subsequent build_scene() can attach a fresh stage without conflict.
-        try:
-            import omni.usd
-            ctx = omni.usd.get_context()
-            if ctx is not None:
-                ctx.close_stage()
-        except Exception:
-            pass
+        if not fast_close:
+            # Detach the USD stage from the omni context before clearing the singleton,
+            # so a subsequent build_scene() can attach a fresh stage without conflict.
+            try:
+                import omni.usd
+                ctx = omni.usd.get_context()
+                if ctx is not None:
+                    ctx.close_stage()
+            except Exception:
+                pass
 
         try:
             type(self.sim).clear_instance()

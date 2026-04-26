@@ -10,6 +10,7 @@ task:
     position_range: [[-1.0, -1.0, 4.0], [1.0, 1.0, 6.0]]  # m, world [min, max]
     velocity_range: [[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]]   # m/s
     attitude_range: [[-0.05, -0.05, -0.1], [0.05, 0.05, 0.1]]  # rad, [roll, pitch, yaw]
+    initial_motor_omega_fraction: 0.88  # near hover spool state; avoids drop/yaw impulse from zero-RPM reset
 
   contact:
     dwell_frames: 10

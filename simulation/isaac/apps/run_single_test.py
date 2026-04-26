@@ -16,6 +16,8 @@ import sys
 import os
 from pathlib import Path
 
+from runner_safety import WallClockWatchdog, force_process_exit
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -42,6 +44,12 @@ def parse_args():
         action="store_true",
         default=False,
         help="Visual inspection mode: renders every step, prints per-fin status, pauses 2s between fins",
+    )
+    parser.add_argument(
+        "--max-wall-time",
+        type=float,
+        default=300.0,
+        help="Maximum wall-clock seconds before forcing process exit.",
     )
     return parser.parse_args()
 
@@ -97,39 +105,44 @@ def run_test(test_name: str, physics_config: str | None = None):
 
 def main():
     args = parse_args()
-    print(f"=== Isaac Sim Validation Test: {args.test} ===")
+    watchdog = WallClockWatchdog(args.max_wall_time, label=f"Isaac Sim validation test {args.test}")
+    watchdog.start()
+    print(f"=== Isaac Sim Validation Test: {args.test} ===", flush=True)
 
     simulation_app = None
     try:
         if args.slow:
             os.environ["ISAAC_VIZ_SLOW"] = "1"
-            print("[--slow] Visual inspection mode: 200 steps/fin, rendered, 2s pause between fins")
+            print("[--slow] Visual inspection mode: 200 steps/fin, rendered, 2s pause between fins", flush=True)
 
-        print("Bootstrapping Isaac Sim...")
+        print("Bootstrapping Isaac Sim...", flush=True)
         simulation_app = bootstrap_isaac_sim(
             headless=args.headless,
             physics_config=args.physics,
         )
-        print("Isaac Sim ready.")
+        print("Isaac Sim ready.", flush=True)
 
         success = run_test(args.test, physics_config=args.physics)
 
         if success:
-            print(f"\nPASS: {args.test}")
-            sys.exit(0)
+            print(f"\nPASS: {args.test}", flush=True)
+            return 0
         else:
-            print(f"\nFAIL: {args.test}")
-            sys.exit(1)
+            print(f"\nFAIL: {args.test}", flush=True)
+            return 1
 
     except Exception as e:
-        print(f"\nERROR: {e}", file=sys.stderr)
+        print(f"\nERROR: {e}", file=sys.stderr, flush=True)
         import traceback
         traceback.print_exc()
-        sys.exit(2)
+        return 2
     finally:
+        watchdog.stop()
         if simulation_app is not None:
+            print("Closing Isaac Sim...", flush=True)
             simulation_app.close()
+            print("Isaac Sim closed.", flush=True)
 
 
 if __name__ == "__main__":
-    main()
+    force_process_exit(main())

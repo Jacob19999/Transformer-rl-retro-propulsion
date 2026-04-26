@@ -6,8 +6,10 @@ edf:
   max_thrust: 39.2                   # N, source: FMS/retailer (~4000g static @ 6S; e.g. 4-Max listing); 4200g → ~41.2 N if using that figure
   diameter: 0.09                     # m, source: nominal 90mm class (some listings cite ~93mm duct OD; use measured if needed)
   k_T: null                          # N·s²/rad², source: to-be-calibrated (thrust coefficient from thrust stand)
-  k_Q: null                          # N·m·s²/rad², source: to-be-calibrated (torque coefficient from thrust stand)
+  k_Q: 0.0                           # N·m·s²/rad², source: baseline assumes EDF stator/duct cancels steady rotor reaction; replace with measured residual yaw torque
   rotor_inertia: 0.0002              # kg·m², source: estimate from ~350 g spinning motor core + ~72 g rotor using plausible 90mm EDF effective radii; replace with measurement if available
+  dynamic_torque_scale: 0.0          # unitless, source: disabled until yaw authority or measured spool reaction cancellation is modeled
+  gyro_torque_scale: 0.1             # unitless, source: conservative calibrated placeholder; full estimate destabilizes lateral recovery until bench data/control compensation
   tau_motor: 0.15                    # s, source: estimate (first-order spool lag for 90mm class)
   omega_max: 4300.0                  # rad/s, source: calc from KV1850 × 22.2V nominal 6S × 2π/60 (~41k RPM no-load upper bound; loaded RPM lower)
   d_omega_max: null                  # rad/s², source: to-be-calibrated (from bench step response)

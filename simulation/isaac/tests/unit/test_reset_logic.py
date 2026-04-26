@@ -25,6 +25,8 @@ class _Servo:
 
 
 class _Edf:
+    omega_max = 4300.0
+
     def reset(self, num_envs, device):
         return torch.ones(num_envs, device=device)
 
