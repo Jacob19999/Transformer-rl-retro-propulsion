@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import random
 import statistics
 import sys
 import time
@@ -25,30 +26,34 @@ def parse_args():
     parser.add_argument("--env-config", default="configs/env/single_env_debug.yaml")
     parser.add_argument("--disturbance", default=None, help="Path to disturbance config YAML")
     parser.add_argument("--duration", type=float, default=30.0, help="Evaluation duration in seconds")
+    parser.add_argument("--seed", type=int, default=None, help="Seed for repeatable spawn sampling")
     parser.add_argument("--headless", action="store_true", default=True)
     parser.add_argument("--no-headless", dest="headless", action="store_false")
 
     parser.add_argument("--kp-alt", type=float, default=0.22)
     parser.add_argument("--ki-alt", type=float, default=0.01)
     parser.add_argument("--kd-alt", type=float, default=0.10)
-    parser.add_argument("--kp-att", type=float, default=0.24)
+    parser.add_argument("--kp-att", type=float, default=0.30)
     parser.add_argument("--ki-att", type=float, default=0.00)
-    parser.add_argument("--kd-att", type=float, default=0.36)
-    parser.add_argument("--kp-yaw", type=float, default=0.00)
+    parser.add_argument("--kd-att", type=float, default=0.20)
+    parser.add_argument("--kp-yaw", type=float, default=0.20)
     parser.add_argument("--ki-yaw", type=float, default=0.00)
-    parser.add_argument("--kd-yaw", type=float, default=0.00)
-    parser.add_argument("--k-pos-xy", type=float, default=0.055)
-    parser.add_argument("--ki-pos-xy", type=float, default=0.001)
-    parser.add_argument("--k-vel-xy", type=float, default=0.30)
-    parser.add_argument("--max-tilt-cmd", type=float, default=0.055)
-    parser.add_argument("--max-tilt-rate", type=float, default=0.08)
-    parser.add_argument("--tilt-recovery-alt-err", type=float, default=0.50)
-    parser.add_argument("--tilt-recovery-ang-rate", type=float, default=1.20)
-    parser.add_argument("--min-lateral-scale", type=float, default=0.60)
+    parser.add_argument("--kd-yaw", type=float, default=0.20)
+    parser.add_argument("--k-pos-xy", type=float, default=0.125)
+    parser.add_argument("--ki-pos-xy", type=float, default=0.0)
+    parser.add_argument("--k-vel-xy", type=float, default=0.21)
+    parser.add_argument("--max-tilt-cmd", type=float, default=0.092)
+    parser.add_argument("--max-tilt-rate", type=float, default=0.12)
+    parser.add_argument("--tilt-recovery-alt-err", type=float, default=1.50)
+    parser.add_argument("--tilt-recovery-ang-rate", type=float, default=0.80)
+    parser.add_argument("--lateral-recovery-attenuation", type=float, default=0.70)
+    parser.add_argument("--min-lateral-scale", type=float, default=0.0)
+    parser.add_argument("--max-rate-cmd-rp", type=float, default=None)
+    parser.add_argument("--gyro-comp-rp", type=float, default=0.0)
     parser.add_argument("--min-fin-cmd-xy", type=float, default=0.018)
     parser.add_argument("--xy-active-error", type=float, default=0.20)
     parser.add_argument("--throttle-hover", type=float, default=0.90)
-    parser.add_argument("--max-fin-angle", type=float, default=0.08)
+    parser.add_argument("--max-fin-angle", type=float, default=0.115)
     parser.add_argument(
         "--summary-decimals",
         type=int,
@@ -109,6 +114,12 @@ def parse_args():
         type=float,
         default=None,
         help="Runtime multiplier for EDF gyroscopic torque after config/model computation.",
+    )
+    parser.add_argument(
+        "--body-angular-damping",
+        type=float,
+        default=None,
+        help="Body-frame angular damping torque coefficient, Nm per rad/s.",
     )
     parser.add_argument(
         "--disable-edf-torques",
@@ -260,9 +271,13 @@ def main():
         from tvc_env.controllers.pid_adapter import PIDController
         from tvc_env.envs.base_env import BaseEnvConfig
         from tvc_env.envs.direct_rl_env import TVCDirectRLEnv
+        import torch
 
         if args.log_every <= 0:
             raise ValueError("--log-every must be >= 1")
+        if args.seed is not None:
+            random.seed(args.seed)
+            torch.manual_seed(args.seed)
 
         disable_all_edf_torques = args.disable_edf_torques
         dynamics_overrides = {
@@ -275,6 +290,8 @@ def main():
         }
         if args.edf_gyro_torque_scale is not None:
             dynamics_overrides["edf_gyro_torque_scale"] = args.edf_gyro_torque_scale
+        if args.body_angular_damping is not None:
+            dynamics_overrides["body_angular_damping"] = args.body_angular_damping
         overrides: dict[str, Any] = {"dynamics": dynamics_overrides}
         if args.fixed_hover_spawn or args.spawn_position is not None:
             position = args.spawn_position if args.spawn_position is not None else [0.0, 0.0, 5.0]
@@ -314,14 +331,17 @@ def main():
             max_tilt_rate=args.max_tilt_rate,
             tilt_recovery_alt_err=args.tilt_recovery_alt_err,
             tilt_recovery_ang_rate=args.tilt_recovery_ang_rate,
+            lateral_recovery_attenuation=args.lateral_recovery_attenuation,
             min_lateral_scale=args.min_lateral_scale,
+            max_rate_cmd_rp=args.max_rate_cmd_rp,
+            gyro_comp_rp=args.gyro_comp_rp,
             min_fin_cmd_xy=args.min_fin_cmd_xy,
             xy_active_error=args.xy_active_error,
             throttle_hover=args.throttle_hover,
             max_fin_angle=args.max_fin_angle,
         )
 
-        obs_dict, _ = env.reset()
+        obs_dict, _ = env.reset(seed=args.seed)
         obs = obs_dict["policy"]
         pid.reset()
         print("Environment reset complete.", flush=True)

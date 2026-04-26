@@ -233,7 +233,11 @@ class TVCDirectRLEnv(TVCEnvBase):
         if not dynamics_cfg.get("enable_edf_gyro_torque", True):
             gyro_torque = torch.zeros_like(gyro_torque)
         gyro_torque = gyro_torque * float(dynamics_cfg.get("edf_gyro_torque_scale", 1.0))
-        edf_torque_body = static_torque + dynamic_torque + gyro_torque
+        # Body aero/structural damping closes the underdamped roll/pitch mode
+        # left by fin-servo lag and EDF gyro coupling during hover recovery.
+        body_angular_damping = float(dynamics_cfg.get("body_angular_damping", 0.27))
+        body_damping_torque = -body_angular_damping * body_ang_frd
+        edf_torque_body = static_torque + dynamic_torque + gyro_torque + body_damping_torque
 
         q = self._body_iface.get_root_quaternion_wxyz()
         pos = self._body_iface.get_root_position()
@@ -256,6 +260,7 @@ class TVCDirectRLEnv(TVCEnvBase):
             "edf_static_torque_body_frd_Nm": static_torque.detach(),
             "edf_dynamic_torque_body_frd_Nm": dynamic_torque.detach(),
             "edf_gyro_torque_body_frd_Nm": gyro_torque.detach(),
+            "body_damping_torque_body_frd_Nm": body_damping_torque.detach(),
             "edf_total_torque_body_frd_Nm": edf_torque_body.detach(),
             "wind_force_body_frd_N": (
                 wind_force_body.detach()

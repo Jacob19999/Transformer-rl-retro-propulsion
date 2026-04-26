@@ -34,28 +34,31 @@ class PIDController(BaseController):
         ki_alt: float = 0.01,
         kd_alt: float = 0.10,
         # Attitude gains (roll/pitch shared, yaw separate)
-        kp_att: float = 0.24,
+        kp_att: float = 0.30,
         ki_att: float = 0.00,
-        kd_att: float = 0.36,
-        kp_yaw: float = 0.00,
+        kd_att: float = 0.20,
+        kp_yaw: float = 0.20,
         ki_yaw: float = 0.00,
-        kd_yaw: float = 0.00,
+        kd_yaw: float = 0.20,
         # XY position hold -> desired attitude
-        k_pos_xy: float = 0.055,
-        ki_pos_xy: float = 0.001,
-        k_vel_xy: float = 0.30,
-        max_tilt_cmd: float = 0.055,
-        max_tilt_rate: float = 0.08,
+        k_pos_xy: float = 0.125,
+        ki_pos_xy: float = 0.0,
+        k_vel_xy: float = 0.21,
+        max_tilt_cmd: float = 0.092,
+        max_tilt_rate: float = 0.12,
         # Lateral authority scheduling for stability under recovery load
-        tilt_recovery_alt_err: float = 0.50,
-        tilt_recovery_ang_rate: float = 1.20,
-        min_lateral_scale: float = 0.60,
+        tilt_recovery_alt_err: float = 1.50,
+        tilt_recovery_ang_rate: float = 0.80,
+        lateral_recovery_attenuation: float = 0.70,
+        min_lateral_scale: float = 0.0,
+        max_rate_cmd_rp: float | None = None,
+        gyro_comp_rp: float = 0.0,
         # Deadband-aware lateral actuation floor (servo deadband ~= 0.017 rad)
         min_fin_cmd_xy: float = 0.018,
         xy_active_error: float = 0.20,
         # Throttle bias for gravity compensation
         throttle_hover: float = 0.90,
-        max_fin_angle: float = 0.08,
+        max_fin_angle: float = 0.115,
         num_envs: int = 1,
         config: dict[str, Any] | None = None,
         device: torch.device | None = None,
@@ -79,7 +82,10 @@ class PIDController(BaseController):
         self.max_tilt_rate = max_tilt_rate
         self.tilt_recovery_alt_err = tilt_recovery_alt_err
         self.tilt_recovery_ang_rate = tilt_recovery_ang_rate
+        self.lateral_recovery_attenuation = lateral_recovery_attenuation
         self.min_lateral_scale = min_lateral_scale
+        self.max_rate_cmd_rp = max_rate_cmd_rp
+        self.gyro_comp_rp = gyro_comp_rp
         self.min_fin_cmd_xy = min_fin_cmd_xy
         self.xy_active_error = xy_active_error
 
@@ -156,7 +162,9 @@ class PIDController(BaseController):
         alt_load = (alt_err_abs / max(self.tilt_recovery_alt_err, 1e-6)).clamp(0.0, 1.0)
         rate_load = (ang_rate_norm / max(self.tilt_recovery_ang_rate, 1e-6)).clamp(0.0, 1.0)
         recovery_load = torch.maximum(alt_load, rate_load)
-        lateral_scale = (1.0 - 0.7 * recovery_load).clamp(self.min_lateral_scale, 1.0)
+        lateral_scale = (
+            1.0 - self.lateral_recovery_attenuation * recovery_load
+        ).clamp(self.min_lateral_scale, 1.0)
         desired_xy_target = desired_xy_target * lateral_scale.unsqueeze(-1)
 
         # Rate-limit desired tilt to keep lateral corrections smooth and avoid snap-over.
@@ -222,6 +230,11 @@ class PIDController(BaseController):
             + ki_vec * self._int_att
             - kd_vec * ang_vel_frd
         )
+        if self.gyro_comp_rp != 0.0:
+            gyro_comp = torch.stack([ang_vel_frd[:, 1], -ang_vel_frd[:, 0]], dim=-1)
+            rate_cmd[:, 0:2] = rate_cmd[:, 0:2] + self.gyro_comp_rp * gyro_comp
+        if self.max_rate_cmd_rp is not None:
+            rate_cmd[:, 0:2] = rate_cmd[:, 0:2].clamp(-self.max_rate_cmd_rp, self.max_rate_cmd_rp)
 
         # Ensure roll/pitch authority clears servo deadband while lateral error is active.
         # Apply this before mixing so a small cross-axis command is not promoted
