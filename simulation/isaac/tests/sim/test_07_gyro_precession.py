@@ -1,13 +1,17 @@
 """
 Simulation test: Gyroscopic precession (test_07).
 
-Verifies the gyroscopic precession model:
-    τ_gyro = ω_body × H_rotor
+Verifies the gyroscopic precession reaction torque applied to the BODY:
+    τ_gyro_on_body = -(ω_body × H_rotor)
     where H_rotor = I_rotor * ω_rotor * spin_axis
+
+The body must apply ω_body × H_rotor to the rotor to precess it; by Newton's
+third law, the rotor exerts -ω_body × H_rotor on the body. PhysX has no
+virtual rotor, so this reaction is applied as an external body torque.
 
 Tests performed:
   1. Direction: for each body axis perturbation, the precession torque direction
-     must match ω_body × H_rotor (cross product direction check).
+     must match -(ω_body × H_rotor) (cross product direction check).
   2. Magnitude: τ_gyro magnitude must be proportional to both ω_rotor and ω_body.
      Specifically: |τ| = I_rotor * ω_rotor * |ω_body| * sin(θ)
      For orthogonal ω_body and spin_axis: |τ| = I_rotor * ω_rotor * ω_body.
@@ -77,9 +81,12 @@ def _expected_gyro_torque(
     body_ang_vel_vec: torch.Tensor,
     spin_axis: torch.Tensor,
 ) -> torch.Tensor:
-    """Compute expected gyro torque analytically.
+    """Compute expected gyro torque on the body analytically.
 
-    τ_expected = ω_body × H_rotor = ω_body × (I_rotor * ω_rotor * spin_axis)
+    τ_expected_body = -(ω_body × H_rotor) = -ω_body × (I_rotor * ω_rotor * spin_axis)
+
+    The negation reflects that the rotor exerts the reaction of the precession
+    torque on the body (the body applies +ω × H to the rotor).
 
     Args:
         omega_rotor: Scalar rotor speed (rad/s).
@@ -88,10 +95,10 @@ def _expected_gyro_torque(
         spin_axis: (3,) unit rotor spin axis in body-FRD.
 
     Returns:
-        Tensor of shape (3,) — expected gyro torque (N·m).
+        Tensor of shape (3,) — expected body torque (N·m).
     """
     H = rotor_inertia * omega_rotor * spin_axis
-    return torch.linalg.cross(body_ang_vel_vec, H)
+    return -torch.linalg.cross(body_ang_vel_vec, H)
 
 
 class TestGyroPrecession:
@@ -133,7 +140,7 @@ class TestGyroPrecession:
     def test_precession_direction_matches_cross_product(
         self, gyro_params, body_axis, axis_label
     ):
-        """τ_gyro direction must exactly match ω_body × H_rotor for each body axis."""
+        """τ_gyro on body must exactly match -(ω_body × H_rotor) for each body axis."""
         from tvc_env.dynamics.rotor_reaction import compute_gyroscopic_precession
 
         omega = torch.tensor([OMEGA_ROTOR])
@@ -205,14 +212,13 @@ class TestGyroPrecession:
 
     def test_precession_magnitude_equals_analytical_formula(self, gyro_params):
         """
-        |τ_gyro| = I_rotor * ω_rotor * ω_body when spin_axis ⊥ ω_body.
+        |τ_gyro_on_body| = I_rotor * ω_rotor * ω_body when spin_axis ⊥ ω_body.
 
         For SPIN_AXIS = [0,0,1] and body_ang_vel = [ω_body, 0, 0]:
-            H_rotor = [0, 0, I*ω_rotor]
-            τ_gyro  = [ω_body, 0, 0] × [0, 0, I*ω_rotor]
-                    = [0*I*ω_r - 0, 0 - ω_b*I*ω_r, 0]
-                    = [0, -I*ω_r*ω_b, 0]
-            |τ_gyro| = I_rotor * ω_rotor * ω_body
+            H_rotor       = [0, 0, I*ω_rotor]
+            ω_body × H    = [0, -I*ω_r*ω_b, 0]
+            τ_gyro_body   = -(ω_body × H) = [0, +I*ω_r*ω_b, 0]
+            |τ_gyro_body| = I_rotor * ω_rotor * ω_body
         """
         from tvc_env.dynamics.rotor_reaction import compute_gyroscopic_precession
 
@@ -259,7 +265,8 @@ class TestGyroPrecession:
 
     def test_precession_torque_orthogonal_to_spin_axis_and_body_rate(self, gyro_params):
         """
-        τ_gyro = ω_body × H_rotor, so τ_gyro must be orthogonal to both ω_body and H_rotor.
+        τ_gyro = ±(ω_body × H_rotor), so τ_gyro must be orthogonal to both
+        ω_body and H_rotor regardless of sign convention.
 
         Check: τ · ω_body ≈ 0 and τ · H_rotor ≈ 0.
         """

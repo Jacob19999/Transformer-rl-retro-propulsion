@@ -166,13 +166,15 @@ class EDFModel:
         Q_magnitude = self.k_Q * omega ** 2
         static_reaction = -spin_axis.unsqueeze(0) * Q_magnitude.unsqueeze(-1)  # (num_envs, 3)
 
-        # Dynamic spool reaction torque on the body.
+        # Dynamic spool reaction torque on the body: -I_rotor * dω/dt along spin axis.
         d_omega = (omega - omega_prev) / max(dt, 1e-8)
         dynamic_spool = -spin_axis.unsqueeze(0) * (self.rotor_inertia * d_omega).unsqueeze(-1)  # (num_envs, 3)
 
-        # Gyroscopic precession: τ = ω_body × H_rotor = ω_body × (I_rotor * ω_rotor * spin_axis)
+        # Gyroscopic precession on body: -ω_body × H_rotor (Newton's third law on
+        # the rotor's precession torque). PhysX has no virtual rotor, so we
+        # apply this reaction as an external body torque.
         H_rotor = spin_axis.unsqueeze(0) * (self.rotor_inertia * omega).unsqueeze(-1)  # (num_envs, 3)
-        gyro_precession = torch.linalg.cross(body_angular_vel, H_rotor)  # (num_envs, 3)
+        gyro_precession = -torch.linalg.cross(body_angular_vel, H_rotor)  # (num_envs, 3)
 
         return EDFOutput(
             thrust_force=thrust_magnitude,

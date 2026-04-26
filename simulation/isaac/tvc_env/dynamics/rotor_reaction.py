@@ -1,10 +1,16 @@
 """
 Rotor reaction torque computation.
 
+All torques returned by this module act ON THE BODY (Newton's third law applied
+where appropriate), so callers can sum them directly into the body wrench.
+
 Computes:
-  - Static reaction torque: Q = k_Q * omega^2 (opposes spin direction)
-  - Dynamic spool reaction torque: -I_rotor * d_omega/dt
-  - Gyroscopic precession: tau = omega_body x H_rotor
+  - Static reaction torque: -k_Q * omega^2 * spin_axis (opposes rotor spin)
+  - Dynamic spool reaction torque: -I_rotor * d_omega/dt * spin_axis
+  - Gyroscopic precession on body: -(omega_body x H_rotor)
+    (PhysX integrates I_body * alpha = tau_applied; the rotor's angular
+    momentum is not part of the articulation, so we apply the
+    reaction -ω x H as an external torque on the body.)
 
 All outputs are separate vec3 tensors for independent logging per FR-018.
 """
@@ -51,11 +57,18 @@ def compute_gyroscopic_precession(
     rotor_inertia: float,
     spin_axis: Tensor,          # (3,) unit vector
 ) -> Tensor:
-    """Compute gyroscopic precession torque."""
+    """Compute gyroscopic precession torque ON THE BODY.
+
+    The torque required to precess the rotor is ``omega_body x H_rotor``
+    (applied by the body to the rotor). By Newton's third law, the rotor
+    exerts the negative of that on the body. PhysX does not see the virtual
+    rotor's angular momentum, so we apply ``-(omega_body x H_rotor)`` as an
+    external body torque to close the books.
+    """
     omega = omega.to(device=body_angular_vel.device, dtype=body_angular_vel.dtype)
     spin_axis = _coerce_spin_axis(spin_axis, body_angular_vel)
     h_rotor = spin_axis.unsqueeze(0) * (rotor_inertia * omega).unsqueeze(-1)  # (num_envs, 3)
-    return torch.linalg.cross(body_angular_vel, h_rotor)
+    return -torch.linalg.cross(body_angular_vel, h_rotor)
 
 
 def compute_all_rotor_torques(

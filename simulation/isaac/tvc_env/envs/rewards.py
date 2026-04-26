@@ -174,9 +174,9 @@ def compute_pad_accuracy_reward(env_state, config: dict) -> Tensor:
         Tensor (num_envs,) — accuracy score, higher for closer to pad.
     """
     is_landed = env_state.contact_state == ContactState.LANDED
-    target = _target_position(env_state, config, [0, 0, 0])
-    # Horizontal distance from pad center
-    horiz_dist = (env_state.position[:, :2] - target[:2]).norm(dim=-1)
+    target = _target_position(env_state, config, [0, 0, 0])  # (num_envs, 3)
+    # Horizontal distance from pad center (x, y components, per env)
+    horiz_dist = (env_state.position[:, :2] - target[:, :2]).norm(dim=-1)
     accuracy = torch.exp(-2.0 * horiz_dist)  # Exp decay with horizontal distance
     return accuracy * is_landed.float()
 

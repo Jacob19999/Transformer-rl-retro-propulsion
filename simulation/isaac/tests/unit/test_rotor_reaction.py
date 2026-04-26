@@ -93,15 +93,19 @@ class TestDynamicSpoolTorque:
 
 
 class TestGyroPrecession:
-    def test_direction_follows_cross_product(self):
-        """Precession τ = ω_body × H should follow right-hand rule."""
+    def test_body_torque_opposes_rotor_precession(self):
+        """Gyro torque on the BODY is -ω_body × H_rotor (Newton's third law).
+
+        Setup: rotor spins about +z, body rolls about +x. The torque the body
+        applies to the rotor to precess it is ω_body × H_rotor = -y. The
+        reaction torque on the body is therefore +y.
+        """
         omega = torch.tensor([1000.0])  # rotor spinning around +z
-        # Body rotating around +x axis
         body_ang_vel = torch.tensor([[1.0, 0.0, 0.0]])  # ω_body = +x
         torque = compute_gyroscopic_precession(omega, body_ang_vel, I_ROTOR, SPIN_AXIS)
-        # H = I * omega * z = [0, 0, I*omega]
-        # τ = ω_body × H = [1,0,0] × [0,0,H_z] = [0*H_z - 0, 0 - 1*H_z, 0] = [0, -H_z, 0]
-        assert torque[0, 1].item() < 0.0, f"Expected -y precession, got {torque[0]}"
+        # H = I * omega * z = [0, 0, +H_z];  -ω_body × H = -([1,0,0] × [0,0,H_z])
+        #   = -[0, -H_z, 0] = [0, +H_z, 0]
+        assert torque[0, 1].item() > 0.0, f"Expected +y body torque, got {torque[0]}"
         assert abs(torque[0, 0].item()) < 1e-6  # no x component
         assert abs(torque[0, 2].item()) < 1e-6  # no z component
 
