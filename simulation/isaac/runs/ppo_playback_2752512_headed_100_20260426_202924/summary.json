@@ -1,0 +1,24 @@
+{
+  "checkpoint": "C:\\Transformer-rl-retro-propulsion\\simulation\\isaac\\runs\\ppo_landing_seed0_20260426_192920\\ppo_step_2752512.pt",
+  "trained_steps": 2752512,
+  "episodes": 100,
+  "landed_fraction": 0.64,
+  "crashed_fraction": 0.36,
+  "timeout_fraction": 0.0,
+  "on_pad_fraction": 0.02,
+  "touchdown_speed_landed": {
+    "mean": 0.0831,
+    "min": 0.0,
+    "max": 0.3861
+  },
+  "pad_distance_landed": {
+    "mean": 1.5071,
+    "min": 0.1878,
+    "max": 3.3854
+  },
+  "duration_s": {
+    "mean": 2.1321,
+    "min": 1.466,
+    "max": 2.632
+  }
+}

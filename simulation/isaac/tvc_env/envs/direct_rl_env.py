@@ -125,6 +125,20 @@ class TVCDirectRLEnv(TVCEnvBase):
         terminated, time_out = self._get_dones()
         reward = self._get_rewards()
 
+        # Snapshot pre-reset vehicle state so eval/telemetry can attribute
+        # terminal events to LANDED vs CRASHED and record touchdown
+        # velocity / pad distance at the moment of termination. The auto-reset
+        # below wipes the contact state machine back to AIRBORNE before
+        # observations are read, which previously made `landed_fraction` and
+        # `crashed_fraction` always zero in eval logs even when terminal
+        # events were firing.
+        state_pre_reset = self._build_vehicle_state()
+        info = {
+            "contact_state_pre_reset": state_pre_reset.contact_state.clone(),
+            "linear_vel_frd_pre_reset": state_pre_reset.linear_vel_frd.clone(),
+            "position_pre_reset": state_pre_reset.position.clone(),
+        }
+
         # Auto-reset terminated/timed-out envs
         reset_ids = (terminated | time_out).nonzero(as_tuple=False).squeeze(-1)
         if len(reset_ids) > 0:
@@ -134,7 +148,7 @@ class TVCDirectRLEnv(TVCEnvBase):
 
         obs = self._get_observations()
         truncated = time_out & ~terminated
-        return obs, reward, terminated, truncated, {}
+        return obs, reward, terminated, truncated, info
 
     def reset(self, seed: int | None = None, options: dict | None = None) -> tuple[dict, dict]:
         """Reset all environments and return initial observations.
@@ -339,7 +353,16 @@ class TVCDirectRLEnv(TVCEnvBase):
         height = self._body_iface.get_altitude()
         lin_vel_w = self._body_iface.get_root_linear_velocity_world()
         vz = lin_vel_w[:, 2]
-        in_contact = (height < 0.40) & (vz.abs() < 0.50)
+        # Contact is a kinematic question (am I close to the ground), not a
+        # dynamic one. Previously this was gated by `vz.abs() < 0.50`, which
+        # silently hid hard impacts from the crash detector — a drone falling
+        # at 15 m/s never registered as `in_contact`, so neither LANDED nor
+        # CRASHED ever fired and the policy received no terminal signal for
+        # crashes. The crash detector below decides whether the contact is
+        # benign (LANDED-bound via dwell counter) or violent (impact_speed >
+        # max_impact_speed → CRASHED). Brief upward bounces are filtered by
+        # excluding upward motion above the contact band.
+        in_contact = (height < 0.40) & (vz < 0.50)
 
         impact_speed = (-vz).clamp(min=0.0)
         ang_vel_frd = self._body_iface.get_angular_velocity_body_frd()

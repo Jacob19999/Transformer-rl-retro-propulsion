@@ -61,6 +61,11 @@ def check_crash_termination(contact_state: Tensor) -> Tensor:
     return contact_state == ContactState.CRASHED
 
 
+def check_landed_termination(contact_state: Tensor) -> Tensor:
+    """Check if a landing task has reached the terminal LANDED state."""
+    return contact_state == ContactState.LANDED
+
+
 def check_episode_timeout(
     step_count: Tensor,
     max_steps: int,
@@ -111,6 +116,10 @@ def check_all_terminations(
 
     if term.get("crash", True):
         dones = dones | check_crash_termination(contact_state)
+
+    success = task_config.get("task", task_config).get("success", {})
+    if str(success.get("state", "")).upper() == "LANDED":
+        dones = dones | check_landed_termination(contact_state)
 
     max_tilt = term.get("max_tilt", 1.57)
     dones = dones | check_tilt_termination(quaternion_wxyz, max_tilt)

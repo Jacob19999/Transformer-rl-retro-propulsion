@@ -1,0 +1,12 @@
+{
+  "checkpoint": "C:\\Transformer-rl-retro-propulsion\\simulation\\isaac\\runs\\ppo_landing_seed0_20260426_192920\\ppo_step_2752512.pt",
+  "task": "landing",
+  "env_config": "configs/env/single_env_debug.yaml",
+  "disturbance": "configs/disturbances/nominal.yaml",
+  "episodes": 100,
+  "max_episode_seconds": 30.0,
+  "seed": 0,
+  "headless": false,
+  "max_wall_time": 3260.0,
+  "output_dir": "C:\\Transformer-rl-retro-propulsion\\simulation\\isaac\\runs\\ppo_playback_2752512_headed_100_20260426_202924"
+}

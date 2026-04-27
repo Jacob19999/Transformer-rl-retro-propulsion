@@ -97,7 +97,7 @@ def compute_total_reward(reward_weights: dict[str, float], env_state, config: di
     if total is None:
         # No active terms
         import torch
-        return torch.zeros(1)
+        return torch.zeros(env_state.position.shape[0], device=env_state.position.device)
     return total
 
 

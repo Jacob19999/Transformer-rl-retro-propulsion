@@ -10,25 +10,42 @@ task:
     position_range: [[-2.0, -2.0, 8.0], [2.0, 2.0, 12.0]]  # m
     velocity_range: [[-1.0, -1.0, -2.0], [1.0, 1.0, 0.0]]   # m/s (biased downward)
     attitude_range: [[-0.1, -0.1, -0.2], [0.1, 0.1, 0.2]]   # rad
+    curriculum:
+      enabled: true
+      # Rule 5 spawn curriculum. Diagnostic evidence: fix4
+      # (runs/ppo_landing_seed0_20260426_192920) improved the mid-run
+      # mean_pad_distance to 1.56 m but still plateaued near 1.9 m from the
+      # full +/-2 m XY spawn box. Train starts close to the pad so the policy
+      # can learn on-pad touchdown first, then linearly anneals back to the
+      # non-curricularized full spawn used for eval.
+      position_start_range: [[-0.5, -0.5, 8.0], [0.5, 0.5, 12.0]]
+      position_end_range: [[-2.0, -2.0, 8.0], [2.0, 2.0, 12.0]]
+      start_step: 0
+      end_step: 3000000
 
   contact:
     dwell_frames: 15
     min_contact_force: 1.0             # N
 
   reward:
-    alive_bonus: 0.5
-    position_error: -1.0
-    horizontal_position_error: -3.0
-    attitude_error: -1.5
-    angular_velocity: -0.5
-    control_effort: -0.1
-    control_rate: -0.05
-    crash_penalty: -100.0
-    touchdown_softness: 5.0
-    landing_success: 75.0
-    pad_accuracy: 25.0
-    vertical_speed_shaping: -2.0
-    delta_v_cost: -2.0                  # per-step thrust ratio (T/T_max)^2; integrates to delta-v proxy
+    # Per-step shaping (small magnitudes — these must NOT dominate the integrated
+    # episode return relative to terminal events, otherwise PPO will optimize for
+    # per-step cost minimization (e.g. zero throttle) and never sample a landing.
+    alive_bonus: 0.1                    # gentle bias against suicide-to-escape-cost; ~+90/episode if alive 30s
+    position_error: -0.05               # weak 3D pull toward pad — also acts as dense altitude-closure shaping
+    horizontal_position_error: -0.30    # stronger lateral pull (independent of altitude)
+    attitude_error: -0.20               # gentle level-attitude pressure
+    angular_velocity: -0.10
+    control_effort: -0.02
+    control_rate: -0.01
+    vertical_speed_shaping: -0.30       # encourage moderate descent rate around 0.5 m/s
+    delta_v_cost: -0.20                 # per-step thrust ratio (T/T_max)^2; small fuel penalty (delta-v proxy)
+    # Terminal events (large magnitudes — these must dominate the integrated return
+    # so the agent prefers landing-and-stopping over hovering-out-the-clock).
+    crash_penalty: -200.0               # one-time on CRASHED
+    touchdown_softness: 25.0            # one-time on LANDED, scaled by exp(-impact_speed)
+    pad_accuracy: 200.0                 # one-time on LANDED, scaled by exp(-horiz_dist) — bumped from 75 + steepened from exp(-2d) so lateral guidance has gradient at d > 1 m
+    landing_success: 250.0              # one-time on LANDED — dominant terminal success signal
 
   success:
     state: LANDED

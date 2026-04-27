@@ -1,0 +1,232 @@
+\documentclass[conference]{IEEEtran}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{siunitx}
+\usepackage{hyperref}
+\usepackage{cite}
+\usepackage{array}
+
+\sisetup{per-mode=symbol}
+
+\begin{document}
+
+\title{Reinforcement Learning for Thrust-Vectored Fin Control of an Electric Ducted Fan VTOL Vehicle in Simulation}
+
+\author{
+\IEEEauthorblockN{[Author Name]}
+\IEEEauthorblockA{[Department] \\
+[University] \\
+[City, State, Country] \\
+[email]}
+}
+
+\maketitle
+
+\begin{abstract}
+This paper presents a Proximal Policy Optimization (PPO) approach to attitude and position control of a thrust-vectored electric ducted fan (EDF) vertical take-off and landing (VTOL) vehicle using aerodynamic control fins immersed in the exhaust stream. Unlike conventional multirotor platforms that achieve control authority through differential rotor speeds, the vehicle studied here relies on a single axial EDF unit and four jet-vane fins for three-axis attitude control, presenting a tightly coupled, nonlinear control problem. We develop a GPU-accelerated simulation environment in NVIDIA Isaac Sim with semi-empirical aerodynamic, propulsion, and actuator dynamics models calibrated to a physical 3.1\,kg EDF drone testbed. A feed-forward actor--critic PPO agent with a 24-dimensional observation space and 5-dimensional continuous action space (four fin deflections plus throttle) is trained on 128 parallel environments for hover stabilization and autonomous landing tasks. The hover policy achieves a mean position error of \SI{0.085}{\metre} within 2{,}048 environment steps. The landing policy, trained over 5 million steps with spawn-position curriculum, achieves 100\% landing rate with a mean touchdown speed of \SI{0.126}{\metre\per\second}, though lateral accuracy (mean pad distance \SI{1.89}{\metre}) remains an open challenge. We detail the simulation architecture, reward design rationale, and training methodology, and discuss implications for sim-to-real transfer to the physical testbed.
+\end{abstract}
+
+\begin{IEEEkeywords}
+reinforcement learning, thrust vector control, electric ducted fan, proximal policy optimization, VTOL, Isaac Sim, jet vane
+\end{IEEEkeywords}
+
+\section{Introduction}
+
+Vertical take-off and landing (VTOL) vehicles have seen rapid adoption across commercial, military, and research domains. While conventional multirotors achieve attitude control through differential rotor speeds, alternative configurations---particularly those employing thrust vector control (TVC)---offer potential advantages in aerodynamic efficiency, noise reduction, and mechanical simplicity for certain mission profiles \cite{b1}.
+
+Thrust-vectored vehicles that use aerodynamic control surfaces (jet vanes or fins) immersed in the exhaust stream of a single propulsion unit present a fundamentally different control challenge compared to multirotors. The control authority is coupled to the throttle state: at low thrust, fin effectiveness diminishes because the dynamic pressure in the exhaust drops quadratically with rotor speed. This throttle-dependent authority, combined with nonlinear aerodynamic force characteristics, actuator dynamics, and gyroscopic effects from the spinning rotor, makes classical linear control design challenging and motivates data-driven approaches.
+
+Reinforcement learning (RL) has demonstrated success in quadrotor control \cite{b2, b3}, fixed-wing flight \cite{b4}, and rocket landing \cite{b5}. However, its application to thrust-vectored fin control of EDF vehicles remains largely unexplored. The key distinctions of this control problem include: (1) a single thrust source with four coupled control surfaces, (2) aerodynamic forces that depend on both fin deflection angle and instantaneous exhaust velocity, (3) significant actuator dynamics from hobby-grade servos, and (4) gyroscopic precession from the high-speed rotor.
+
+This paper makes the following contributions:
+\begin{itemize}
+    \item A GPU-accelerated simulation environment for an EDF TVC drone built on NVIDIA Isaac Sim with physically grounded aerodynamic, propulsion, and actuator models.
+    \item A PPO-based control policy for hover stabilization and autonomous landing of a thrust-vectored vehicle, trained end-to-end from raw state observations.
+    \item Analysis of reward design considerations specific to TVC vehicles, including the terminal-vs-per-step magnitude balance critical for landing tasks.
+    \item Preliminary training results demonstrating feasibility and identifying open challenges for lateral accuracy in landing.
+\end{itemize}
+
+
+\section{Related Work}
+
+\subsection{Reinforcement Learning for Aerial Vehicle Control}
+
+RL-based control of aerial vehicles has progressed significantly in recent years. Hwangbo et al.\ demonstrated that PPO could learn agile quadrotor control policies that transfer to hardware \cite{b2}. Koch et al.\ applied deep RL to quadrotor attitude control, comparing multiple algorithms and finding that PPO provided robust training stability \cite{b3}. Pi et al.\ showed that RL policies trained in simulation could achieve robust quadrotor flight under wind disturbances after sim-to-real transfer \cite{b4}.
+
+GPU-accelerated parallel simulation has been a key enabler. Rudin et al.\ demonstrated that massively parallel environments in Isaac Gym could train locomotion policies orders of magnitude faster than prior approaches \cite{b6}. Makoviychuk et al.\ extended this to manipulation tasks with thousands of parallel environments \cite{b7}.
+
+\subsection{Thrust Vector Control}
+
+TVC has a long history in rocketry, where gimbaled nozzles or jet vanes provide attitude control during powered flight \cite{b8}. More recently, TVC has been explored for VTOL vehicles. Jet-vane TVC, where flat plates are immersed in the exhaust stream, provides a mechanically simple alternative to gimbaled motors but introduces nonlinear aerodynamic coupling \cite{b9}.
+
+Classical control approaches for TVC vehicles typically linearize the plant around a hover operating point and apply PID or LQR controllers \cite{b10}. However, the strongly nonlinear relationship between fin deflection, throttle state, and resulting forces---particularly the quadratic dependence of fin effectiveness on exhaust velocity---limits the operating envelope of linear controllers.
+
+\subsection{Sim-to-Real Transfer}
+
+Domain randomization \cite{b11} and system identification \cite{b12} are established techniques for bridging the simulation-to-reality gap. For aerial vehicles, Sadeghi and Levine demonstrated that policies trained entirely in simulation could transfer to real quadrotors \cite{b13}. The fidelity of the simulation dynamics model is a critical factor, motivating the semi-empirical approach adopted in this work.
+
+\section{Vehicle Description}
+
+\subsection{Physical Platform}
+
+The testbed is a custom-built EDF VTOL vehicle (Fig.~\ref{fig:drone_schematic}) with the following specifications:
+
+\begin{table}[htbp]
+\caption{Vehicle Physical Parameters}
+\label{tab:vehicle_params}
+\centering
+\begin{tabular}{lrl}
+\toprule
+\textbf{Parameter} & \textbf{Value} & \textbf{Source} \\
+\midrule
+Total mass & \SI{3.1}{\kilogram} & Measured \\
+Body length & \SI{0.35}{\metre} & Measured \\
+Body diameter & \SI{0.12}{\metre} & Measured \\
+$I_{xx}$, $I_{yy}$ & \SI{0.05}{\kilogram\metre\squared} & Isaac Sim MassAPI \\
+$I_{zz}$ & \SI{0.02}{\kilogram\metre\squared} & Isaac Sim MassAPI \\
+Fin count & 4 & --- \\
+Fin area (each) & \SI{0.002}{\metre\squared} & Measured \\
+Max fin deflection & \SI{15}{\degree} (\SI{0.262}{\radian}) & Measured \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The vehicle employs a single FMS 90\,mm 12-blade EDF unit (FMSDF010-1) with a 4068-KV1850 inrunner motor powered by a 6S LiPo battery. Four MG996R hobby servos actuate flat-plate jet vanes positioned in the EDF exhaust stream. The fins are arranged in a cruciform pattern at $90°$ intervals, with hinge axes oriented to provide independent pitch, roll, and yaw authority through differential deflection.
+
+\subsection{Control Architecture}
+
+The vehicle's control surfaces are arranged as follows:
+\begin{itemize}
+    \item \textbf{Forward fin} (+X): hinge axis along +Y, provides pitch control.
+    \item \textbf{Right fin} (+Y): hinge axis along $-$X, provides roll control.
+    \item \textbf{Aft fin} ($-$X): hinge axis along $-$Y, complementary pitch.
+    \item \textbf{Left fin} ($-$Y): hinge axis along +X, complementary roll.
+\end{itemize}
+
+Yaw control is achieved through differential deflection that creates asymmetric tangential forces. Altitude is controlled via the EDF throttle. This architecture provides full 6-DOF control authority (three rotational axes plus altitude) through five actuator commands: four fin angles and one throttle.
+
+
+\section{Simulation Environment}
+
+\subsection{Overview}
+
+The simulation environment is built on NVIDIA Isaac Sim using the Isaac Lab framework (v2.3.2), which provides GPU-accelerated rigid-body physics via PhysX 5. The environment implements a Gymnasium-compatible interface with vectorized step, reset, and observation computation across 128 parallel environments on a single GPU.
+
+The simulation operates at a physics timestep of $\Delta t_{\text{phys}} = \SI{8.33}{\milli\second}$ ($\SI{120}{\hertz}$) with a decimation factor of 4, yielding an RL decision timestep of $\Delta t_{\text{RL}} = \SI{33.3}{\milli\second}$ ($\SI{30}{\hertz}$). Each RL step executes four physics substeps, during which actuator dynamics, aerodynamic forces, and propulsion effects are updated at the full physics rate.
+
+\subsection{Propulsion Model}
+
+The EDF propulsion system is modeled with first-order spool dynamics and a quadratic thrust law:
+
+\begin{equation}
+\dot{\omega} = \frac{\omega_{\text{target}} - \omega}{\tau_{\text{motor}}}
+\label{eq:spool}
+\end{equation}
+
+\begin{equation}
+T = k_T \omega^2
+\label{eq:thrust}
+\end{equation}
+
+\noindent where $\omega$ is the rotor angular velocity, $\omega_{\text{target}} = u_{\text{throttle}} \cdot \omega_{\max}$ is the commanded speed, $\tau_{\text{motor}} = \SI{0.15}{\second}$ is the motor time constant, and $k_T = T_{\max} / \omega_{\max}^2$ is the thrust coefficient derived from the maximum thrust $T_{\max} = \SI{39.2}{\newton}$ and maximum angular velocity $\omega_{\max} = \SI{4300}{\radian\per\second}$.
+
+The propulsion model also computes three torque components acting on the vehicle body:
+
+\begin{enumerate}
+    \item \textbf{Static reaction torque}: $\boldsymbol{\tau}_{\text{static}} = -k_Q \omega^2 \hat{\mathbf{e}}_z$, opposing the rotor spin direction.
+    \item \textbf{Dynamic spool torque}: $\boldsymbol{\tau}_{\text{spool}} = -I_{\text{rotor}} \dot{\omega} \hat{\mathbf{e}}_z$, the reaction to rotor acceleration.
+    \item \textbf{Gyroscopic precession}: $\boldsymbol{\tau}_{\text{gyro}} = -\boldsymbol{\omega}_{\text{body}} \times (I_{\text{rotor}} \omega \hat{\mathbf{e}}_z)$, coupling body rotation to rotor angular momentum.
+\end{enumerate}
+
+\begin{table}[htbp]
+\caption{EDF Propulsion Parameters}
+\label{tab:edf_params}
+\centering
+\begin{tabular}{lrl}
+\toprule
+\textbf{Parameter} & \textbf{Value} & \textbf{Source} \\
+\midrule
+Max thrust $T_{\max}$ & \SI{39.2}{\newton} & Datasheet \\
+Motor time constant $\tau_{\text{motor}}$ & \SI{0.15}{\second} & Estimate \\
+Max angular velocity $\omega_{\max}$ & \SI{4300}{\radian\per\second} & Derived \\
+Rotor inertia $I_{\text{rotor}}$ & \SI{0.0002}{\kilogram\metre\squared} & Estimate \\
+Exhaust speed (nominal) & \SI{116}{\metre\per\second} & Estimate \\
+Gyro torque scale & 0.1 & Calibrated \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Fin Aerodynamic Model}
+
+The jet-vane aerodynamic forces are computed using a semi-empirical model. Each fin experiences a dynamic pressure proportional to the square of the exhaust velocity, which itself scales with throttle:
+
+\begin{equation}
+q = \frac{1}{2} \rho \, v_{\text{exhaust}}^2 \cdot u_{\text{throttle}}^2 \cdot k_{\text{duct}}
+\label{eq:dynamic_pressure}
+\end{equation}
+
+\noindent where $\rho = \SI{1.225}{\kilogram\per\metre\cubed}$ is air density, $v_{\text{exhaust}} = \SI{116}{\metre\per\second}$ is the nominal exhaust speed, $u_{\text{throttle}} \in [0, 1]$ is the normalized throttle, and $k_{\text{duct}} = 1.3$ is a duct confinement correction factor.
+
+The normal (lift) and tangential (drag) force coefficients are:
+
+\begin{equation}
+C_N(\alpha) = C_{N_\alpha} \cdot \alpha \cdot (1 - k_{\text{sat}} \alpha^2)
+\label{eq:cn}
+\end{equation}
+
+\begin{equation}
+C_D(\alpha) = C_{D_0} + C_{D_{\alpha^2}} \alpha^2
+\label{eq:cd}
+\end{equation}
+
+\noindent where $\alpha$ is the fin deflection angle, $C_{N_\alpha} = 3.5\,\text{rad}^{-1}$ is the lift-curve slope (derived from thin-airfoil theory with empirical correction), $k_{\text{sat}} = 2.0$ accounts for stall saturation, $C_{D_0} = 0.05$ is the zero-deflection drag, and $C_{D_{\alpha^2}} = 1.5$ captures the deflection-dependent drag increase.
+
+The resulting forces per fin are:
+\begin{equation}
+F_n = q \cdot S_{\text{fin}} \cdot C_N(\alpha), \quad F_t = q \cdot S_{\text{fin}} \cdot C_D(\alpha)
+\label{eq:fin_forces}
+\end{equation}
+
+\noindent where $S_{\text{fin}} = \SI{0.002}{\metre\squared}$. The normal force $F_n$ acts perpendicular to the exhaust flow (providing lateral control force), while the tangential force $F_t$ opposes the flow (contributing to thrust loss). The total thrust loss from all four fins is subtracted from the EDF thrust before application.
+
+A critical feature of this model is the quadratic coupling between throttle and fin effectiveness: at 50\% throttle, fin forces are only 25\% of their maximum value. This coupling is a defining characteristic of jet-vane TVC and distinguishes it from conventional multirotor control.
+
+\subsection{Servo Actuator Model}
+
+The MG996R servo dynamics are modeled as a first-order lag with rate limiting and deadband:
+
+\begin{equation}
+\dot{\alpha}_{\text{fin}} = \text{clip}\!\left(\frac{\alpha_{\text{cmd}} - \alpha_{\text{fin}}}{\tau_{\text{servo}}},\; -\dot{\alpha}_{\max},\; \dot{\alpha}_{\max}\right)
+\label{eq:servo}
+\end{equation}
+
+\noindent where $\tau_{\text{servo}} = \SI{0.05}{\second}$, $\dot{\alpha}_{\max} = \SI{7.54}{\radian\per\second}$ (derived from the datasheet $60°$ transit time of \SI{0.14}{\second}), and a deadband of \SI{0.017}{\radian} ($\approx 1°$) suppresses response to commands smaller than the mechanical resolution. The servo state is clamped to $\pm\SI{0.262}{\radian}$ ($\pm 15°$).
+
+\subsection{Contact Detection and State Machine}
+
+Landing and crash detection use a four-state contact state machine:
+
+\begin{enumerate}
+    \item \textbf{AIRBORNE}: No ground contact detected.
+    \item \textbf{GROUND\_CONTACT\_CANDIDATE}: Contact detected; dwell counter incrementing.
+    \item \textbf{LANDED}: Dwell counter exceeds threshold (15 consecutive frames at \SI{120}{\hertz} $= \SI{0.125}{\second}$).
+    \item \textbf{CRASHED}: Crash criteria met (excessive tilt, angular rate, or impact speed).
+\end{enumerate}
+
+Contact is detected via a kinematic proxy: height $< \SI{0.40}{\metre}$ and downward velocity $< \SI{0.50}{\metre\per\second}$. The dwell requirement prevents transient bounces from registering as landings.
+
+\subsection{Wind and Drag Model}
+
+Aerodynamic body drag is modeled as:
+\begin{equation}
+\mathbf{F}_{\text{drag}} = -\frac{1}{2} \rho \, C_d \, A_{\text{ref}} \, |\mathbf{v}_{\text{rel}}|^2 \, \hat{\mathbf{v}}_{\text{rel}}
+\label{eq:drag}
+\end{equation}
+
+\noindent where $C_d = 1.0$ (bluff body estimate), $A_{\text{ref}} = \SI{0.02}{\metre\squared}$, and $\mathbf{v}_{\text{rel}}$ is the body velocity relative to the wind field. The wind model supports steady-state wind vectors and stochastic gust events with configurable magnitude, duration, and interval, though the results presented here use nominal (zero-wind) conditions.
+

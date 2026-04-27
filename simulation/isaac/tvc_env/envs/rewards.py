@@ -156,11 +156,12 @@ def compute_touchdown_softness_reward(env_state, config: dict) -> Tensor:
     Returns:
         Tensor (num_envs,) — softness score [0, 1], higher for softer landing.
     """
-    # Reward based on inverse of downward velocity (FRD z = down)
-    # Lower downward speed at contact = softer landing
+    is_landed = env_state.contact_state == ContactState.LANDED
+    # Reward based on inverse of downward velocity (FRD z = down).
+    # Lower downward speed at touchdown = softer landing.
     downward_speed = env_state.linear_vel_frd[:, 2].clamp(min=0.0)  # (num_envs,)
     softness = torch.exp(-downward_speed)  # Exponential decay with speed
-    return softness
+    return softness * is_landed.float()
 
 
 def compute_landing_success_reward(env_state, config: dict) -> Tensor:
@@ -183,7 +184,12 @@ def compute_pad_accuracy_reward(env_state, config: dict) -> Tensor:
     target = _target_position(env_state, config, [0, 0, 0])  # (num_envs, 3)
     # Horizontal distance from pad center (x, y components, per env)
     horiz_dist = (env_state.position[:, :2] - target[:, :2]).norm(dim=-1)
-    accuracy = torch.exp(-2.0 * horiz_dist)  # Exp decay with horizontal distance
+    # Gentler exponent (exp(-d) vs prior exp(-2d)) keeps the gradient on this
+    # term meaningful at d > 1 m. With exp(-2d) at d=2 m the term collapses to
+    # 0.018 of its peak value, so closing 1 m of lateral offset earns only
+    # ~0.4 of weight — too weak to compete with fin-noise penalties early in
+    # training, leaving the policy in a "land softly anywhere" local optimum.
+    accuracy = torch.exp(-horiz_dist)
     return accuracy * is_landed.float()
 
 

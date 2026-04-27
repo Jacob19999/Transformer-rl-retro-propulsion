@@ -35,7 +35,11 @@
       "Bash(env_isaaclab/Scripts/python simulation/isaac/apps/run_eval_pid.py --task hover --duration 15.0 --log-state --log-pid --log-every 15 --log-decimals 4 --summary-decimals 4)",
       "Bash(echo \"EXIT=$?\")",
       "Bash(env_isaaclab/Scripts/python -c ' *)",
-      "Bash(python -m py_compile apps/run_eval_pid.py tvc_env/controllers/landing_guidance.py tvc_env/envs/rewards.py tvc_env/envs/reward_registry.py tvc_env/envs/direct_rl_env.py)"
+      "Bash(python -m py_compile apps/run_eval_pid.py tvc_env/controllers/landing_guidance.py tvc_env/envs/rewards.py tvc_env/envs/reward_registry.py tvc_env/envs/direct_rl_env.py)",
+      "Bash(python -m pytest -q tests/unit)",
+      "Bash(python -m py_compile simulation/isaac/apps/run_train_ppo.py simulation/isaac/tvc_env/envs/direct_rl_env.py)",
+      "Bash(/c/Transformer-rl-retro-propulsion/env_isaaclab/Scripts/python.exe apps/run_train_ppo.py --task landing --total-steps 5000000 --eval-interval 250000 --save-interval 250000 --eval-seconds 30.0 --max-wall-time 7200 --headless)",
+      "Bash([ -f \"$LOG\" ])"
     ]
   }
 }
