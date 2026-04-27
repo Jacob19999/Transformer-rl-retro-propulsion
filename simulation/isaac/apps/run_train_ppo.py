@@ -60,6 +60,16 @@ def parse_args():
     parser.add_argument("--headless", action="store_true", default=True)
     parser.add_argument("--no-headless", dest="headless", action="store_false")
     parser.add_argument("--fixed-hover-spawn", action="store_true")
+    parser.add_argument(
+        "--body-frame-position-error",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Feed the policy target-current position error in body-FRD coordinates. "
+            "Defaults on for landing so lateral guidance is expressed in the same "
+            "control frame as body velocity and fin authority."
+        ),
+    )
     parser.add_argument("--residual-pid", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--residual-scale", type=float, default=0.05)
     parser.add_argument(
@@ -123,6 +133,8 @@ class LandingEvalMetrics:
 
 def main():
     args = parse_args()
+    if args.body_frame_position_error is None:
+        args.body_frame_position_error = args.task == "landing"
     max_wall_time = args.max_wall_time
     if max_wall_time is None:
         max_wall_time = max(300.0, args.total_steps / 2500.0 + 240.0)
@@ -164,6 +176,8 @@ def main():
         from torch.distributions import Normal
 
         from tvc_env.common.constants import ContactState
+        from tvc_env.common.frames import isaac_position_to_frd
+        from tvc_env.common.quaternions import inverse as quat_inv, normalize, rotate_vector
         from tvc_env.common.quaternions import to_euler
         from tvc_env.controllers.landing_guidance import LandingGuidance
         from tvc_env.controllers.pid_adapter import PIDController
@@ -226,6 +240,22 @@ def main():
                 "Eval uses the final full spawn range.",
                 flush=True,
             )
+        if args.body_frame_position_error:
+            print(
+                "PPO policy observation uses body-FRD position error for obs[0:3]; "
+                "environment observations and PID/guidance adapters remain unchanged.",
+                flush=True,
+            )
+
+        def policy_observation(obs_raw: torch.Tensor) -> torch.Tensor:
+            if not args.body_frame_position_error:
+                return obs_raw
+            obs_policy = obs_raw.clone()
+            pos_error_world = obs_policy[:, 0:3]
+            q_inv = quat_inv(normalize(obs_policy[:, 3:7]))
+            pos_error_body_isaac = rotate_vector(q_inv, pos_error_world)
+            obs_policy[:, 0:3] = isaac_position_to_frd(pos_error_body_isaac)
+            return obs_policy
 
         def atanh_clamped(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
             x = x.clamp(-1.0 + eps, 1.0 - eps)
@@ -378,7 +408,9 @@ def main():
             omega_max = max(float(env._omega_max), 1.0)
             with torch.no_grad():
                 for step in range(n_steps):
-                    raw_action, _, _, _ = policy.get_action_and_value(obs, deterministic=True)
+                    raw_action, _, _, _ = policy.get_action_and_value(
+                        policy_observation(obs), deterministic=True
+                    )
                     env_action = raw_to_env_action(raw_action, obs, eval_pid, eval_guidance)
                     throttle = env_action[:, 4]
                     throttle_sum += float(throttle.sum().item())
@@ -459,7 +491,9 @@ def main():
             rates: list[float] = []
             with torch.no_grad():
                 for _ in range(n_steps):
-                    raw_action, _, _, _ = policy.get_action_and_value(obs, deterministic=True)
+                    raw_action, _, _, _ = policy.get_action_and_value(
+                        policy_observation(obs), deterministic=True
+                    )
                     obs_dict, _, done, trunc, _ = env.step(
                         raw_to_env_action(raw_action, obs, eval_pid, eval_guidance)
                     )
@@ -513,7 +547,7 @@ def main():
                     if bc_guidance is not None:
                         teacher_action = bc_guidance.post_action(teacher_action, obs)
                     target_raw = env_to_raw_action(teacher_action)
-                pred_latent, _value = model(obs)
+                pred_latent, _value = model(policy_observation(obs))
                 pred_raw = torch.tanh(pred_latent)
                 loss = F.mse_loss(pred_raw, target_raw)
                 optimizer.zero_grad(set_to_none=True)
@@ -573,9 +607,10 @@ def main():
             spawn_curriculum = set_training_spawn(global_step)
             for t in range(rollout_steps):
                 global_step += num_envs
-                obs_buf[t] = obs
+                obs_policy = policy_observation(obs)
+                obs_buf[t] = obs_policy
                 with torch.no_grad():
-                    action_raw, logprob, _entropy, value = model.get_action_and_value(obs)
+                    action_raw, logprob, _entropy, value = model.get_action_and_value(obs_policy)
                 action_buf[t] = action_raw
                 logprob_buf[t] = logprob
                 value_buf[t] = value
@@ -596,7 +631,7 @@ def main():
                 simulation_app.update()
 
             with torch.no_grad():
-                _next_mean, next_value = model(obs)
+                _next_mean, next_value = model(policy_observation(obs))
                 advantages = torch.zeros_like(reward_buf)
                 lastgaelam = torch.zeros(num_envs, device=device)
                 for t in reversed(range(rollout_steps)):

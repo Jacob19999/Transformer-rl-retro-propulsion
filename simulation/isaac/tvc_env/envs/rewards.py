@@ -165,13 +165,19 @@ def compute_touchdown_softness_reward(env_state, config: dict) -> Tensor:
 
 
 def compute_landing_success_reward(env_state, config: dict) -> Tensor:
-    """One-time reward for successfully landing (LANDED state).
+    """One-time reward for landing inside the configured pad radius.
 
-    Returns:
-        Tensor (num_envs,) — 1.0 if LANDED, else 0.0.
+    The task success criterion is LANDED plus ``success.max_pad_distance``.
+    Paying this reward for every LANDED contact let PPO learn the easier
+    "touch down softly anywhere" strategy seen in fix4/curriculum eval logs.
     """
     is_landed = env_state.contact_state == ContactState.LANDED
-    return is_landed.float()
+    task = config.get("task", config)
+    max_pad_distance = float(task.get("success", {}).get("max_pad_distance", 0.5))
+    target = _target_position(env_state, config, [0, 0, 0])
+    horiz_dist = (env_state.position[:, :2] - target[:, :2]).norm(dim=-1)
+    on_pad = horiz_dist <= max_pad_distance
+    return (is_landed & on_pad).float()
 
 
 def compute_pad_accuracy_reward(env_state, config: dict) -> Tensor:
@@ -191,6 +197,33 @@ def compute_pad_accuracy_reward(env_state, config: dict) -> Tensor:
     # training, leaving the policy in a "land softly anywhere" local optimum.
     accuracy = torch.exp(-horiz_dist)
     return accuracy * is_landed.float()
+
+
+def compute_off_pad_landing_penalty(env_state, config: dict) -> Tensor:
+    """Terminal indicator for LANDED contacts outside the success pad radius."""
+    is_landed = env_state.contact_state == ContactState.LANDED
+    task = config.get("task", config)
+    max_pad_distance = float(task.get("success", {}).get("max_pad_distance", 0.5))
+    target = _target_position(env_state, config, [0, 0, 0])
+    horiz_dist = (env_state.position[:, :2] - target[:, :2]).norm(dim=-1)
+    off_pad = horiz_dist > max_pad_distance
+    return (is_landed & off_pad).float()
+
+
+def compute_horizontal_closure_reward(env_state, config: dict) -> Tensor:
+    """Dense reward for horizontal velocity that closes distance to the pad.
+
+    Positive values mean the vehicle is moving toward the pad center; negative
+    values mean it is drifting away. This targets the diagnosed failure mode in
+    fix4/curriculum runs: vertical touchdown is learned, but lateral error does
+    not reliably decrease before contact.
+    """
+    target = _target_position(env_state, config, [0, 0, 0])
+    to_target_xy = target[:, :2] - env_state.position[:, :2]
+    dist = to_target_xy.norm(dim=-1).clamp(min=1e-6)
+    direction_to_target = to_target_xy / dist.unsqueeze(-1)
+    closing_speed = (env_state.linear_vel_world[:, :2] * direction_to_target).sum(dim=-1)
+    return closing_speed.clamp(min=-3.0, max=3.0)
 
 
 def compute_vertical_speed_shaping(env_state, config: dict) -> Tensor:

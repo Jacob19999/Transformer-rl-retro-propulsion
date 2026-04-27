@@ -89,6 +89,8 @@ def main():
         from torch.distributions import Normal
 
         from tvc_env.common.constants import ContactState
+        from tvc_env.common.frames import isaac_position_to_frd
+        from tvc_env.common.quaternions import inverse as quat_inv, normalize, rotate_vector
         from tvc_env.envs.base_env import BaseEnvConfig
         from tvc_env.envs.direct_rl_env import TVCDirectRLEnv
 
@@ -146,6 +148,8 @@ def main():
         if not ckpt_path.exists():
             raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
         ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+        train_args = ckpt.get("args", {})
+        body_frame_position_error = bool(train_args.get("body_frame_position_error", False))
         model = ActorCritic().to(device)
         model.load_state_dict(ckpt["model"])
         model.eval()
@@ -155,6 +159,16 @@ def main():
             f"running {args.episodes} episodes in single env, headless={args.headless}.",
             flush=True,
         )
+
+        def policy_observation(obs_raw: torch.Tensor) -> torch.Tensor:
+            if not body_frame_position_error:
+                return obs_raw
+            obs_policy = obs_raw.clone()
+            pos_error_world = obs_policy[:, 0:3]
+            q_inv = quat_inv(normalize(obs_policy[:, 3:7]))
+            pos_error_body_isaac = rotate_vector(q_inv, pos_error_world)
+            obs_policy[:, 0:3] = isaac_position_to_frd(pos_error_body_isaac)
+            return obs_policy
 
         out_dir = None
         if args.output_dir is not None:
@@ -180,7 +194,7 @@ def main():
 
             with torch.no_grad():
                 while step < max_episode_steps:
-                    raw_action = model.deterministic_action(obs)
+                    raw_action = model.deterministic_action(policy_observation(obs))
                     env_action = raw_to_env_action(raw_action)
                     throttle_sum += float(env_action[:, 4].sum().item())
                     throttle_count += int(env_action.shape[0])

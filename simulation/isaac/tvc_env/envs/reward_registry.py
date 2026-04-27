@@ -24,6 +24,8 @@ from tvc_env.envs.rewards import (
     compute_touchdown_softness_reward,
     compute_landing_success_reward,
     compute_pad_accuracy_reward,
+    compute_off_pad_landing_penalty,
+    compute_horizontal_closure_reward,
     compute_vertical_speed_shaping,
     compute_delta_v_cost,
 )
@@ -49,6 +51,8 @@ _REGISTRY: dict[str, Callable] = {
     "touchdown_softness": compute_touchdown_softness_reward,
     "landing_success": compute_landing_success_reward,
     "pad_accuracy": compute_pad_accuracy_reward,
+    "off_pad_landing_penalty": compute_off_pad_landing_penalty,
+    "horizontal_closure": compute_horizontal_closure_reward,
     "vertical_speed_shaping": compute_vertical_speed_shaping,
     "delta_v_cost": compute_delta_v_cost,
 }

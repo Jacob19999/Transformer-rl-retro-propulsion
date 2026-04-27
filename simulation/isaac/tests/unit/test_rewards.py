@@ -4,7 +4,13 @@ import torch
 from types import SimpleNamespace
 
 from tvc_env.common.constants import ContactState
-from tvc_env.envs.rewards import compute_pad_accuracy_reward, compute_touchdown_softness_reward
+from tvc_env.envs.rewards import (
+    compute_horizontal_closure_reward,
+    compute_landing_success_reward,
+    compute_off_pad_landing_penalty,
+    compute_pad_accuracy_reward,
+    compute_touchdown_softness_reward,
+)
 
 
 def _state(positions: torch.Tensor, contact: torch.Tensor) -> SimpleNamespace:
@@ -91,3 +97,85 @@ def test_touchdown_softness_reward_only_pays_when_landed():
 
     assert torch.allclose(reward[:2], torch.zeros(2))
     assert torch.allclose(reward[2], torch.exp(torch.tensor(-0.2)))
+
+
+def test_landing_success_reward_requires_pad_radius():
+    target = torch.zeros(3, 3)
+    positions = torch.tensor(
+        [
+            [0.25, 0.0, 0.0],
+            [0.75, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+    contact = torch.tensor([ContactState.LANDED, ContactState.LANDED, ContactState.AIRBORNE])
+    state = _state(positions, contact)
+
+    reward = compute_landing_success_reward(
+        state,
+        {
+            "_target_position_world": target,
+            "task": {"success": {"max_pad_distance": 0.5}},
+        },
+    )
+
+    assert torch.allclose(reward, torch.tensor([1.0, 0.0, 0.0]))
+
+
+def test_horizontal_closure_reward_sign_tracks_pad_closing_velocity():
+    target = torch.zeros(3, 3)
+    positions = torch.tensor(
+        [
+            [1.0, 0.0, 2.0],
+            [1.0, 0.0, 2.0],
+            [0.0, 0.0, 2.0],
+        ],
+        dtype=torch.float32,
+    )
+    contact = torch.full((3,), ContactState.AIRBORNE)
+    state = _state(positions, contact)
+    state.linear_vel_world = torch.tensor(
+        [
+            [-0.4, 0.0, 0.0],  # toward target
+            [0.4, 0.0, 0.0],   # away from target
+            [0.4, 0.0, 0.0],   # at target, direction degenerates to zero
+        ],
+        dtype=torch.float32,
+    )
+
+    reward = compute_horizontal_closure_reward(state, {"_target_position_world": target})
+
+    assert torch.allclose(reward, torch.tensor([0.4, -0.4, 0.0]), atol=1e-6)
+
+
+def test_off_pad_landing_penalty_only_flags_landed_outside_pad():
+    target = torch.zeros(4, 3)
+    positions = torch.tensor(
+        [
+            [0.25, 0.0, 0.0],
+            [0.75, 0.0, 0.0],
+            [0.75, 0.0, 0.0],
+            [0.75, 0.0, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+    contact = torch.tensor(
+        [
+            ContactState.LANDED,
+            ContactState.LANDED,
+            ContactState.AIRBORNE,
+            ContactState.CRASHED,
+        ]
+    )
+    state = _state(positions, contact)
+
+    penalty = compute_off_pad_landing_penalty(
+        state,
+        {
+            "_target_position_world": target,
+            "task": {"success": {"max_pad_distance": 0.5}},
+        },
+    )
+
+    assert torch.allclose(penalty, torch.tensor([0.0, 1.0, 0.0, 0.0]))

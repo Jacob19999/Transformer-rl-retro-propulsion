@@ -1,0 +1,530 @@
+PPO training starting: task=landing, total_steps=5000000, bc_steps=0, headless=True
+[Info] [carb] Logging to file: c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/logs/Kit/Isaac-Sim Python/5.1/kit_20260426_213018.log
+[0.388s] [ext: omni.kit.async_engine-0.0.3] startup
+[0.593s] [ext: omni.metrics.core-0.0.3] startup
+[0.596s] [ext: omni.client.lib-1.1.0] startup
+[0.712s] [ext: omni.blobkey-1.1.2] startup
+[0.715s] [ext: omni.stats-1.0.1] startup
+[0.725s] [ext: omni.datastore-0.0.0] startup
+[0.733s] [ext: omni.client-1.3.0] startup
+[0.856s] [ext: omni.ujitso.default-1.0.0] startup
+[0.866s] [ext: omni.hsscclient-1.1.2] startup
+[0.895s] [ext: omni.gpu_foundation.shadercache.vulkan-1.0.0] startup
+[0.902s] [ext: omni.assets.plugins-0.0.0] startup
+[0.916s] [ext: omni.gpu_foundation-0.0.0] startup
+[1.028s] [ext: carb.windowing.plugins-1.0.0] startup
+2026-04-27T02:30:19Z [1,723ms] [Warning] [carb.windowing-glfw.gamepad] Joystick with unknown remapping detected (will be ignored):  Saitek Pro Flight Rudder Pedals [03000000a30600006307000000000000]
+2026-04-27T02:30:19Z [1,723ms] [Warning] [carb.windowing-glfw.gamepad] Joystick with unknown remapping detected (will be ignored):  3Dconnexion KMJ Emulator [03000000efbe00006d04000000000000]
+2026-04-27T02:30:19Z [1,723ms] [Warning] [carb.windowing-glfw.gamepad] Joystick with unknown remapping detected (will be ignored):  Joystick - HOTAS Warthog [030000004f0400000204000000000000]
+[2.024s] [ext: omni.kit.renderer.init-0.0.0] startup
+[2.029s] [ext: omni.materialx.libs-1.0.7] startup
+[2.093s] [ext: omni.usd.config-1.0.6] startup
+[2.125s] [ext: omni.gpucompute.plugins-0.0.0] startup
+[2.150s] [ext: omni.usd.libs-1.0.1] startup
+[2.784s] [ext: omni.mdl-56.0.3] startup
+[3.120s] [ext: omni.iray.libs-0.0.0] startup
+
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 580.88        | Graphics API: Vulkan
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA GeForce RTX 5070          | Yes: 0 |     | 11855   MB | 10de      | b42b0100.. |
+|     |                                  |        |     |            | 2f04      | 36fdc134.. |
+|     |                                  |        |     |            | 1         |            |
+|=============================================================================================|
+| OS: Windows 11 Pro, Version: 10.0 (25H2), Build: 26200, Kernel: 10.0.26100.8246
+| Processor: AMD Ryzen 9 9900X 12-Core Processor            
+| Cores: 12 | Logical Cores: 24
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 32360 | Free Memory: 13669
+| Total Page/Swap (MB): 51688 | Free Page/Swap: 12609
+|---------------------------------------------------------------------------------------------|
+[3.341s] [ext: omni.mdl.neuraylib-0.2.12] startup
+[3.363s] [ext: omni.kit.usd.mdl-1.1.5] startup
+[3.915s] [ext: omni.kit.pipapi-0.0.0] startup
+[3.917s] [ext: omni.kit.loop-isaac-1.3.7] startup
+[3.923s] [ext: omni.kit.test-2.0.1] startup
+[4.098s] [ext: omni.kit.telemetry-0.5.2] startup
+[4.177s] [ext: omni.appwindow-1.1.10] startup
+[4.190s] [ext: omni.kit.renderer.core-1.1.0] startup
+[4.206s] [ext: omni.kit.renderer.capture-0.0.0] startup
+[4.222s] [ext: omni.kit.renderer.imgui-2.0.5] startup
+[4.266s] [ext: omni.ui-2.27.1] startup
+[4.306s] [ext: omni.kit.mainwindow-1.0.3] startup
+[4.312s] [ext: carb.audio-0.1.0] startup
+[4.317s] [ext: omni.uiaudio-1.0.0] startup
+[4.325s] [ext: omni.kit.uiapp-0.0.0] startup
+[4.325s] [ext: omni.usd.schema.metrics.assembler-107.3.1] startup
+[4.344s] [ext: omni.anim.navigation.schema-107.3.3] startup
+[4.365s] [ext: omni.usd.schema.anim-0.0.0] startup
+[4.472s] [ext: omni.usd.schema.audio-0.0.0] startup
+[4.487s] [ext: omni.usd.schema.omniscripting-1.0.0] startup
+[4.506s] [ext: omni.usd.schema.physx-107.3.26] startup
+[4.615s] [ext: omni.usd_resolver-1.0.0] startup
+[4.641s] [ext: omni.usd.core-1.5.3] startup
+[4.647s] [ext: omni.usd.schema.omni_sensors-0.0.0] startup
+[4.718s] [ext: omni.usd.schema.omnigraph-1.0.0] startup
+[4.749s] [ext: omni.usd.schema.semantics-0.0.0] startup
+[4.769s] [ext: omni.usd.schema.geospatial-0.0.0] startup
+[4.790s] [ext: omni.kit.window.popup_dialog-2.0.24] startup
+[4.804s] [ext: omni.activity.core-1.0.3] startup
+[4.811s] [ext: omni.kit.widget.nucleus_connector-2.0.1] startup
+[4.818s] [ext: omni.kit.usd_undo-0.1.8] startup
+[4.819s] [ext: omni.graph.exec-0.9.6] startup
+[4.823s] [ext: omni.kit.actions.core-1.0.0] startup
+[4.836s] [ext: usdrt.scenegraph-7.6.1] startup
+[5.015s] [ext: omni.resourcemonitor-107.0.1] startup
+[5.024s] [ext: omni.kit.exec.core-0.13.4] startup
+[5.036s] [ext: omni.timeline-1.0.14] startup
+[5.044s] [ext: omni.kit.commands-1.4.10] startup
+[5.061s] [ext: omni.kit.audiodeviceenum-1.0.2] startup
+[5.070s] [ext: omni.hydra.usdrt_delegate-7.5.1] startup
+[5.102s] [ext: omni.hydra.scene_delegate-0.3.4] startup
+[5.114s] [ext: omni.usd-1.13.10] startup
+[6.775s] [ext: omni.inspect-1.0.2] startup
+[6.789s] [ext: omni.kit.notification_manager-1.0.10] startup
+[6.796s] [ext: omni.graph.core-2.184.5] startup
+[6.815s] [ext: isaacsim.core.deprecation_manager-0.2.7] startup
+[6.818s] [ext: omni.anim.graph.schema-107.3.3] startup
+[6.856s] [ext: omni.usd.schema.flow-107.1.1] startup
+[6.859s] [ext: omni.usd.schema.isaac-3.0.5] startup
+[6.859s] [ext: omni.usd.schema.omni_lens_distortion-0.0.0] startup
+[6.862s] [ext: isaacsim.robot.schema-3.6.0] startup
+[6.951s] [ext: omni.kit.asset_converter-5.0.17] startup
+[7.012s] [ext: omni.usd.schema.render_settings.rtx-0.0.0] startup
+[7.016s] [ext: omni.kit.helper.file_utils-0.1.9] startup
+[7.021s] [ext: omni.kit.menu.core-1.1.2] startup
+[7.023s] [ext: omni.kit.widget.path_field-2.0.11] startup
+[7.028s] [ext: omni.kit.widget.filebrowser-2.12.3] startup
+[7.052s] [ext: omni.kit.widget.context_menu-1.2.5] startup
+[7.056s] [ext: omni.kit.widget.browser_bar-2.0.10] startup
+[7.060s] [ext: omni.kit.clipboard-1.0.5] startup
+[7.064s] [ext: omni.kit.widget.options_menu-1.1.6] startup
+[7.077s] [ext: omni.ui.scene-1.11.5] startup
+[7.095s] [ext: omni.kit.widget.options_button-1.0.3] startup
+[7.099s] [ext: omni.kit.usd.layers-2.2.11] startup
+[7.130s] [ext: omni.kit.window.filepicker-2.13.4] startup
+[7.193s] [ext: omni.kit.widget.filter-1.1.4] startup
+[7.196s] [ext: omni.kit.hotkeys.core-1.3.10] startup
+[7.209s] [ext: omni.kit.context_menu-1.8.6] startup
+[7.214s] [ext: omni.kit.property.adapter.core-1.0.2] startup
+[7.224s] [ext: omni.kit.window.file_exporter-1.0.33] startup
+[7.236s] [ext: omni.kit.widget.searchfield-1.1.8] startup
+[7.240s] [ext: omni.kit.numpy.common-0.1.3] startup
+[7.245s] [ext: omni.kit.widget.stage-3.1.4] startup
+[7.291s] [ext: omni.kit.property.adapter.usd-1.0.2] startup
+[7.295s] [ext: omni.kit.property.adapter.fabric-1.0.3] startup
+[7.300s] [ext: isaacsim.core.version-2.0.6] startup
+[7.302s] [ext: omni.kit.window.file_importer-1.1.18] startup
+[7.304s] [ext: omni.kit.stage_template.core-1.1.22] startup
+[7.306s] [ext: omni.kit.menu.utils-2.0.5] startup
+[7.316s] [ext: omni.kit.window.file-2.0.5] startup
+[7.325s] [ext: omni.kit.window.drop_support-1.0.5] startup
+[7.326s] [ext: omni.kit.widget.highlight_label-1.0.3] startup
+[7.329s] [ext: omni.kit.window.content_browser_registry-0.0.6] startup
+[7.331s] [ext: omni.kit.widget.graph-2.0.0] startup
+[7.347s] [ext: omni.kit.window.property-1.12.1] startup
+[7.442s] [ext: omni.kit.window.content_browser-3.1.3] startup
+[7.464s] [ext: omni.kit.graph.delegate.default-1.2.3] startup
+[7.465s] [ext: omni.kit.property.usd-4.5.12] startup
+[7.491s] [ext: omni.convexdecomposition-107.3.26] startup
+[7.504s] [ext: omni.kit.graph.editor.core-1.5.3] startup
+[7.513s] [ext: omni.kit.material.library-2.0.7] startup
+[7.535s] [ext: omni.kvdb-107.3.26] startup
+[7.547s] [ext: omni.usdphysics-107.3.26] startup
+[7.553s] [ext: omni.physx.foundation-107.3.26] startup
+[7.569s] [ext: omni.localcache-107.3.26] startup
+[7.578s] [ext: omni.kit.graph.usd.commands-1.3.1] startup
+[7.580s] [ext: omni.physx.cooking-107.3.26] startup
+[7.598s] [ext: omni.physics-107.3.26] startup
+[7.612s] [ext: omni.physx-107.3.26] startup
+[7.651s] [ext: omni.physics.stageupdate-107.3.26] startup
+[7.660s] [ext: omni.physics.physx-107.3.26] startup
+2026-04-27T02:30:25Z [7,363ms] [Warning] [carb] Acquiring non optional plugin interface which is not listed as dependency: [omni::physx::IPhysxBenchmarks v1.0] (plugin: <default plugin>), by client: omni.physics.physx.plugin. Add it to CARB_PLUGIN_IMPL_DEPS() macro of a client.
+[7.664s] [ext: omni.index.libs-380600.8087.0] startup
+[7.664s] [ext: omni.index-1.0.1] startup
+[7.667s] [ext: omni.volume-0.5.2] startup
+[7.699s] [ext: omni.ujitso.client-0.0.0] startup
+[7.702s] [ext: omni.hydra.rtx.shadercache.vulkan-1.0.0] startup
+[7.707s] [ext: omni.kit.widget.searchable_combobox-1.0.6] startup
+[7.711s] [ext: omni.hydra.rtx-1.0.0] startup
+[7.928s] [ext: omni.kit.widget.settings-1.2.6] startup
+[7.933s] [ext: omni.kit.hydra_texture-1.4.6] startup
+[7.941s] [ext: omni.graph.tools-1.79.2] startup
+[8.013s] [ext: omni.kit.window.preferences-1.8.0] startup
+[8.033s] [ext: omni.kit.widget.material_preview-1.0.16] startup
+[8.038s] [ext: omni.graph-1.141.2] startup
+[8.131s] [ext: omni.kit.window.material_graph-1.9.1] startup
+[8.156s] [ext: omni.isaac.dynamic_control-2.0.7] startup
+2026-04-27T02:30:26Z [7,876ms] [Warning] [omni.isaac.dynamic_control] omni.isaac.dynamic_control is deprecated as of Isaac Sim 4.5. No action is needed from end-users.
+[8.178s] [ext: isaacsim.storage.native-1.5.1] startup
+[8.185s] [ext: omni.graph.scriptnode-1.50.0] startup
+[8.189s] [ext: omni.hydra.engine.stats-1.0.3] startup
+[8.196s] [ext: omni.kit.viewport.legacy_gizmos-1.0.19] startup
+[8.202s] [ext: omni.kit.raycast.query-1.1.0] startup
+[8.215s] [ext: omni.graph.action_core-1.1.7] startup
+[8.246s] [ext: omni.kit.viewport.scene_camera_model-1.0.6] startup
+[8.254s] [ext: omni.graph.image.core-0.6.1] startup
+[8.259s] [ext: omni.kit.widget.viewport-107.1.3] startup
+[8.280s] [ext: omni.kit.viewport.registry-104.0.6] startup
+[8.283s] [ext: omni.usd.metrics.assembler-107.3.1] startup
+[8.302s] [ext: omni.kit.viewport.window-107.2.0] startup
+[8.344s] [ext: omni.kit.viewport.menubar.core-107.2.1] startup
+[8.393s] [ext: omni.graph.image.nodes-1.3.1] startup
+[8.403s] [ext: omni.usd.metrics.assembler.physics-107.3.26] startup
+[8.409s] [ext: omni.warp.core-1.8.2] startup
+[8.608s] [ext: omni.kit.viewport.utility-1.1.2] startup
+[8.611s] [ext: omni.physics.tensors-107.3.26] startup
+[8.629s] [ext: omni.syntheticdata-0.6.13] startup
+[8.693s] [ext: isaacsim.test.docstring-1.1.0] startup
+[8.710s] [ext: isaacsim.core.utils-3.5.1] startup
+[8.722s] [ext: omni.physx.tensors-107.3.26] startup
+[8.730s] [ext: omni.graph.nodes-1.170.10] startup
+[8.837s] [ext: omni.graph.action_nodes-1.50.4] startup
+[8.850s] [ext: omni.kit.primitive.mesh-1.0.17] startup
+[8.869s] [ext: isaacsim.core.simulation_manager-1.4.4] startup
+[13.637s] [ext: omni.graph.ui_nodes-1.50.5] startup
+[13.651s] [ext: omni.graph.action-1.130.0] startup
+[13.653s] [ext: omni.kit.stage_templates-2.0.0] startup
+[13.664s] [ext: isaacsim.core.prims-0.6.1] startup
+[13.710s] [ext: omni.warp-1.8.2] startup
+[13.725s] [ext: omni.videoencoding-0.1.2] startup
+[13.741s] [ext: isaacsim.core.api-4.8.0] startup
+[13.814s] [ext: isaacsim.core.experimental.utils-0.3.0] startup
+[13.830s] [ext: omni.replicator.core-1.12.27] startup
+2026-04-27T02:30:31Z [13,590ms] [Warning] [pxr.Semantics] pxr.Semantics is deprecated - please use Semantics instead
+2026-04-27T02:30:32Z [14,106ms] [Warning] [omni.graph.core.plugin] Found duplicate of category 'Replicator' - was 'Annotators', adding 'Fabric Reader'
+2026-04-27T02:30:32Z [14,106ms] [Warning] [omni.graph.core.plugin] Category 'Replicator' not accepted on node type 'omni.replicator.core.FabricReader' in extension 'omni.replicator.core'
+2026-04-27T02:30:32Z [14,110ms] [Warning] [omni.replicator.core.scripts.extension] No material configuration file, adding configuration to material settings directly.
+[14.415s] [ext: isaacsim.core.experimental.prims-0.8.1] startup
+[14.488s] [ext: omni.kit.window.extensions-1.4.27] startup
+[14.516s] [ext: isaacsim.core.experimental.objects-0.4.0] startup
+[14.541s] [ext: omni.ui_query-1.1.8] startup
+[14.545s] [ext: omni.kit.manipulator.viewport-107.0.1] startup
+[14.551s] [ext: isaacsim.robot.surface_gripper-3.3.1] startup
+[14.569s] [ext: omni.kit.ui_test-1.3.7] startup
+[14.582s] [ext: omni.graph.visualization.nodes-2.1.3] startup
+[14.625s] [ext: isaacsim.robot_motion.lula-4.0.8] startup
+[14.695s] [ext: isaacsim.core.nodes-3.4.3] startup
+[14.732s] [ext: isaacsim.gui.components-1.2.1] startup
+[14.755s] [ext: isaacsim.robot_motion.motion_generation-8.0.26] startup
+[14.791s] [ext: isaacsim.robot.manipulators-3.3.6] startup
+[14.807s] [ext: isaacsim.core.experimental.materials-0.4.0] startup
+[14.835s] [ext: isaacsim.robot.manipulators.examples-1.1.2] startup
+[14.838s] [ext: isaacsim.cortex.framework-1.0.12] startup
+[14.848s] [ext: isaacsim.cortex.behaviors-2.0.14] startup
+[14.850s] [ext: omni.isaac.cortex.sample_behaviors-2.0.5] startup
+2026-04-27T02:30:32Z [14,555ms] [Warning] [omni.isaac.cortex] omni.isaac.cortex has been deprecated in favor of isaacsim.cortex.framework. Please update your code accordingly.
+2026-04-27T02:30:32Z [14,557ms] [Warning] [omni.isaac.cortex.sample_behaviors] omni.isaac.cortex.sample_behaviors has been deprecated in favor of isaacsim.cortex.behaviors. Please update your code accordingly.
+[14.866s] [ext: omni.kit.widget.zoombar-1.0.6] startup
+[14.878s] [ext: isaacsim.gui.content_browser-0.1.11] startup
+[14.895s] [ext: omni.kit.browser.core-2.3.13] startup
+[14.936s] [ext: omni.kit.widget.stage_icons-1.0.8] startup
+[14.940s] [ext: omni.kit.widget.prompt-1.0.7] startup
+[14.948s] [ext: omni.kit.usd.collect-2.4.5] startup
+[14.960s] [ext: omni.kit.browser.folder.core-1.10.9] startup
+[14.997s] [ext: omni.kit.window.stage-2.6.1] startup
+[15.036s] [ext: omni.kit.usdz_export-1.0.9] startup
+[15.045s] [ext: omni.kit.tool.collect-2.2.18] startup
+[15.060s] [ext: omni.kit.menu.stage-1.2.7] startup
+[15.065s] [ext: omni.kit.tool.asset_importer-4.3.2] startup
+[15.094s] [ext: isaacsim.robot.wheeled_robots-4.0.24] startup
+[15.170s] [ext: isaacsim.examples.browser-0.2.1] startup
+[15.192s] [ext: isaacsim.asset.importer.urdf-2.4.30] startup
+[15.630s] [ext: omni.isaac.wheeled_robots-3.0.7] startup
+2026-04-27T02:30:33Z [15,333ms] [Warning] [omni.isaac.wheeled_robots] omni.isaac.wheeled_robots has been deprecated in favor of isaacsim.robot.wheeled_robots. Please update your code accordingly.
+2026-04-27T02:30:33Z [15,334ms] [Warning] [omni.isaac.wheeled_robots.controllers] omni.isaac.wheeled_robots has been deprecated in favor of isaacsim.robot.wheeled_robots. Please update your code accordingly.
+2026-04-27T02:30:33Z [15,335ms] [Warning] [omni.isaac.wheeled_robots.controllers.ackermann_controller] omni.isaac.wheeled_robots has been deprecated in favor of isaacsim.robot.wheeled_robots. Please update your code accordingly.
+2026-04-27T02:30:33Z [15,338ms] [Warning] [omni.isaac.wheeled_robots.controllers.differential_controller] omni.isaac.wheeled_robots has been deprecated in favor of isaacsim.robot.wheeled_robots. Please update your code accordingly.
+2026-04-27T02:30:33Z [15,341ms] [Warning] [omni.isaac.wheeled_robots.controllers.holonomic_controller] omni.isaac.wheeled_robots has been deprecated in favor of isaacsim.robot.wheeled_robots. Please update your code accordingly.
+2026-04-27T02:30:33Z [15,342ms] [Warning] [omni.isaac.wheeled_robots.controllers.quintic_path_planner] omni.isaac.wheeled_robots has been deprecated in favor of isaacsim.robot.wheeled_robots. Please update your code accordingly.
+2026-04-27T02:30:33Z [15,343ms] [Warning] [omni.isaac.wheeled_robots.controllers.stanley_control] omni.isaac.wheeled_robots has been deprecated in favor of isaacsim.robot.wheeled_robots. Please update your code accordingly.
+2026-04-27T02:30:33Z [15,344ms] [Warning] [omni.isaac.wheeled_robots.controllers.wheel_base_pose_controller] omni.isaac.wheeled_robots has been deprecated in favor of isaacsim.robot.wheeled_robots. Please update your code accordingly.
+2026-04-27T02:30:33Z [15,345ms] [Warning] [omni.isaac.wheeled_robots.impl] omni.isaac.wheeled_robots has been deprecated in favor of isaacsim.robot.wheeled_robots. Please update your code accordingly.
+2026-04-27T02:30:33Z [15,346ms] [Warning] [omni.isaac.wheeled_robots.robots] omni.isaac.wheeled_robots has been deprecated in favor of isaacsim.robot.wheeled_robots. Please update your code accordingly.
+2026-04-27T02:30:33Z [15,346ms] [Warning] [omni.isaac.wheeled_robots.robots.holonomic_robot_usd_setup] omni.isaac.wheeled_robots has been deprecated in favor of isaacsim.robot.wheeled_robots. Please update your code accordingly.
+2026-04-27T02:30:33Z [15,347ms] [Warning] [omni.isaac.wheeled_robots.robots.wheeled_robot] omni.isaac.wheeled_robots has been deprecated in favor of isaacsim.robot.wheeled_robots. Please update your code accordingly.
+[15.647s] [ext: isaacsim.simulation_app-2.12.2] startup
+[15.650s] [ext: omni.isaac.franka-1.0.7] startup
+2026-04-27T02:30:33Z [15,351ms] [Warning] [omni.isaac.franka] omni.isaac.franka has been deprecated in favor of isaacsim.robot.manipulators.examples.franka. Please update your code accordingly.
+2026-04-27T02:30:33Z [15,352ms] [Warning] [omni.isaac.franka.franka] omni.isaac.franka has been deprecated in favor of isaacsim.robot.manipulators.examples.franka. Please update your code accordingly.
+2026-04-27T02:30:33Z [15,374ms] [Warning] [omni.isaac.franka.kinematics_solver] omni.isaac.franka has been deprecated in favor of isaacsim.robot.manipulators.examples.franka. Please update your code accordingly.
+[15.674s] [ext: omni.isaac.kit-2.0.6] startup
+2026-04-27T02:30:33Z [15,378ms] [Warning] [omni.isaac.kit] omni.isaac.kit has been deprecated in favor of isaacsim.simulation_app. Please update your code accordingly.
+[15.678s] [ext: omni.kit.selection-0.1.6] startup
+[15.682s] [ext: omni.isaac.lula-4.0.6] startup
+2026-04-27T02:30:33Z [15,384ms] [Warning] [omni.isaac.lula] omni.isaac.lula has been deprecated in favor of isaacsim.robot_motion.lula. Please update your code accordingly.
+[15.685s] [ext: isaacsim.robot_motion.lula_test_widget-1.0.12] startup
+[15.691s] [ext: isaacsim.asset.browser-1.3.23] startup
+[16.492s] [ext: omni.kit.viewport.actions-107.0.2] startup
+[16.501s] [ext: isaacsim.gui.menu-2.4.4] startup
+[16.522s] [ext: omni.isaac.manipulators-3.0.7] startup
+2026-04-27T02:30:34Z [16,224ms] [Warning] [omni.isaac.manipulators] omni.isaac.manipulators has been deprecated in favor of isaacsim.robot.manipulators. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,225ms] [Warning] [omni.isaac.manipulators.controllers] omni.isaac.manipulators has been deprecated in favor of isaacsim.robot.manipulators. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,228ms] [Warning] [omni.isaac.manipulators.controllers.pick_place_controller] omni.isaac.manipulators has been deprecated in favor of isaacsim.robot.manipulators. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,231ms] [Warning] [omni.isaac.manipulators.controllers.stacking_controller] omni.isaac.manipulators has been deprecated in favor of isaacsim.robot.manipulators. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,231ms] [Warning] [omni.isaac.manipulators.grippers] omni.isaac.manipulators has been deprecated in favor of isaacsim.robot.manipulators. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,232ms] [Warning] [omni.isaac.manipulators.grippers.gripper] omni.isaac.manipulators has been deprecated in favor of isaacsim.robot.manipulators. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,232ms] [Warning] [omni.isaac.manipulators.grippers.parallel_gripper] omni.isaac.manipulators has been deprecated in favor of isaacsim.robot.manipulators. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,233ms] [Warning] [omni.isaac.manipulators.grippers.surface_gripper] omni.isaac.manipulators has been deprecated in favor of isaacsim.robot.manipulators. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,234ms] [Warning] [omni.isaac.manipulators.manipulators] omni.isaac.manipulators has been deprecated in favor of isaacsim.robot.manipulators. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,235ms] [Warning] [omni.isaac.manipulators.manipulators.single_manipulator] omni.isaac.manipulators has been deprecated in favor of isaacsim.robot.manipulators. Please update your code accordingly.
+[16.536s] [ext: omni.isaac.lula_test_widget-1.0.6] startup
+2026-04-27T02:30:34Z [16,239ms] [Warning] [omni.isaac.lula_test_widget] omni.isaac.lula_test_widget has been deprecated in favor of isaacsim.robot_motion.lula_test_widget. Please update your code accordingly.
+[16.539s] [ext: omni.isaac.asset_browser-1.0.6] startup
+2026-04-27T02:30:34Z [16,242ms] [Warning] [omni.isaac.asset_browser] omni.isaac.asset_browser has been deprecated in favor of isaacsim.asset.browser. Please update your code accordingly.
+[16.543s] [ext: omni.kit.viewport.menubar.display-107.0.3] startup
+[16.551s] [ext: omni.isaac.menu-1.0.6] startup
+2026-04-27T02:30:34Z [16,252ms] [Warning] [omni.isaac.menu] omni.isaac.menu has been deprecated in favor of isaacsim.gui.menu. Please update your code accordingly.
+[16.553s] [ext: omni.isaac.motion_generation-8.0.7] startup
+2026-04-27T02:30:34Z [16,256ms] [Warning] [omni.isaac.motion_generation] omni.isaac.motion_generation has been deprecated in favor of isaacsim.robot_motion.motion_generation. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,258ms] [Warning] [omni.isaac.motion_generation.articulation_kinematics_solver] omni.isaac.motion_generation has been deprecated in favor of isaacsim.robot_motion.motion_generation. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,259ms] [Warning] [omni.isaac.motion_generation.articulation_motion_policy] omni.isaac.motion_generation has been deprecated in favor of isaacsim.robot_motion.motion_generation. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,259ms] [Warning] [omni.isaac.motion_generation.articulation_trajectory] omni.isaac.motion_generation has been deprecated in favor of isaacsim.robot_motion.motion_generation. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,260ms] [Warning] [omni.isaac.motion_generation.kinematics_interface] omni.isaac.motion_generation has been deprecated in favor of isaacsim.robot_motion.motion_generation. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,261ms] [Warning] [omni.isaac.motion_generation.lula] omni.isaac.motion_generation has been deprecated in favor of isaacsim.robot_motion.motion_generation. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,261ms] [Warning] [omni.isaac.motion_generation.lula.kinematics] omni.isaac.motion_generation has been deprecated in favor of isaacsim.robot_motion.motion_generation. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,262ms] [Warning] [omni.isaac.motion_generation.lula.motion_policies] omni.isaac.motion_generation has been deprecated in favor of isaacsim.robot_motion.motion_generation. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,263ms] [Warning] [omni.isaac.motion_generation.lula.path_planners] omni.isaac.motion_generation has been deprecated in favor of isaacsim.robot_motion.motion_generation. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,263ms] [Warning] [omni.isaac.motion_generation.lula.trajectory_generator] omni.isaac.motion_generation has been deprecated in favor of isaacsim.robot_motion.motion_generation. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,264ms] [Warning] [omni.isaac.motion_generation.motion_policy_controller] omni.isaac.motion_generation has been deprecated in favor of isaacsim.robot_motion.motion_generation. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,265ms] [Warning] [omni.isaac.motion_generation.motion_policy_interface] omni.isaac.motion_generation has been deprecated in favor of isaacsim.robot_motion.motion_generation. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,266ms] [Warning] [omni.isaac.motion_generation.path_planner_visualizer] omni.isaac.motion_generation has been deprecated in favor of isaacsim.robot_motion.motion_generation. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,267ms] [Warning] [omni.isaac.motion_generation.path_planning_interface] omni.isaac.motion_generation has been deprecated in favor of isaacsim.robot_motion.motion_generation. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,267ms] [Warning] [omni.isaac.motion_generation.trajectory] omni.isaac.motion_generation has been deprecated in favor of isaacsim.robot_motion.motion_generation. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,268ms] [Warning] [omni.isaac.motion_generation.world_interface] omni.isaac.motion_generation has been deprecated in favor of isaacsim.robot_motion.motion_generation. Please update your code accordingly.
+[16.569s] [ext: omni.isaac.assets_check-0.3.13] startup
+2026-04-27T02:30:34Z [16,272ms] [Warning] [omni.isaac.assets_check] omni.isaac.assets_check has been deprecated in favor of isaacsim.asset.browser. Please update your code accordingly.
+[16.572s] [ext: isaacsim.gui.sensors.icon-2.0.3] startup
+[16.632s] [ext: isaacsim.asset.importer.mjcf-2.5.13] startup
+[16.657s] [ext: omni.sensors.nv.common-3.0.0] startup
+[16.833s] [ext: isaacsim.sensors.physics-0.4.3] startup
+[16.857s] [ext: omni.sensors.net-1.0.0] startup
+[16.899s] [ext: omni.isaac.nucleus-1.0.6] startup
+2026-04-27T02:30:34Z [16,602ms] [Warning] [omni.isaac.nucleus] omni.isaac.nucleus has been deprecated in favor of isaacsim.storage.native. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,603ms] [Warning] [omni.isaac.nucleus.nucleus] omni.isaac.nucleus.nucleus has been deprecated in favor of isaacsim.storage.native. Please update your code accordingly.
+2026-04-27T02:30:34Z [16,603ms] [Warning] [omni.ext._impl._internal] Found class `Extension` derived from `omni.ext.IExt` in module: 'omni.isaac.nucleus', but it was imported from other extension: 'c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/exts/isaacsim.storage.native/isaacsim/storage/native/impl/extension.py', which is not a subpath to: 'c:\transformer-rl-retro-propulsion\env_isaaclab\lib\site-packages\isaacsim\extsdeprecated\omni.isaac.nucleus'. Do not import `IExt` derived class from other extension in your public namespace.
+[16.903s] [ext: omni.sensors.nv.materials-2.0.0] startup
+[16.940s] [ext: isaacsim.robot.policy.examples-4.1.11] startup
+[16.944s] [ext: omni.sensors.nv.wpm-3.0.0] startup
+[16.963s] [ext: omni.sensors.nv.lidar-3.0.0] startup
+[17.037s] [ext: isaacsim.util.debug_draw-3.1.0] startup
+[17.052s] [ext: omni.sensors.nv.radar-3.0.0] startup
+[17.093s] [ext: omni.sensors.nv.ids-2.0.0] startup
+[17.108s] [ext: isaacsim.core.cloner-1.4.10] startup
+[17.118s] [ext: isaacsim.sensors.physx-2.3.2] startup
+[17.140s] [ext: isaacsim.sensors.rtx-15.8.4] startup
+[17.171s] [ext: isaacsim.sensors.camera-1.3.6] startup
+[17.190s] [ext: omni.isaac.quadruped-3.0.7] startup
+2026-04-27T02:30:35Z [16,894ms] [Warning] [omni.isaac.quadruped] omni.isaac.quadruped has been deprecated in favor of isaacsim.robot.policy.examples. Please update your code accordingly.
+[17.195s] [ext: omni.isaac.cloner-1.0.7] startup
+2026-04-27T02:30:35Z [16,898ms] [Warning] [omni.isaac.cloner] omni.isaac.cloner has been deprecated in favor of isaacsim.core.cloner. Please update your code accordingly.
+[17.204s] [ext: omni.isaac.range_sensor-4.0.6] startup
+2026-04-27T02:30:35Z [16,908ms] [Warning] [omni.isaac.range_sensor] omni.isaac.range_sensor has been deprecated in favor of isaacsim.sensors.physx. Please update your code accordingly.
+2026-04-27T02:30:35Z [16,909ms] [Warning] [omni.isaac.range_sensor.commands] omni.isaac.range_sensor.commands has been deprecated in favor of isaacsim.sensors.physx.commands. Please update your code accordingly.
+[17.209s] [ext: omni.isaac.sensor-13.0.7] startup
+2026-04-27T02:30:35Z [16,913ms] [Warning] [omni.isaac.sensor] omni.isaac.sensor has been deprecated in favor of isaacsim.sensors.camera, isaacsim.sensors.physics, isaacsim.sensors.physx, and isaacsim.sensors.rtx. Please update your code accordingly.
+2026-04-27T02:30:35Z [16,914ms] [Warning] [omni.isaac.sensor.camera] omni.isaac.sensor.camera has been deprecated in favor of isaacsim.sensors.camera.camera. Please update your code accordingly.
+2026-04-27T02:30:35Z [16,915ms] [Warning] [omni.isaac.sensor.camera_view] omni.isaac.sensor.camera_view has been deprecated in favor of isaacsim.sensors.camera.camera_view. Please update your code accordingly.
+2026-04-27T02:30:35Z [16,916ms] [Warning] [omni.isaac.sensor.commands] omni.isaac.sensor.commands has been deprecated in favor of isaacsim.sensors.physics.commands, isaacsim.sensors.physx.commands, and isaacsim.sensors.rtx.commands. Please update your code accordingly.
+2026-04-27T02:30:35Z [16,917ms] [Warning] [omni.isaac.sensor.contact_sensor] omni.isaac.sensor.contact_sensor has been deprecated in favor of isaacsim.sensors.physics.contact_sensor. Please update your code accordingly.
+2026-04-27T02:30:35Z [16,918ms] [Warning] [omni.isaac.sensor.imu_sensor] omni.isaac.sensor.imu_sensor has been deprecated in favor of isaacsim.sensors.physics.imu_sensor. Please update your code accordingly.
+2026-04-27T02:30:35Z [16,919ms] [Warning] [omni.isaac.sensor.lidar_rtx] omni.isaac.sensor.lidar_rtx has been deprecated in favor of isaacsim.sensors.rtx.lidar_rtx. Please update your code accordingly.
+2026-04-27T02:30:35Z [16,919ms] [Warning] [omni.isaac.sensor.rotating_lidar_physX] omni.isaac.sensor.imu_sensor has been deprecated in favor of isaacsim.sensors.physix.rotating_lidar_physX. Please update your code accordingly.
+2026-04-27T02:30:35Z [16,922ms] [Warning] [omni.isaac.sensor.scripts.samples.contact_sensor] omni.isaac.sensor.scripts.samples.contact_sensor has been deprecated in favor of isaacsim.sensors.physics.scripts.samples.contact_sensor. Please update your code accordingly.
+2026-04-27T02:30:35Z [16,923ms] [Warning] [omni.isaac.sensor.scripts.samples.imu_sensor] omni.isaac.sensor.scripts.samples.imu_sensor has been deprecated in favor of isaacsim.sensors.physics.scripts.samples.imu_sensor. Please update your code accordingly.
+2026-04-27T02:30:35Z [16,924ms] [Warning] [omni.isaac.sensor.scripts.samples.lightbeam_sensor] omni.isaac.sensor.scripts.samples.lightbeam_sensor has been deprecated in favor of isaacsim.sensors.physx.scripts.samples.lightbeam_sensor. Please update your code accordingly.
+[17.225s] [ext: omni.kit.menu.create-2.0.1] startup
+[17.236s] [ext: omni.kit.widget.toolbar-2.0.1] startup
+[17.268s] [ext: omni.kit.manipulator.transform-107.0.0] startup
+[17.283s] [ext: omni.isaac.core-4.0.7] startup
+2026-04-27T02:30:35Z [16,986ms] [Warning] [omni.isaac.core.physics_context.physics_context] omni.isaac.core.physics_context.physics_context has been deprecated in favor of isaacsim.core.api.physics_context.physics_context. Please update your code accordingly.
+2026-04-27T02:30:35Z [16,987ms] [Warning] [omni.isaac.core.simulation_context.simulation_context] omni.isaac.core.simulation_context.simulation_context has been deprecated in favor of isaacsim.core.api.simulation_context.simulation_context. Please update your code accordingly.
+2026-04-27T02:30:35Z [16,988ms] [Warning] [omni.isaac.core.world.world] omni.isaac.core.world.world has been deprecated in favor of isaacsim.core.api.world.world. Please update your code accordingly.
+2026-04-27T02:30:35Z [16,988ms] [Warning] [omni.isaac.core] omni.isaac.core has been deprecated in favor of isaacsim.core.api. Please update your code accordingly.
+[17.289s] [ext: omni.kit.scripting-107.3.2] startup
+[17.305s] [ext: omni.kit.manipulator.tool.snap-1.5.13] startup
+[17.325s] [ext: omni.kit.manipulator.selector-1.1.3] startup
+[17.331s] [ext: isaacsim.app.about-2.0.11] startup
+[17.357s] [ext: isaacsim.replicator.behavior-1.1.16] startup
+[17.360s] [ext: omni.kit.viewport.manipulator.transform-107.0.4] startup
+[17.367s] [ext: omni.isaac.window.about-2.0.7] startup
+2026-04-27T02:30:35Z [17,074ms] [Warning] [omni.isaac.window.about] omni.isaac.window.about has been deprecated in favor of isaacsim.app.about. Please update your code accordingly.
+2026-04-27T02:30:35Z [17,075ms] [Warning] [omni.isaac.window.about.about] omni.isaac.window.about.about has been deprecated in favor of isaacsim.app.about.about. Please update your code accordingly.
+[17.376s] [ext: omni.fabric.commands-1.1.6] startup
+[17.387s] [ext: omni.kit.manipulator.prim.core-107.0.8] startup
+[17.411s] [ext: omni.kit.property.audio-1.0.16] startup
+[17.417s] [ext: omni.kit.property.camera-1.0.10] startup
+[17.421s] [ext: omni.kit.property.geometry-2.0.4] startup
+[17.430s] [ext: omni.hydra.scene_api-0.1.2] startup
+[17.442s] [ext: omni.kit.property.light-1.0.12] startup
+[17.463s] [ext: omni.kit.manipulator.prim.fabric-107.0.4] startup
+[17.469s] [ext: omni.kit.manipulator.prim.usd-107.0.3] startup
+[17.472s] [ext: omni.kit.property.material-1.11.9] startup
+[17.493s] [ext: omni.kit.property.render-1.2.1] startup
+[17.496s] [ext: omni.kit.property.transform-1.5.13] startup
+[17.506s] [ext: isaacsim.gui.property-1.1.3] startup
+[17.513s] [ext: omni.kit.manipulator.camera-106.0.4] startup
+[17.526s] [ext: omni.kit.manipulator.prim-107.0.0] startup
+[17.526s] [ext: omni.isaac.surface_gripper-2.0.6] startup
+2026-04-27T02:30:35Z [17,227ms] [Warning] [omni.isaac.surface_gripper] omni.isaac.surface_gripper has been deprecated in favor of isaacsim.robot.surface_gripper. Please update your code accordingly.
+2026-04-27T02:30:35Z [17,227ms] [Warning] [omni.ext._impl._internal] Found class `Extension` derived from `omni.ext.IExt` in module: 'omni.isaac.surface_gripper', but it was imported from other extension: 'c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/exts/isaacsim.robot.surface_gripper/isaacsim/robot/surface_gripper/impl/extension.py', which is not a subpath to: 'c:\transformer-rl-retro-propulsion\env_isaaclab\lib\site-packages\isaacsim\extsdeprecated\omni.isaac.surface_gripper'. Do not import `IExt` derived class from other extension in your public namespace.
+[17.528s] [ext: omni.kit.manipulator.selection-106.0.1] startup
+[17.535s] [ext: omni.kit.property.bundle-1.4.1] startup
+[17.540s] [ext: omni.kit.property.isaac-1.0.6] startup
+2026-04-27T02:30:35Z [17,241ms] [Warning] [omni.kit.property.isaac] omni.kit.property.isaac has been deprecated in favor of isaacsim.gui.property. Please update your code accordingly.
+2026-04-27T02:30:35Z [17,242ms] [Warning] [omni.kit.property.isaac.widgets] omni.kit.property.isaac.widgets has been deprecated in favor of isaacsim.gui.property.widgets. Please update your code accordingly.
+[17.542s] [ext: omni.isaac.universal_robots-1.0.6] startup
+2026-04-27T02:30:35Z [17,244ms] [Warning] [omni.isaac.universal_robots] omni.isaac.universal_robots has been deprecated in favor of isaacsim.robot.manipulators.examples.universal_robots. Please update your code accordingly.
+2026-04-27T02:30:35Z [17,245ms] [Warning] [omni.isaac.universal_robots.kinematics_solver] omni.isaac.franka has been deprecated in favor of isaacsim.robot.manipulators.examples.universal_robots. Please update your code accordingly.
+2026-04-27T02:30:35Z [17,249ms] [Warning] [omni.isaac.universal_robots.ur10] omni.isaac.franka has been deprecated in favor of isaacsim.robot.manipulators.examples.universal_robots. Please update your code accordingly.
+[17.549s] [ext: omni.isaac.core_nodes-2.0.6] startup
+2026-04-27T02:30:35Z [17,254ms] [Warning] [omni.isaac.core_nodes] omni.isaac.core_nodes has been deprecated in favor of isaacsim.core.nodes. Please update your code accordingly.
+[17.554s] [ext: omni.kit.viewport.menubar.camera-107.0.6] startup
+[17.571s] [ext: omni.kit.viewport.menubar.lighting-107.3.1] startup
+[17.578s] [ext: isaacsim.replicator.writers-1.0.17] startup
+[17.626s] [ext: omni.kit.viewport.menubar.render-107.0.10] startup
+[17.636s] [ext: omni.kit.viewport.menubar.settings-107.0.3] startup
+[17.650s] [ext: omni.kit.window.console-1.1.4] startup
+[17.669s] [ext: isaacsim.replicator.domain_randomization-1.0.16] startup
+[17.677s] [ext: isaacsim.replicator.examples-1.3.6] startup
+[17.683s] [ext: omni.ocio-0.1.1] startup
+[17.692s] [ext: omni.rtx.window.settings-0.6.19] startup
+[17.708s] [ext: omni.kit.window.status_bar-0.1.9] startup
+[17.718s] [ext: omni.kit.window.toolbar-2.0.0] startup
+[17.729s] [ext: omni.replicator.isaac-2.0.8] startup
+2026-04-27T02:30:35Z [17,431ms] [Warning] [omni.replicator.isaac] omni.replicator.isaac has been deprecated in favor of isaacsim.replicator.domain_randomization, isaacsim.replicator.examples, isaacsim.replicator.writers. Please update your code accordingly.
+[17.732s] [ext: omni.replicator.replicator_yaml-2.0.11] startup
+[17.773s] [ext: omni.rtx.settings.core-0.6.5] startup
+[17.784s] [ext: omni.usd.metrics.assembler.ui-107.3.1] startup
+[17.801s] [ext: omni.isaac.utils-2.0.6] startup
+[17.806s] [ext: semantics.schema.editor-2.0.2] startup
+[17.814s] [ext: omni.kit.ui.actions-1.0.5] startup
+[17.819s] [ext: semantics.schema.property-2.0.1] startup
+[17.824s] [ext: omni.isaac.version-2.0.7] startup
+2026-04-27T02:30:35Z [17,526ms] [Warning] [omni.isaac.version] omni.isaac.version has been deprecated in favor of isaacsim.core.version. Please update your code accordingly.
+[17.826s] [ext: omni.isaac.cortex-1.0.5] startup
+[17.828s] [ext: omni.anim.curve.core-1.3.1] startup
+[17.856s] [ext: isaacsim.core.throttling-2.2.2] startup
+[17.865s] [ext: omni.kit.menu.common-2.0.1] startup
+[17.868s] [ext: isaacsim.exp.base-5.1.0] startup
+[17.869s] [ext: isaacsim.exp.base.python-5.1.0] startup
+[17.874s] Simulation App Starting
+2026-04-27T02:30:36Z [18,828ms] [Warning] [omni.fabric.plugin] Warning: attribute viewportHandle not found for bucket id 9
+
+[19.150s] app ready
+Starting kit application with the following args:  ['C:\\Transformer-rl-retro-propulsion\\env_isaaclab\\Lib\\site-packages\\isaacsim\\exts\\isaacsim.simulation_app\\isaacsim\\simulation_app\\simulation_app.py', 'C:\\Transformer-rl-retro-propulsion\\env_isaaclab\\Lib\\site-packages\\isaacsim\\apps/isaacsim.exp.base.python.kit', '--/app/tokens/exe-path=C:\\Transformer-rl-retro-propulsion\\env_isaaclab\\Lib\\site-packages\\isaacsim\\kit', '--/persistent/app/viewport/displayOptions=3094', '--/rtx/materialDb/syncLoads=True', '--/rtx/hydra/materialSyncLoads=True', '--/omni.kit.plugin/syncUsdLoads=True', '--/app/renderer/resolution/width=1280', '--/app/renderer/resolution/height=720', '--/app/window/width=1440', '--/app/window/height=900', '--/renderer/multiGpu/enabled=True', '--/app/fastShutdown=True', '--/app/installSignalHandlers=0', '--ext-folder', 'C:\\Transformer-rl-retro-propulsion\\env_isaaclab\\Lib\\site-packages\\isaacsim/exts', '--ext-folder', 'C:\\Transformer-rl-retro-propulsion\\env_isaaclab\\Lib\\site-packages\\isaacsim/apps', '--/physics/cudaDevice=0', '--/plugins/carb.tasking.plugin/threadCount=24', '--/plugins/omni.tbb.globalcontrol/maxThreadCount=24', '--portable', '--no-window', '--/app/window/hideUi=1']
+Passing the following args to the base kit application:  ['--task', 'landing', '--total-steps', '5000000', '--eval-interval', '250000', '--save-interval', '250000', '--max-wall-time', '7200', '--headless']
+Warp 1.8.2 initialized:
+   CUDA Toolkit 12.8, Driver 13.0
+   Devices:
+     "cpu"      : "AMD64 Family 26 Model 68 Stepping 0, AuthenticAMD"
+     "cuda:0"   : "NVIDIA GeForce RTX 5070" (12 GiB, sm_120, mempool enabled)
+   Kernel cache:
+     C:\Users\tngzj\AppData\Local\NVIDIA\warp\Cache\1.8.2
+Warp DeprecationWarning: The `warp.sim` module is deprecated and will be removed in v1.10. Please transition to using the forthcoming Newton library instead.
+
+[36m===================================================================================================================[0m
+[36m[1m[INFO][IsaacLab]: Logging to file: C:\Users\tngzj\AppData\Local\Temp\isaaclab\logs\isaaclab_2026-04-26_21-30-40.log[0m
+[36m===================================================================================================================[0m
+
+Spawn curriculum enabled: xy_half_width starts at 0.50 m and anneals to 2.00 m by step 4,000,000. Eval uses the final full spawn range.
+{"type":"train_update","update":1,"global_step":16384,"wall_s":7.98,"sps":2053.1,"loss":1785.962536,"loss_ema":1785.962536,"loss_plateau_delta":null,"loss_plateau_count":0,"pg_loss":-0.001009,"v_loss":3571.908035,"entropy":-1.906363,"approx_kl":0.006385,"clipfrac":0.0629,"reward_mean":-4.213,"reward_std":23.2918,"reward_min":-205.2763,"reward_max":425.9075,"reward_scale":1.0,"throttle_mean":0.7581,"throttle_min":0.136,"throttle_max":0.9825,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0,"spawn_xy_half_width_m":0.5}
+step=16,384 reward_mean=-4.213 kl=0.00639 clipfrac=0.063 eval={'landed_fraction': 1.0, 'crashed_fraction': 1.0, 'mean_touchdown_speed': 0.017579326406121254, 'max_touchdown_speed': 0.4982513189315796, 'mean_pad_distance': 2.036503553390503, 'max_pad_distance': 4.760265827178955, 'mean_delta_v_proxy': 15.586872100830078, 'mean_eval_throttle': 0.7789815282159381, 'max_eval_throttle': 0.7911319732666016, 'max_upward_speed': 1.523106336593628, 'max_downward_speed': 9.345362663269043, 'passed': False}
+{"type":"train_update","update":2,"global_step":32768,"wall_s":64.05,"sps":511.6,"loss":1666.240242,"loss_ema":1762.018077,"loss_plateau_delta":23.944459,"loss_plateau_count":0,"pg_loss":-0.001514,"v_loss":3332.464432,"entropy":-1.906617,"approx_kl":0.003657,"clipfrac":0.0324,"reward_mean":-4.0061,"reward_std":22.6003,"reward_min":-205.2695,"reward_max":447.6033,"reward_scale":1.0,"throttle_mean":0.759,"throttle_min":0.1679,"throttle_max":0.9858,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0041,"spawn_xy_half_width_m":0.506}
+{"type":"train_update","update":3,"global_step":49152,"wall_s":71.17,"sps":690.6,"loss":2167.210922,"loss_ema":1843.056646,"loss_plateau_delta":81.038569,"loss_plateau_count":0,"pg_loss":-0.001244,"v_loss":4334.405228,"entropy":-1.911091,"approx_kl":0.003321,"clipfrac":0.0225,"reward_mean":-5.0931,"reward_std":27.3144,"reward_min":-205.5237,"reward_max":471.6501,"reward_scale":1.0,"throttle_mean":0.754,"throttle_min":0.1735,"throttle_max":0.9873,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0082,"spawn_xy_half_width_m":0.512}
+{"type":"train_update","update":4,"global_step":65536,"wall_s":78.34,"sps":836.5,"loss":2086.263634,"loss_ema":1891.698044,"loss_plateau_delta":48.641398,"loss_plateau_count":0,"pg_loss":-0.000952,"v_loss":4172.509979,"entropy":-1.91527,"approx_kl":0.005891,"clipfrac":0.0305,"reward_mean":-5.0769,"reward_std":26.73,"reward_min":-205.7205,"reward_max":434.2783,"reward_scale":1.0,"throttle_mean":0.7493,"throttle_min":0.193,"throttle_max":0.9867,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0123,"spawn_xy_half_width_m":0.518}
+{"type":"train_update","update":5,"global_step":81920,"wall_s":85.32,"sps":960.1,"loss":2220.690208,"loss_ema":1957.496477,"loss_plateau_delta":65.798433,"loss_plateau_count":0,"pg_loss":-0.002451,"v_loss":4441.366226,"entropy":-1.912387,"approx_kl":0.00497,"clipfrac":0.0408,"reward_mean":-5.2634,"reward_std":27.6105,"reward_min":-205.0531,"reward_max":418.8056,"reward_scale":1.0,"throttle_mean":0.7517,"throttle_min":0.173,"throttle_max":0.984,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0164,"spawn_xy_half_width_m":0.525}
+{"type":"train_update","update":6,"global_step":98304,"wall_s":92.52,"sps":1062.5,"loss":2129.756069,"loss_ema":1991.948395,"loss_plateau_delta":34.451919,"loss_plateau_count":0,"pg_loss":-0.00118,"v_loss":4259.495377,"entropy":-1.910927,"approx_kl":0.002773,"clipfrac":0.017,"reward_mean":-4.81,"reward_std":27.3285,"reward_min":-205.0369,"reward_max":431.7794,"reward_scale":1.0,"throttle_mean":0.7485,"throttle_min":0.1581,"throttle_max":0.9833,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0205,"spawn_xy_half_width_m":0.531}
+{"type":"train_update","update":7,"global_step":114688,"wall_s":99.79,"sps":1149.3,"loss":2274.672089,"loss_ema":2048.493134,"loss_plateau_delta":56.544739,"loss_plateau_count":0,"pg_loss":-0.001251,"v_loss":4549.327591,"entropy":-1.910361,"approx_kl":0.002989,"clipfrac":0.0335,"reward_mean":-4.9247,"reward_std":28.3608,"reward_min":-206.6182,"reward_max":439.5113,"reward_scale":1.0,"throttle_mean":0.7461,"throttle_min":0.1697,"throttle_max":0.9872,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0246,"spawn_xy_half_width_m":0.537}
+{"type":"train_update","update":8,"global_step":131072,"wall_s":107.05,"sps":1224.4,"loss":1988.327728,"loss_ema":2036.460053,"loss_plateau_delta":12.033081,"loss_plateau_count":0,"pg_loss":-0.001575,"v_loss":3976.639549,"entropy":-1.907281,"approx_kl":0.004288,"clipfrac":0.0322,"reward_mean":-4.8271,"reward_std":26.0597,"reward_min":-205.4786,"reward_max":419.5774,"reward_scale":1.0,"throttle_mean":0.7435,"throttle_min":0.161,"throttle_max":0.9837,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0287,"spawn_xy_half_width_m":0.543}
+{"type":"train_update","update":9,"global_step":147456,"wall_s":114.57,"sps":1287.1,"loss":2026.505405,"loss_ema":2034.469123,"loss_plateau_delta":1.990929,"loss_plateau_count":0,"pg_loss":-0.001788,"v_loss":4052.995346,"entropy":-1.904123,"approx_kl":0.00297,"clipfrac":0.0411,"reward_mean":-4.7059,"reward_std":26.4231,"reward_min":-205.6326,"reward_max":456.7625,"reward_scale":1.0,"throttle_mean":0.7463,"throttle_min":0.1713,"throttle_max":0.9818,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0328,"spawn_xy_half_width_m":0.549}
+{"type":"train_update","update":10,"global_step":163840,"wall_s":121.82,"sps":1344.9,"loss":1919.904301,"loss_ema":2011.556159,"loss_plateau_delta":22.912965,"loss_plateau_count":0,"pg_loss":-0.002142,"v_loss":3839.793877,"entropy":-1.902483,"approx_kl":0.005105,"clipfrac":0.0382,"reward_mean":-4.4398,"reward_std":26.1066,"reward_min":-205.1874,"reward_max":430.1877,"reward_scale":1.0,"throttle_mean":0.7433,"throttle_min":0.1736,"throttle_max":0.982,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0369,"spawn_xy_half_width_m":0.555}
+{"type":"train_update","update":11,"global_step":180224,"wall_s":128.91,"sps":1398.1,"loss":1958.099548,"loss_ema":2000.864837,"loss_plateau_delta":10.691322,"loss_plateau_count":0,"pg_loss":-0.002306,"v_loss":3916.184677,"entropy":-1.903253,"approx_kl":0.007449,"clipfrac":0.0334,"reward_mean":-4.6756,"reward_std":26.6622,"reward_min":-205.3019,"reward_max":447.983,"reward_scale":1.0,"throttle_mean":0.7454,"throttle_min":0.1056,"throttle_max":0.9865,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.041,"spawn_xy_half_width_m":0.561}
+{"type":"train_update","update":12,"global_step":196608,"wall_s":136.61,"sps":1439.2,"loss":1917.50684,"loss_ema":1984.193237,"loss_plateau_delta":16.671599,"loss_plateau_count":0,"pg_loss":-0.003312,"v_loss":3835.001282,"entropy":-1.903065,"approx_kl":0.005705,"clipfrac":0.0352,"reward_mean":-4.6006,"reward_std":25.8699,"reward_min":-206.1756,"reward_max":428.451,"reward_scale":1.0,"throttle_mean":0.7458,"throttle_min":0.1644,"throttle_max":0.9822,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0451,"spawn_xy_half_width_m":0.568}
+{"type":"train_update","update":13,"global_step":212992,"wall_s":144.26,"sps":1476.4,"loss":2020.838352,"loss_ema":1991.52226,"loss_plateau_delta":7.329023,"loss_plateau_count":0,"pg_loss":-0.002383,"v_loss":4041.662468,"entropy":-1.900888,"approx_kl":0.006143,"clipfrac":0.0402,"reward_mean":-4.8182,"reward_std":26.9183,"reward_min":-205.2708,"reward_max":428.6826,"reward_scale":1.0,"throttle_mean":0.744,"throttle_min":0.188,"throttle_max":0.9851,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0492,"spawn_xy_half_width_m":0.574}
+{"type":"train_update","update":14,"global_step":229376,"wall_s":151.39,"sps":1515.1,"loss":1944.914223,"loss_ema":1982.200653,"loss_plateau_delta":9.321608,"loss_plateau_count":0,"pg_loss":-0.001621,"v_loss":3889.812721,"entropy":-1.89638,"approx_kl":0.003396,"clipfrac":0.0232,"reward_mean":-4.2563,"reward_std":26.7913,"reward_min":-206.3082,"reward_max":469.1419,"reward_scale":1.0,"throttle_mean":0.7468,"throttle_min":0.1833,"throttle_max":0.979,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0532,"spawn_xy_half_width_m":0.58}
+{"type":"train_update","update":15,"global_step":245760,"wall_s":158.66,"sps":1548.9,"loss":1908.1147,"loss_ema":1967.383462,"loss_plateau_delta":14.81719,"loss_plateau_count":0,"pg_loss":-0.002342,"v_loss":3816.215103,"entropy":-1.898175,"approx_kl":0.006297,"clipfrac":0.0393,"reward_mean":-4.297,"reward_std":26.3337,"reward_min":-205.1841,"reward_max":450.7205,"reward_scale":1.0,"throttle_mean":0.7445,"throttle_min":0.1022,"throttle_max":0.9861,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0573,"spawn_xy_half_width_m":0.586}
+{"type":"train_update","update":16,"global_step":262144,"wall_s":166.34,"sps":1576.0,"loss":1859.004032,"loss_ema":1945.707576,"loss_plateau_delta":21.675886,"loss_plateau_count":0,"pg_loss":-0.001438,"v_loss":3717.992004,"entropy":-1.896809,"approx_kl":0.004444,"clipfrac":0.0294,"reward_mean":-4.3982,"reward_std":26.044,"reward_min":-205.3663,"reward_max":439.0542,"reward_scale":1.0,"throttle_mean":0.7465,"throttle_min":0.1397,"throttle_max":0.9806,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0614,"spawn_xy_half_width_m":0.592}
+step=262,144 reward_mean=-4.398 kl=0.00444 clipfrac=0.029 eval={'landed_fraction': 1.0, 'crashed_fraction': 1.0, 'mean_touchdown_speed': 0.011503132060170174, 'max_touchdown_speed': 0.12313850224018097, 'mean_pad_distance': 2.1836514472961426, 'max_pad_distance': 5.043794631958008, 'mean_delta_v_proxy': 15.04471206665039, 'mean_eval_throttle': 0.7658110200034247, 'max_eval_throttle': 0.8246853351593018, 'max_upward_speed': 1.5970386266708374, 'max_downward_speed': 9.801746368408203, 'passed': False}
+{"type":"train_update","update":17,"global_step":278528,"wall_s":223.03,"sps":1248.8,"loss":1630.225044,"loss_ema":1882.61107,"loss_plateau_delta":63.096506,"loss_plateau_count":0,"pg_loss":-0.00145,"v_loss":3260.434029,"entropy":-1.894821,"approx_kl":0.003945,"clipfrac":0.0402,"reward_mean":-3.6892,"reward_std":23.2851,"reward_min":-205.4184,"reward_max":441.4506,"reward_scale":1.0,"throttle_mean":0.7454,"throttle_min":0.1555,"throttle_max":0.979,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0655,"spawn_xy_half_width_m":0.598}
+{"type":"train_update","update":18,"global_step":294912,"wall_s":230.8,"sps":1277.8,"loss":2080.338547,"loss_ema":1922.156565,"loss_plateau_delta":39.545495,"loss_plateau_count":0,"pg_loss":-0.00088,"v_loss":4160.659912,"entropy":-1.892109,"approx_kl":0.002906,"clipfrac":0.033,"reward_mean":-4.4834,"reward_std":27.7223,"reward_min":-205.1101,"reward_max":456.4351,"reward_scale":1.0,"throttle_mean":0.7414,"throttle_min":0.1926,"throttle_max":0.9814,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0696,"spawn_xy_half_width_m":0.604}
+{"type":"train_update","update":19,"global_step":311296,"wall_s":238.05,"sps":1307.7,"loss":1776.775993,"loss_ema":1893.080451,"loss_plateau_delta":29.076114,"loss_plateau_count":0,"pg_loss":0.002062,"v_loss":3553.528938,"entropy":-1.892169,"approx_kl":0.003341,"clipfrac":0.1122,"reward_mean":-4.3336,"reward_std":25.2569,"reward_min":-205.3711,"reward_max":434.7311,"reward_scale":1.0,"throttle_mean":0.7391,"throttle_min":0.116,"throttle_max":0.9814,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0737,"spawn_xy_half_width_m":0.611}
+{"type":"train_update","update":20,"global_step":327680,"wall_s":245.45,"sps":1335.0,"loss":1758.21703,"loss_ema":1866.107767,"loss_plateau_delta":26.972684,"loss_plateau_count":0,"pg_loss":-0.00179,"v_loss":3516.418716,"entropy":-1.891114,"approx_kl":0.004647,"clipfrac":0.078,"reward_mean":-3.9117,"reward_std":25.7022,"reward_min":-205.7819,"reward_max":459.1194,"reward_scale":1.0,"throttle_mean":0.7411,"throttle_min":0.1488,"throttle_max":0.9802,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0778,"spawn_xy_half_width_m":0.617}
+{"type":"train_update","update":21,"global_step":344064,"wall_s":252.8,"sps":1361.0,"loss":1822.400169,"loss_ema":1857.366247,"loss_plateau_delta":8.741519,"loss_plateau_count":0,"pg_loss":-0.002014,"v_loss":3644.785469,"entropy":-1.888828,"approx_kl":0.004678,"clipfrac":0.0282,"reward_mean":-4.2442,"reward_std":25.8777,"reward_min":-205.1001,"reward_max":433.656,"reward_scale":1.0,"throttle_mean":0.741,"throttle_min":0.1593,"throttle_max":0.9829,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0819,"spawn_xy_half_width_m":0.623}
+{"type":"train_update","update":22,"global_step":360448,"wall_s":260.23,"sps":1385.1,"loss":1787.234283,"loss_ema":1843.339854,"loss_plateau_delta":14.026393,"loss_plateau_count":0,"pg_loss":-0.001118,"v_loss":3574.451942,"entropy":-1.885475,"approx_kl":0.004572,"clipfrac":0.0254,"reward_mean":-4.2665,"reward_std":25.6964,"reward_min":-205.2124,"reward_max":447.2332,"reward_scale":1.0,"throttle_mean":0.7452,"throttle_min":0.0944,"throttle_max":0.9907,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.086,"spawn_xy_half_width_m":0.629}
+{"type":"train_update","update":23,"global_step":376832,"wall_s":267.34,"sps":1409.5,"loss":1872.987629,"loss_ema":1849.269409,"loss_plateau_delta":5.929555,"loss_plateau_count":0,"pg_loss":-0.001389,"v_loss":3745.959183,"entropy":-1.8848,"approx_kl":0.005088,"clipfrac":0.0153,"reward_mean":-4.2712,"reward_std":26.2988,"reward_min":-205.0697,"reward_max":461.2153,"reward_scale":1.0,"throttle_mean":0.7474,"throttle_min":0.1365,"throttle_max":0.9823,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0901,"spawn_xy_half_width_m":0.635}
+{"type":"train_update","update":24,"global_step":393216,"wall_s":274.03,"sps":1434.9,"loss":1899.259804,"loss_ema":1859.267488,"loss_plateau_delta":9.998079,"loss_plateau_count":0,"pg_loss":-0.00164,"v_loss":3798.504051,"entropy":-1.883606,"approx_kl":0.006272,"clipfrac":0.0221,"reward_mean":-4.3993,"reward_std":26.4319,"reward_min":-205.1963,"reward_max":456.329,"reward_scale":1.0,"throttle_mean":0.7476,"throttle_min":0.1714,"throttle_max":0.9898,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0942,"spawn_xy_half_width_m":0.641}
+{"type":"train_update","update":25,"global_step":409600,"wall_s":281.95,"sps":1452.7,"loss":1814.809612,"loss_ema":1850.375913,"loss_plateau_delta":8.891575,"loss_plateau_count":0,"pg_loss":-0.001676,"v_loss":3629.603745,"entropy":-1.88316,"approx_kl":0.004048,"clipfrac":0.0288,"reward_mean":-4.4006,"reward_std":25.8927,"reward_min":-205.2356,"reward_max":440.2849,"reward_scale":1.0,"throttle_mean":0.7521,"throttle_min":0.1372,"throttle_max":0.9902,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.0983,"spawn_xy_half_width_m":0.647}
+{"type":"train_update","update":26,"global_step":425984,"wall_s":289.34,"sps":1472.2,"loss":1936.943188,"loss_ema":1867.689368,"loss_plateau_delta":17.313455,"loss_plateau_count":0,"pg_loss":-0.001186,"v_loss":3873.869949,"entropy":-1.879753,"approx_kl":0.002167,"clipfrac":0.0253,"reward_mean":-4.4438,"reward_std":26.9385,"reward_min":-205.7396,"reward_max":441.7104,"reward_scale":1.0,"throttle_mean":0.7517,"throttle_min":0.0599,"throttle_max":0.9827,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.1024,"spawn_xy_half_width_m":0.654}
+{"type":"train_update","update":27,"global_step":442368,"wall_s":295.94,"sps":1494.8,"loss":1717.731152,"loss_ema":1837.697725,"loss_plateau_delta":29.991643,"loss_plateau_count":0,"pg_loss":-0.001486,"v_loss":3435.446472,"entropy":-1.879671,"approx_kl":0.00406,"clipfrac":0.0241,"reward_mean":-4.2555,"reward_std":25.1559,"reward_min":-205.1296,"reward_max":442.3122,"reward_scale":1.0,"throttle_mean":0.7501,"throttle_min":0.0987,"throttle_max":0.9907,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.1065,"spawn_xy_half_width_m":0.66}
+{"type":"train_update","update":28,"global_step":458752,"wall_s":304.08,"sps":1508.6,"loss":1820.019695,"loss_ema":1834.162119,"loss_plateau_delta":3.535606,"loss_plateau_count":0,"pg_loss":-0.001845,"v_loss":3640.024284,"entropy":-1.880477,"approx_kl":0.005318,"clipfrac":0.0352,"reward_mean":-4.2702,"reward_std":26.4376,"reward_min":-204.9282,"reward_max":449.7867,"reward_scale":1.0,"throttle_mean":0.7464,"throttle_min":0.1515,"throttle_max":0.9919,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.1106,"spawn_xy_half_width_m":0.666}
+{"type":"train_update","update":29,"global_step":475136,"wall_s":311.37,"sps":1526.0,"loss":1796.463978,"loss_ema":1826.622491,"loss_plateau_delta":7.539628,"loss_plateau_count":0,"pg_loss":-0.002103,"v_loss":3592.913406,"entropy":-1.876404,"approx_kl":0.005284,"clipfrac":0.0363,"reward_mean":-4.3115,"reward_std":26.3471,"reward_min":-205.4107,"reward_max":431.6479,"reward_scale":1.0,"throttle_mean":0.7491,"throttle_min":0.1284,"throttle_max":0.9794,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.1147,"spawn_xy_half_width_m":0.672}
+{"type":"train_update","update":30,"global_step":491520,"wall_s":318.43,"sps":1543.6,"loss":1698.023663,"loss_ema":1800.902725,"loss_plateau_delta":25.719766,"loss_plateau_count":0,"pg_loss":-0.002115,"v_loss":3396.032814,"entropy":-1.874606,"approx_kl":0.00447,"clipfrac":0.0249,"reward_mean":-4.1012,"reward_std":25.5258,"reward_min":-205.7398,"reward_max":452.8856,"reward_scale":1.0,"throttle_mean":0.7492,"throttle_min":0.1519,"throttle_max":0.9882,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.1188,"spawn_xy_half_width_m":0.678}
+{"type":"train_update","update":31,"global_step":507904,"wall_s":326.99,"sps":1553.3,"loss":1674.235096,"loss_ema":1775.569199,"loss_plateau_delta":25.333526,"loss_plateau_count":0,"pg_loss":-0.001863,"v_loss":3348.455177,"entropy":-1.874336,"approx_kl":0.005553,"clipfrac":0.0276,"reward_mean":-4.1329,"reward_std":25.1309,"reward_min":-205.6098,"reward_max":425.4758,"reward_scale":1.0,"throttle_mean":0.7481,"throttle_min":0.1722,"throttle_max":0.984,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.1229,"spawn_xy_half_width_m":0.684}
+step=507,904 reward_mean=-4.133 kl=0.00555 clipfrac=0.028 eval={'landed_fraction': 1.0, 'crashed_fraction': 1.0, 'mean_touchdown_speed': 0.017097804695367813, 'max_touchdown_speed': 0.23398810625076294, 'mean_pad_distance': 2.0119733810424805, 'max_pad_distance': 4.4141364097595215, 'mean_delta_v_proxy': 15.348621368408203, 'mean_eval_throttle': 0.7724317337407006, 'max_eval_throttle': 0.8543823957443237, 'max_upward_speed': 1.9436521530151367, 'max_downward_speed': 9.944948196411133, 'passed': False}
+{"type":"train_update","update":32,"global_step":524288,"wall_s":385.83,"sps":1358.9,"loss":1482.862453,"loss_ema":1717.02785,"loss_plateau_delta":58.541349,"loss_plateau_count":0,"pg_loss":-0.001565,"v_loss":2965.709297,"entropy":-1.87458,"approx_kl":0.003448,"clipfrac":0.026,"reward_mean":-3.6863,"reward_std":22.5798,"reward_min":-205.2045,"reward_max":437.0011,"reward_scale":1.0,"throttle_mean":0.7545,"throttle_min":0.109,"throttle_max":0.9892,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.127,"spawn_xy_half_width_m":0.69}
+{"type":"train_update","update":33,"global_step":540672,"wall_s":393.89,"sps":1372.6,"loss":1689.715672,"loss_ema":1711.565414,"loss_plateau_delta":5.462436,"loss_plateau_count":0,"pg_loss":-0.001197,"v_loss":3379.415016,"entropy":-1.87348,"approx_kl":0.004458,"clipfrac":0.0235,"reward_mean":-4.3524,"reward_std":25.0488,"reward_min":-205.7669,"reward_max":415.5537,"reward_scale":1.0,"throttle_mean":0.7496,"throttle_min":0.1583,"throttle_max":0.988,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.1311,"spawn_xy_half_width_m":0.697}
+{"type":"train_update","update":34,"global_step":557056,"wall_s":401.0,"sps":1389.2,"loss":1719.613941,"loss_ema":1713.17512,"loss_plateau_delta":1.609705,"loss_plateau_count":0,"pg_loss":-0.001727,"v_loss":3439.212608,"entropy":-1.872302,"approx_kl":0.003566,"clipfrac":0.0233,"reward_mean":-4.3366,"reward_std":25.3464,"reward_min":-205.8549,"reward_max":422.7377,"reward_scale":1.0,"throttle_mean":0.7497,"throttle_min":0.1547,"throttle_max":0.9853,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.1352,"spawn_xy_half_width_m":0.703}
+{"type":"train_update","update":35,"global_step":573440,"wall_s":408.14,"sps":1405.0,"loss":1665.186962,"loss_ema":1703.577488,"loss_plateau_delta":9.597632,"loss_plateau_count":0,"pg_loss":-0.001425,"v_loss":3330.358055,"entropy":-1.871422,"approx_kl":0.003026,"clipfrac":0.0309,"reward_mean":-3.9641,"reward_std":25.4877,"reward_min":-205.817,"reward_max":437.0137,"reward_scale":1.0,"throttle_mean":0.7515,"throttle_min":0.1137,"throttle_max":0.9871,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.1393,"spawn_xy_half_width_m":0.709}
+{"type":"train_update","update":36,"global_step":589824,"wall_s":416.03,"sps":1417.8,"loss":1695.883011,"loss_ema":1702.038593,"loss_plateau_delta":1.538895,"loss_plateau_count":0,"pg_loss":-3.7e-05,"v_loss":3391.747368,"entropy":-1.871484,"approx_kl":0.004785,"clipfrac":0.0416,"reward_mean":-4.2724,"reward_std":25.5997,"reward_min":-205.2279,"reward_max":450.1867,"reward_scale":1.0,"throttle_mean":0.7539,"throttle_min":0.1561,"throttle_max":0.9842,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.1434,"spawn_xy_half_width_m":0.715}
+{"type":"train_update","update":37,"global_step":606208,"wall_s":423.06,"sps":1432.9,"loss":1787.940205,"loss_ema":1719.218915,"loss_plateau_delta":17.180322,"loss_plateau_count":0,"pg_loss":-0.001342,"v_loss":3575.864388,"entropy":-1.873599,"approx_kl":0.005164,"clipfrac":0.0406,"reward_mean":-4.5042,"reward_std":26.1624,"reward_min":-205.1334,"reward_max":424.8937,"reward_scale":1.0,"throttle_mean":0.7529,"throttle_min":0.1444,"throttle_max":0.9876,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.1475,"spawn_xy_half_width_m":0.721}
+{"type":"train_update","update":38,"global_step":622592,"wall_s":429.83,"sps":1448.5,"loss":1595.263878,"loss_ema":1694.427908,"loss_plateau_delta":24.791007,"loss_plateau_count":0,"pg_loss":-0.001282,"v_loss":3190.511612,"entropy":-1.873063,"approx_kl":0.005256,"clipfrac":0.0279,"reward_mean":-3.8841,"reward_std":24.8812,"reward_min":-205.3654,"reward_max":441.4374,"reward_scale":1.0,"throttle_mean":0.7566,"throttle_min":0.1472,"throttle_max":0.9884,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.1516,"spawn_xy_half_width_m":0.727}
+{"type":"train_update","update":39,"global_step":638976,"wall_s":437.48,"sps":1460.6,"loss":1558.338833,"loss_ema":1667.210093,"loss_plateau_delta":27.217815,"loss_plateau_count":0,"pg_loss":-0.001419,"v_loss":3116.661819,"entropy":-1.870601,"approx_kl":0.002569,"clipfrac":0.0253,"reward_mean":-4.0465,"reward_std":24.7396,"reward_min":-205.3719,"reward_max":448.2255,"reward_scale":1.0,"throttle_mean":0.7542,"throttle_min":0.1358,"throttle_max":0.9845,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.1556,"spawn_xy_half_width_m":0.733}
+{"type":"train_update","update":40,"global_step":655360,"wall_s":444.68,"sps":1473.8,"loss":1757.512276,"loss_ema":1685.270529,"loss_plateau_delta":18.060437,"loss_plateau_count":0,"pg_loss":-0.001591,"v_loss":3515.009033,"entropy":-1.869987,"approx_kl":0.003905,"clipfrac":0.028,"reward_mean":-4.2599,"reward_std":26.3332,"reward_min":-205.4066,"reward_max":446.8069,"reward_scale":1.0,"throttle_mean":0.7538,"throttle_min":0.175,"throttle_max":0.9826,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.1597,"spawn_xy_half_width_m":0.74}
+{"type":"train_update","update":41,"global_step":671744,"wall_s":451.94,"sps":1486.3,"loss":1641.69228,"loss_ema":1676.554879,"loss_plateau_delta":8.71565,"loss_plateau_count":0,"pg_loss":-0.001038,"v_loss":3283.367928,"entropy":-1.871599,"approx_kl":0.003265,"clipfrac":0.0165,"reward_mean":-4.1002,"reward_std":25.7789,"reward_min":-205.5245,"reward_max":431.8077,"reward_scale":1.0,"throttle_mean":0.7523,"throttle_min":0.1376,"throttle_max":0.9933,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.1638,"spawn_xy_half_width_m":0.746}
+{"type":"train_update","update":42,"global_step":688128,"wall_s":459.45,"sps":1497.7,"loss":1616.918442,"loss_ema":1664.627592,"loss_plateau_delta":11.927288,"loss_plateau_count":0,"pg_loss":-5.1e-05,"v_loss":3233.81826,"entropy":-1.874267,"approx_kl":0.009423,"clipfrac":0.0616,"reward_mean":-3.9984,"reward_std":25.3771,"reward_min":-205.5486,"reward_max":426.2193,"reward_scale":1.0,"throttle_mean":0.7569,"throttle_min":0.1615,"throttle_max":0.9875,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.1679,"spawn_xy_half_width_m":0.752}
+{"type":"train_update","update":43,"global_step":704512,"wall_s":466.94,"sps":1508.8,"loss":1815.384972,"loss_ema":1694.779068,"loss_plateau_delta":30.151476,"loss_plateau_count":0,"pg_loss":-0.000697,"v_loss":3630.75264,"entropy":-1.870859,"approx_kl":0.003469,"clipfrac":0.0301,"reward_mean":-4.4182,"reward_std":26.5455,"reward_min":-205.5193,"reward_max":471.55,"reward_scale":1.0,"throttle_mean":0.762,"throttle_min":0.141,"throttle_max":0.9871,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.172,"spawn_xy_half_width_m":0.758}
+{"type":"train_update","update":44,"global_step":720896,"wall_s":474.36,"sps":1519.7,"loss":1683.989967,"loss_ema":1692.621248,"loss_plateau_delta":2.15782,"loss_plateau_count":0,"pg_loss":-0.001511,"v_loss":3367.964302,"entropy":-1.868024,"approx_kl":0.002898,"clipfrac":0.0176,"reward_mean":-3.909,"reward_std":26.0355,"reward_min":-205.3801,"reward_max":460.0084,"reward_scale":1.0,"throttle_mean":0.7562,"throttle_min":0.1402,"throttle_max":0.9859,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.1761,"spawn_xy_half_width_m":0.764}
+{"type":"train_update","update":45,"global_step":737280,"wall_s":482.35,"sps":1528.5,"loss":1645.211243,"loss_ema":1683.139247,"loss_plateau_delta":9.482001,"loss_plateau_count":0,"pg_loss":-0.001531,"v_loss":3290.406868,"entropy":-1.867475,"approx_kl":0.004412,"clipfrac":0.0411,"reward_mean":-4.3522,"reward_std":25.4194,"reward_min":-205.7063,"reward_max":435.1762,"reward_scale":1.0,"throttle_mean":0.7576,"throttle_min":0.1176,"throttle_max":0.9833,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.1802,"spawn_xy_half_width_m":0.77}
+{"type":"train_update","update":46,"global_step":753664,"wall_s":489.94,"sps":1538.3,"loss":1797.154606,"loss_ema":1705.942319,"loss_plateau_delta":22.803072,"loss_plateau_count":0,"pg_loss":-0.001785,"v_loss":3594.29409,"entropy":-1.868272,"approx_kl":0.006513,"clipfrac":0.0405,"reward_mean":-4.1933,"reward_std":26.949,"reward_min":-205.0355,"reward_max":460.1461,"reward_scale":1.0,"throttle_mean":0.7544,"throttle_min":0.1247,"throttle_max":0.9905,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.1843,"spawn_xy_half_width_m":0.776}
+step=753,664 reward_mean=-4.193 kl=0.00651 clipfrac=0.040 eval={'landed_fraction': 1.0, 'crashed_fraction': 1.0, 'mean_touchdown_speed': 0.007506710011512041, 'max_touchdown_speed': 0.135869562625885, 'mean_pad_distance': 2.123992919921875, 'max_pad_distance': 6.09818696975708, 'mean_delta_v_proxy': 15.674324035644531, 'mean_eval_throttle': 0.7800531005859375, 'max_eval_throttle': 0.859129786491394, 'max_upward_speed': 1.7975176572799683, 'max_downward_speed': 9.698473930358887, 'passed': False}
+{"type":"train_update","update":47,"global_step":770048,"wall_s":549.37,"sps":1401.7,"loss":1501.06752,"loss_ema":1664.967359,"loss_plateau_delta":40.97496,"loss_plateau_count":0,"pg_loss":-0.001644,"v_loss":3002.119606,"entropy":-1.87187,"approx_kl":0.006306,"clipfrac":0.0421,"reward_mean":-3.6455,"reward_std":23.4535,"reward_min":-205.1119,"reward_max":469.2834,"reward_scale":1.0,"throttle_mean":0.758,"throttle_min":0.1044,"throttle_max":0.987,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.1884,"spawn_xy_half_width_m":0.783}
+{"type":"train_update","update":48,"global_step":786432,"wall_s":557.02,"sps":1411.9,"loss":1680.711658,"loss_ema":1668.116219,"loss_plateau_delta":3.14886,"loss_plateau_count":0,"pg_loss":-0.001822,"v_loss":3361.408279,"entropy":-1.869355,"approx_kl":0.004301,"clipfrac":0.0191,"reward_mean":-4.2708,"reward_std":25.6248,"reward_min":-205.2173,"reward_max":438.6457,"reward_scale":1.0,"throttle_mean":0.7545,"throttle_min":0.1378,"throttle_max":0.9876,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.1925,"spawn_xy_half_width_m":0.789}
+{"type":"train_update","update":49,"global_step":802816,"wall_s":564.01,"sps":1423.4,"loss":1703.209587,"loss_ema":1675.134892,"loss_plateau_delta":7.018674,"loss_plateau_count":0,"pg_loss":-0.001156,"v_loss":3406.402794,"entropy":-1.869949,"approx_kl":0.00489,"clipfrac":0.0257,"reward_mean":-4.2381,"reward_std":26.1484,"reward_min":-205.249,"reward_max":467.9927,"reward_scale":1.0,"throttle_mean":0.7491,"throttle_min":0.0827,"throttle_max":0.9853,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.1966,"spawn_xy_half_width_m":0.795}
+{"type":"train_update","update":50,"global_step":819200,"wall_s":570.77,"sps":1435.2,"loss":1540.080345,"loss_ema":1648.123983,"loss_plateau_delta":27.010909,"loss_plateau_count":0,"pg_loss":-0.00149,"v_loss":3080.14492,"entropy":-1.875424,"approx_kl":0.003175,"clipfrac":0.0366,"reward_mean":-3.9292,"reward_std":25.1411,"reward_min":-205.3228,"reward_max":443.1176,"reward_scale":1.0,"throttle_mean":0.7554,"throttle_min":0.1677,"throttle_max":0.9909,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.2007,"spawn_xy_half_width_m":0.801}
+{"type":"train_update","update":51,"global_step":835584,"wall_s":578.62,"sps":1444.1,"loss":1504.919254,"loss_ema":1619.483037,"loss_plateau_delta":28.640946,"loss_plateau_count":0,"pg_loss":-0.00061,"v_loss":3009.820915,"entropy":-1.879219,"approx_kl":0.00426,"clipfrac":0.0496,"reward_mean":-3.8924,"reward_std":25.0047,"reward_min":-206.5529,"reward_max":463.3378,"reward_scale":1.0,"throttle_mean":0.7525,"throttle_min":0.1485,"throttle_max":0.9822,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.2048,"spawn_xy_half_width_m":0.807}
+{"type":"train_update","update":52,"global_step":851968,"wall_s":585.96,"sps":1454.0,"loss":1653.235275,"loss_ema":1626.233485,"loss_plateau_delta":6.750448,"loss_plateau_count":0,"pg_loss":-0.001098,"v_loss":3306.453979,"entropy":-1.876488,"approx_kl":0.003858,"clipfrac":0.0139,"reward_mean":-3.8237,"reward_std":25.9743,"reward_min":-205.4432,"reward_max":454.2206,"reward_scale":1.0,"throttle_mean":0.7452,"throttle_min":0.1459,"throttle_max":0.9862,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.2089,"spawn_xy_half_width_m":0.813}
+{"type":"train_update","update":53,"global_step":868352,"wall_s":592.81,"sps":1464.8,"loss":1611.54673,"loss_ema":1623.296134,"loss_plateau_delta":2.937351,"loss_plateau_count":0,"pg_loss":-0.001584,"v_loss":3223.077858,"entropy":-1.877075,"approx_kl":0.004691,"clipfrac":0.0155,"reward_mean":-4.1531,"reward_std":25.5166,"reward_min":-205.5181,"reward_max":430.9868,"reward_scale":1.0,"throttle_mean":0.7403,"throttle_min":0.1503,"throttle_max":0.988,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.213,"spawn_xy_half_width_m":0.819}
+{"type":"train_update","update":54,"global_step":884736,"wall_s":601.18,"sps":1471.7,"loss":1661.722595,"loss_ema":1630.981426,"loss_plateau_delta":7.685292,"loss_plateau_count":0,"pg_loss":-0.001661,"v_loss":3323.429726,"entropy":-1.877907,"approx_kl":0.004925,"clipfrac":0.0345,"reward_mean":-4.029,"reward_std":26.5489,"reward_min":-205.8387,"reward_max":465.0915,"reward_scale":1.0,"throttle_mean":0.7366,"throttle_min":0.1078,"throttle_max":0.9834,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.2171,"spawn_xy_half_width_m":0.826}
+{"type":"train_update","update":55,"global_step":901120,"wall_s":608.29,"sps":1481.4,"loss":1773.710636,"loss_ema":1659.527268,"loss_plateau_delta":28.545842,"loss_plateau_count":0,"pg_loss":-0.001545,"v_loss":3547.405563,"entropy":-1.87856,"approx_kl":0.006789,"clipfrac":0.0315,"reward_mean":-4.4157,"reward_std":27.2278,"reward_min":-205.6355,"reward_max":453.3058,"reward_scale":1.0,"throttle_mean":0.7353,"throttle_min":0.1367,"throttle_max":0.9852,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.2212,"spawn_xy_half_width_m":0.832}
+{"type":"train_update","update":56,"global_step":917504,"wall_s":615.12,"sps":1491.6,"loss":1706.721996,"loss_ema":1668.966214,"loss_plateau_delta":9.438946,"loss_plateau_count":0,"pg_loss":0.000827,"v_loss":3413.423561,"entropy":-1.875626,"approx_kl":0.003194,"clipfrac":0.0901,"reward_mean":-4.2806,"reward_std":26.4653,"reward_min":-205.3738,"reward_max":458.1819,"reward_scale":1.0,"throttle_mean":0.7336,"throttle_min":0.1161,"throttle_max":0.9841,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.2253,"spawn_xy_half_width_m":0.838}
+{"type":"train_update","update":57,"global_step":933888,"wall_s":623.46,"sps":1497.9,"loss":1527.843147,"loss_ema":1640.7416,"loss_plateau_delta":28.224613,"loss_plateau_count":0,"pg_loss":-0.000715,"v_loss":3055.668999,"entropy":-1.87211,"approx_kl":0.007238,"clipfrac":0.0436,"reward_mean":-3.7584,"reward_std":25.2401,"reward_min":-205.3741,"reward_max":453.4396,"reward_scale":1.0,"throttle_mean":0.735,"throttle_min":0.1499,"throttle_max":0.9846,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.2294,"spawn_xy_half_width_m":0.844}
+{"type":"train_update","update":58,"global_step":950272,"wall_s":630.44,"sps":1507.3,"loss":1554.557465,"loss_ema":1623.504773,"loss_plateau_delta":17.236827,"loss_plateau_count":0,"pg_loss":-0.001014,"v_loss":3109.098259,"entropy":-1.870546,"approx_kl":0.004903,"clipfrac":0.0316,"reward_mean":-3.8234,"reward_std":25.9462,"reward_min":-205.632,"reward_max":462.7488,"reward_scale":1.0,"throttle_mean":0.7419,"throttle_min":0.1031,"throttle_max":0.9829,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.2335,"spawn_xy_half_width_m":0.85}
+{"type":"train_update","update":59,"global_step":966656,"wall_s":637.6,"sps":1516.1,"loss":1673.148705,"loss_ema":1633.43356,"loss_plateau_delta":9.928786,"loss_plateau_count":0,"pg_loss":-0.001826,"v_loss":3346.282387,"entropy":-1.869141,"approx_kl":0.004571,"clipfrac":0.0216,"reward_mean":-4.2596,"reward_std":26.2281,"reward_min":-205.4831,"reward_max":443.3509,"reward_scale":1.0,"throttle_mean":0.7446,"throttle_min":0.1571,"throttle_max":0.9867,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.2376,"spawn_xy_half_width_m":0.856}
+{"type":"train_update","update":60,"global_step":983040,"wall_s":645.31,"sps":1523.4,"loss":1585.33564,"loss_ema":1623.813976,"loss_plateau_delta":9.619584,"loss_plateau_count":0,"pg_loss":-0.001961,"v_loss":3170.656532,"entropy":-1.8679,"approx_kl":0.003422,"clipfrac":0.0159,"reward_mean":-3.7138,"reward_std":26.064,"reward_min":-204.8916,"reward_max":443.4596,"reward_scale":1.0,"throttle_mean":0.7453,"throttle_min":0.1183,"throttle_max":0.9889,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.2417,"spawn_xy_half_width_m":0.862}
+{"type":"train_update","update":61,"global_step":999424,"wall_s":652.58,"sps":1531.5,"loss":1478.737289,"loss_ema":1594.798638,"loss_plateau_delta":29.015337,"loss_plateau_count":0,"pg_loss":-0.001886,"v_loss":2957.459641,"entropy":-1.868699,"approx_kl":0.005185,"clipfrac":0.0316,"reward_mean":-3.8219,"reward_std":24.8021,"reward_min":-205.3351,"reward_max":437.0145,"reward_scale":1.0,"throttle_mean":0.7477,"throttle_min":0.1115,"throttle_max":0.989,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.2458,"spawn_xy_half_width_m":0.869}
+{"type":"train_update","update":62,"global_step":1015808,"wall_s":659.7,"sps":1539.8,"loss":1531.696194,"loss_ema":1582.178149,"loss_plateau_delta":12.620489,"loss_plateau_count":0,"pg_loss":-0.001641,"v_loss":3063.376984,"entropy":-1.870322,"approx_kl":0.003053,"clipfrac":0.022,"reward_mean":-3.8943,"reward_std":25.744,"reward_min":-205.3058,"reward_max":441.9988,"reward_scale":1.0,"throttle_mean":0.7495,"throttle_min":0.1222,"throttle_max":0.9871,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.2499,"spawn_xy_half_width_m":0.875}
+step=1,015,808 reward_mean=-3.894 kl=0.00305 clipfrac=0.022 eval={'landed_fraction': 1.0, 'crashed_fraction': 1.0, 'mean_touchdown_speed': 0.012678570114076138, 'max_touchdown_speed': 0.3472054600715637, 'mean_pad_distance': 2.025092363357544, 'max_pad_distance': 4.4777631759643555, 'mean_delta_v_proxy': 15.454519271850586, 'mean_eval_throttle': 0.7744157428211637, 'max_eval_throttle': 0.8750463724136353, 'max_upward_speed': 1.809287190437317, 'max_downward_speed': 10.282788276672363, 'passed': False}
+{"type":"train_update","update":63,"global_step":1032192,"wall_s":718.92,"sps":1435.7,"loss":1191.18232,"loss_ema":1503.978983,"loss_plateau_delta":78.199166,"loss_plateau_count":0,"pg_loss":-0.001358,"v_loss":2382.348656,"entropy":-1.87054,"approx_kl":0.006104,"clipfrac":0.0354,"reward_mean":-3.5873,"reward_std":21.1336,"reward_min":-205.1145,"reward_max":433.0681,"reward_scale":1.0,"throttle_mean":0.7551,"throttle_min":0.1537,"throttle_max":0.986,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.254,"spawn_xy_half_width_m":0.881}
+{"type":"train_update","update":64,"global_step":1048576,"wall_s":725.82,"sps":1444.7,"loss":1514.504025,"loss_ema":1506.083992,"loss_plateau_delta":2.105008,"loss_plateau_count":0,"pg_loss":-0.001251,"v_loss":3028.991875,"entropy":-1.868294,"approx_kl":0.004423,"clipfrac":0.0273,"reward_mean":-4.2737,"reward_std":24.8846,"reward_min":-205.5292,"reward_max":463.6752,"reward_scale":1.0,"throttle_mean":0.7531,"throttle_min":0.1768,"throttle_max":0.9826,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.258,"spawn_xy_half_width_m":0.887}
+{"type":"train_update","update":65,"global_step":1064960,"wall_s":733.72,"sps":1451.5,"loss":1624.937855,"loss_ema":1529.854764,"loss_plateau_delta":23.770773,"loss_plateau_count":0,"pg_loss":-0.001989,"v_loss":3249.861031,"entropy":-1.864733,"approx_kl":0.004421,"clipfrac":0.0257,"reward_mean":-3.9433,"reward_std":26.4223,"reward_min":-205.8109,"reward_max":447.9794,"reward_scale":1.0,"throttle_mean":0.7564,"throttle_min":0.1423,"throttle_max":0.9855,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.2621,"spawn_xy_half_width_m":0.893}
+{"type":"train_update","update":66,"global_step":1081344,"wall_s":740.84,"sps":1459.6,"loss":1451.66291,"loss_ema":1514.216394,"loss_plateau_delta":15.638371,"loss_plateau_count":0,"pg_loss":-0.000786,"v_loss":2903.308769,"entropy":-1.862392,"approx_kl":0.008548,"clipfrac":0.0477,"reward_mean":-4.1222,"reward_std":24.6822,"reward_min":-205.2673,"reward_max":432.7833,"reward_scale":1.0,"throttle_mean":0.755,"throttle_min":0.1066,"throttle_max":0.9874,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.2662,"spawn_xy_half_width_m":0.899}
+{"type":"train_update","update":67,"global_step":1097728,"wall_s":748.15,"sps":1467.3,"loss":1586.148624,"loss_ema":1528.60284,"loss_plateau_delta":14.386446,"loss_plateau_count":0,"pg_loss":-0.001117,"v_loss":3172.280846,"entropy":-1.861999,"approx_kl":0.003841,"clipfrac":0.0332,"reward_mean":-4.3756,"reward_std":25.8596,"reward_min":-206.0971,"reward_max":449.1472,"reward_scale":1.0,"throttle_mean":0.755,"throttle_min":0.0895,"throttle_max":0.9868,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.2703,"spawn_xy_half_width_m":0.906}
+{"type":"train_update","update":68,"global_step":1114112,"wall_s":755.83,"sps":1474.0,"loss":1564.619675,"loss_ema":1535.806207,"loss_plateau_delta":7.203367,"loss_plateau_count":0,"pg_loss":0.000164,"v_loss":3129.220421,"entropy":-1.858122,"approx_kl":0.013866,"clipfrac":0.0678,"reward_mean":-4.1619,"reward_std":25.8228,"reward_min":-205.4503,"reward_max":450.3895,"reward_scale":1.0,"throttle_mean":0.7566,"throttle_min":0.1524,"throttle_max":0.9881,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.2744,"spawn_xy_half_width_m":0.912}
+{"type":"train_update","update":69,"global_step":1130496,"wall_s":763.16,"sps":1481.3,"loss":1343.685543,"loss_ema":1497.382074,"loss_plateau_delta":38.424133,"loss_plateau_count":0,"pg_loss":-0.001697,"v_loss":2687.355949,"entropy":-1.85275,"approx_kl":0.005598,"clipfrac":0.0659,"reward_mean":-3.8721,"reward_std":23.8044,"reward_min":-205.4279,"reward_max":431.048,"reward_scale":1.0,"throttle_mean":0.761,"throttle_min":0.1245,"throttle_max":0.9859,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.2785,"spawn_xy_half_width_m":0.918}
+{"type":"train_update","update":70,"global_step":1146880,"wall_s":770.55,"sps":1488.4,"loss":1295.901806,"loss_ema":1457.08602,"loss_plateau_delta":40.296054,"loss_plateau_count":0,"pg_loss":-0.001175,"v_loss":2591.787476,"entropy":-1.84924,"approx_kl":0.004375,"clipfrac":0.0318,"reward_mean":-3.9234,"reward_std":23.8344,"reward_min":-205.2929,"reward_max":458.4229,"reward_scale":1.0,"throttle_mean":0.7628,"throttle_min":0.1711,"throttle_max":0.9853,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.2826,"spawn_xy_half_width_m":0.924}
+{"type":"train_update","update":71,"global_step":1163264,"wall_s":778.05,"sps":1495.1,"loss":1443.24485,"loss_ema":1454.317786,"loss_plateau_delta":2.768234,"loss_plateau_count":0,"pg_loss":-0.000558,"v_loss":2886.472298,"entropy":-1.84945,"approx_kl":0.007856,"clipfrac":0.0493,"reward_mean":-3.674,"reward_std":25.3237,"reward_min":-205.2123,"reward_max":451.3851,"reward_scale":1.0,"throttle_mean":0.7663,"throttle_min":0.1922,"throttle_max":0.988,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.2867,"spawn_xy_half_width_m":0.93}
+{"type":"train_update","update":72,"global_step":1179648,"wall_s":785.42,"sps":1501.9,"loss":1348.698612,"loss_ema":1433.193951,"loss_plateau_delta":21.123835,"loss_plateau_count":0,"pg_loss":-0.001281,"v_loss":2697.381279,"entropy":-1.850704,"approx_kl":0.003414,"clipfrac":0.0463,"reward_mean":-3.9145,"reward_std":23.993,"reward_min":-205.9569,"reward_max":462.6997,"reward_scale":1.0,"throttle_mean":0.769,"throttle_min":0.1237,"throttle_max":0.9908,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.2908,"spawn_xy_half_width_m":0.936}
+{"type":"train_update","update":73,"global_step":1196032,"wall_s":793.01,"sps":1508.2,"loss":1489.023628,"loss_ema":1444.359887,"loss_plateau_delta":11.165935,"loss_plateau_count":0,"pg_loss":-0.001545,"v_loss":2978.031845,"entropy":-1.849777,"approx_kl":0.003596,"clipfrac":0.0298,"reward_mean":-4.2267,"reward_std":25.1864,"reward_min":-205.4713,"reward_max":444.2784,"reward_scale":1.0,"throttle_mean":0.7662,"throttle_min":0.1299,"throttle_max":0.9885,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.2949,"spawn_xy_half_width_m":0.942}
+{"type":"train_update","update":74,"global_step":1212416,"wall_s":800.58,"sps":1514.4,"loss":1316.741405,"loss_ema":1418.836191,"loss_plateau_delta":25.523696,"loss_plateau_count":0,"pg_loss":-0.001341,"v_loss":2633.467018,"entropy":-1.849829,"approx_kl":0.003826,"clipfrac":0.0325,"reward_mean":-3.7964,"reward_std":24.1801,"reward_min":-205.3757,"reward_max":460.7542,"reward_scale":1.0,"throttle_mean":0.769,"throttle_min":0.1573,"throttle_max":0.9871,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.299,"spawn_xy_half_width_m":0.949}
+{"type":"train_update","update":75,"global_step":1228800,"wall_s":808.28,"sps":1520.3,"loss":1630.155235,"loss_ema":1461.1,"loss_plateau_delta":42.263809,"loss_plateau_count":0,"pg_loss":-0.001363,"v_loss":3260.294731,"entropy":-1.847862,"approx_kl":0.004354,"clipfrac":0.0338,"reward_mean":-4.0859,"reward_std":26.5314,"reward_min":-205.5298,"reward_max":452.4469,"reward_scale":1.0,"throttle_mean":0.7643,"throttle_min":0.1587,"throttle_max":0.9829,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.3031,"spawn_xy_half_width_m":0.955}
+{"type":"train_update","update":76,"global_step":1245184,"wall_s":815.5,"sps":1526.9,"loss":1386.754662,"loss_ema":1446.230932,"loss_plateau_delta":14.869068,"loss_plateau_count":0,"pg_loss":-0.001643,"v_loss":2773.494186,"entropy":-1.844369,"approx_kl":0.004426,"clipfrac":0.0288,"reward_mean":-3.8806,"reward_std":24.3629,"reward_min":-205.5035,"reward_max":459.9278,"reward_scale":1.0,"throttle_mean":0.7657,"throttle_min":0.173,"throttle_max":0.9854,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.3072,"spawn_xy_half_width_m":0.961}
+{"type":"train_update","update":77,"global_step":1261568,"wall_s":822.43,"sps":1533.9,"loss":1293.195873,"loss_ema":1415.62392,"loss_plateau_delta":30.607012,"loss_plateau_count":0,"pg_loss":8.6e-05,"v_loss":2586.373184,"entropy":-1.840995,"approx_kl":0.00741,"clipfrac":0.0518,"reward_mean":-3.8078,"reward_std":24.0086,"reward_min":-205.4536,"reward_max":449.0207,"reward_scale":1.0,"throttle_mean":0.7657,"throttle_min":0.1696,"throttle_max":0.993,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.3113,"spawn_xy_half_width_m":0.967}
+step=1,261,568 reward_mean=-3.808 kl=0.00741 clipfrac=0.052 eval={'landed_fraction': 1.0, 'crashed_fraction': 1.0, 'mean_touchdown_speed': 0.014638339169323444, 'max_touchdown_speed': 0.40213093161582947, 'mean_pad_distance': 2.2751402854919434, 'max_pad_distance': 5.292683124542236, 'mean_delta_v_proxy': 16.777050018310547, 'mean_eval_throttle': 0.8024110487434599, 'max_eval_throttle': 0.88551926612854, 'max_upward_speed': 1.7999247312545776, 'max_downward_speed': 9.328125, 'passed': False}
+{"type":"train_update","update":78,"global_step":1277952,"wall_s":881.01,"sps":1450.5,"loss":1170.060974,"loss_ema":1366.511331,"loss_plateau_delta":49.112589,"loss_plateau_count":0,"pg_loss":-0.000764,"v_loss":2340.105103,"entropy":-1.839303,"approx_kl":0.002671,"clipfrac":0.0445,"reward_mean":-3.611,"reward_std":21.3058,"reward_min":-205.5135,"reward_max":442.5334,"reward_scale":1.0,"throttle_mean":0.7752,"throttle_min":0.1666,"throttle_max":0.993,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.3154,"spawn_xy_half_width_m":0.973}
+{"type":"train_update","update":79,"global_step":1294336,"wall_s":888.11,"sps":1457.4,"loss":1414.652767,"loss_ema":1376.139618,"loss_plateau_delta":9.628287,"loss_plateau_count":0,"pg_loss":-0.000925,"v_loss":2829.288986,"entropy":-1.84062,"approx_kl":0.006136,"clipfrac":0.0628,"reward_mean":-4.2299,"reward_std":24.4805,"reward_min":-205.9047,"reward_max":459.127,"reward_scale":1.0,"throttle_mean":0.7692,"throttle_min":0.1666,"throttle_max":0.987,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.3195,"spawn_xy_half_width_m":0.979}
+{"type":"train_update","update":80,"global_step":1310720,"wall_s":896.38,"sps":1462.2,"loss":1397.080662,"loss_ema":1380.327827,"loss_plateau_delta":4.188209,"loss_plateau_count":0,"pg_loss":0.00028,"v_loss":2794.142372,"entropy":-1.840868,"approx_kl":0.006321,"clipfrac":0.0776,"reward_mean":-3.9651,"reward_std":24.7887,"reward_min":-205.5239,"reward_max":450.0493,"reward_scale":1.0,"throttle_mean":0.7749,"throttle_min":0.0721,"throttle_max":0.9877,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.3236,"spawn_xy_half_width_m":0.985}
+{"type":"train_update","update":81,"global_step":1327104,"wall_s":903.61,"sps":1468.7,"loss":1331.736912,"loss_ema":1370.609644,"loss_plateau_delta":9.718183,"loss_plateau_count":0,"pg_loss":-0.001121,"v_loss":2663.457642,"entropy":-1.842766,"approx_kl":0.004162,"clipfrac":0.0347,"reward_mean":-4.0172,"reward_std":24.4153,"reward_min":-205.9063,"reward_max":421.9105,"reward_scale":1.0,"throttle_mean":0.7719,"throttle_min":0.1801,"throttle_max":0.9929,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.3277,"spawn_xy_half_width_m":0.992}
+{"type":"train_update","update":82,"global_step":1343488,"wall_s":910.6,"sps":1475.4,"loss":1427.722012,"loss_ema":1382.032117,"loss_plateau_delta":11.422474,"loss_plateau_count":0,"pg_loss":-0.000923,"v_loss":2855.427429,"entropy":-1.84391,"approx_kl":0.003048,"clipfrac":0.0237,"reward_mean":-4.0547,"reward_std":25.0967,"reward_min":-205.9039,"reward_max":438.7333,"reward_scale":1.0,"throttle_mean":0.7706,"throttle_min":0.176,"throttle_max":0.9867,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.3318,"spawn_xy_half_width_m":0.998}
+{"type":"train_update","update":83,"global_step":1359872,"wall_s":918.1,"sps":1481.2,"loss":1254.987602,"loss_ema":1356.623214,"loss_plateau_delta":25.408903,"loss_plateau_count":0,"pg_loss":-0.001005,"v_loss":2509.958809,"entropy":-1.84202,"approx_kl":0.003339,"clipfrac":0.0246,"reward_mean":-4.0604,"reward_std":23.7417,"reward_min":-205.5899,"reward_max":453.7225,"reward_scale":1.0,"throttle_mean":0.77,"throttle_min":0.1323,"throttle_max":0.9901,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.3359,"spawn_xy_half_width_m":1.004}
+{"type":"train_update","update":84,"global_step":1376256,"wall_s":925.69,"sps":1486.7,"loss":1483.282715,"loss_ema":1381.955114,"loss_plateau_delta":25.3319,"loss_plateau_count":0,"pg_loss":-0.001677,"v_loss":2966.550377,"entropy":-1.841652,"approx_kl":0.005643,"clipfrac":0.0265,"reward_mean":-3.8055,"reward_std":25.9723,"reward_min":-205.3608,"reward_max":461.7573,"reward_scale":1.0,"throttle_mean":0.77,"throttle_min":0.1619,"throttle_max":0.9902,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.34,"spawn_xy_half_width_m":1.01}
+{"type":"train_update","update":85,"global_step":1392640,"wall_s":933.21,"sps":1492.3,"loss":1461.704666,"loss_ema":1397.905025,"loss_plateau_delta":15.94991,"loss_plateau_count":0,"pg_loss":-0.00021,"v_loss":2923.391342,"entropy":-1.841368,"approx_kl":0.005568,"clipfrac":0.0591,"reward_mean":-4.0245,"reward_std":25.5702,"reward_min":-205.4054,"reward_max":436.1464,"reward_scale":1.0,"throttle_mean":0.7778,"throttle_min":0.1274,"throttle_max":0.9907,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.3441,"spawn_xy_half_width_m":1.016}
+{"type":"train_update","update":86,"global_step":1409024,"wall_s":941.02,"sps":1497.3,"loss":1217.637352,"loss_ema":1361.85149,"loss_plateau_delta":36.053535,"loss_plateau_count":0,"pg_loss":-0.0019,"v_loss":2435.260063,"entropy":-1.842905,"approx_kl":0.004534,"clipfrac":0.0317,"reward_mean":-4.1337,"reward_std":22.9218,"reward_min":-205.6847,"reward_max":461.6501,"reward_scale":1.0,"throttle_mean":0.7753,"throttle_min":0.1426,"throttle_max":0.9852,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.3482,"spawn_xy_half_width_m":1.022}
+{"type":"train_update","update":87,"global_step":1425408,"wall_s":948.7,"sps":1502.5,"loss":1340.21867,"loss_ema":1357.524926,"loss_plateau_delta":4.326564,"loss_plateau_count":0,"pg_loss":-0.000954,"v_loss":2680.420845,"entropy":-1.842084,"approx_kl":0.004188,"clipfrac":0.0239,"reward_mean":-4.0012,"reward_std":24.671,"reward_min":-205.8822,"reward_max":472.583,"reward_scale":1.0,"throttle_mean":0.7736,"throttle_min":0.1803,"throttle_max":0.9859,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.3523,"spawn_xy_half_width_m":1.028}
+{"type":"train_update","update":88,"global_step":1441792,"wall_s":956.3,"sps":1507.7,"loss":1312.209419,"loss_ema":1348.461825,"loss_plateau_delta":9.063101,"loss_plateau_count":0,"pg_loss":-0.000677,"v_loss":2624.401756,"entropy":-1.843421,"approx_kl":0.006101,"clipfrac":0.0516,"reward_mean":-3.9773,"reward_std":24.4463,"reward_min":-205.9008,"reward_max":426.2132,"reward_scale":1.0,"throttle_mean":0.7686,"throttle_min":0.1284,"throttle_max":0.9892,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.3564,"spawn_xy_half_width_m":1.035}
+{"type":"train_update","update":89,"global_step":1458176,"wall_s":963.54,"sps":1513.4,"loss":1315.901321,"loss_ema":1341.949724,"loss_plateau_delta":6.512101,"loss_plateau_count":0,"pg_loss":-0.001445,"v_loss":2631.78714,"entropy":-1.840982,"approx_kl":0.004361,"clipfrac":0.0333,"reward_mean":-4.0794,"reward_std":24.4612,"reward_min":-205.0421,"reward_max":414.1362,"reward_scale":1.0,"throttle_mean":0.7719,"throttle_min":0.1283,"throttle_max":0.9887,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.3604,"spawn_xy_half_width_m":1.041}
+{"type":"train_update","update":90,"global_step":1474560,"wall_s":971.27,"sps":1518.2,"loss":1242.771931,"loss_ema":1322.114165,"loss_plateau_delta":19.835559,"loss_plateau_count":0,"pg_loss":-0.000909,"v_loss":2485.527275,"entropy":-1.839749,"approx_kl":0.003588,"clipfrac":0.0152,"reward_mean":-3.7544,"reward_std":23.756,"reward_min":-205.1677,"reward_max":457.073,"reward_scale":1.0,"throttle_mean":0.7684,"throttle_min":0.1676,"throttle_max":0.9887,"spawn_curriculum_enabled":true,"spawn_curriculum_progress":0.3645,"spawn_xy_half_width_m":1.047}
