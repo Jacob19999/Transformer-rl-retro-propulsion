@@ -142,6 +142,7 @@ class TVCDirectRLEnv(TVCEnvBase):
         # Auto-reset terminated/timed-out envs
         reset_ids = (terminated | time_out).nonzero(as_tuple=False).squeeze(-1)
         if len(reset_ids) > 0:
+            self._link_force_iface.clear_external_wrenches(reset_ids)
             self._reset_manager.reset_envs(reset_ids)
             self._step_count[reset_ids] = 0
             self._sim_scene.step()  # propagate reset state
@@ -157,6 +158,7 @@ class TVCDirectRLEnv(TVCEnvBase):
             (obs_dict, info)
         """
         indices = torch.arange(self._config.num_envs, device=self.device, dtype=torch.int64)
+        self._link_force_iface.clear_external_wrenches(indices)
         self._reset_manager.reset_envs(indices)
         self._step_count.zero_()
         self._pending_actions = None

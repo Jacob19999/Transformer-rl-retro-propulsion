@@ -132,8 +132,24 @@ class LinkForceInterface:
         torque_world = torch.zeros_like(force_world)
         self.apply_body_wrench(force_world, torque_world, body_id)
 
+    def clear_external_wrenches(self, env_ids: Tensor | None = None) -> None:
+        """Clear all permanent external wrench slots for selected environments.
+
+        Isaac Lab's permanent wrench composer carries forces across physics
+        steps until explicitly reset. Clear it before episode reset propagation
+        so stale terminal-step thrust/fin forces cannot affect the new episode.
+        """
+        if env_ids is not None:
+            env_ids = env_ids.to(device=self._art.device, dtype=torch.int64)
+        self._art.permanent_wrench_composer.reset(env_ids)
+
     def clear_external_forces(self) -> None:
-        """Zero out all external forces on fin links."""
+        """Zero out external forces on fin links.
+
+        Kept for compatibility with older tests/scripts. Prefer
+        :meth:`clear_external_wrenches` when resetting an environment because
+        body-level thrust and torque slots must be cleared too.
+        """
         num_envs = self._art.num_instances
         num_fins = 4
         zeros = torch.zeros(num_envs, num_fins, 3, device=self._art.device)

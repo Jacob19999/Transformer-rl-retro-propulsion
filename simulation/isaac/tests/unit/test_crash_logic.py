@@ -130,6 +130,29 @@ class TestAltitudeError:
         assert result[0].item() is False
 
 
+class TestConfigLoading:
+    def test_from_task_config_reads_nested_task_termination_values(self):
+        detector = CrashDetector.from_task_config(
+            {
+                "task": {
+                    "termination": {
+                        "max_impact_speed": 1.25,
+                        "max_tilt_at_contact": 0.25,
+                        "max_angular_rate_at_contact": 2.5,
+                        "max_tilt": 0.75,
+                        "max_altitude_error": 30.0,
+                    }
+                }
+            }
+        )
+
+        assert detector.max_impact_speed == 1.25
+        assert detector.max_tilt_at_contact == 0.25
+        assert detector.max_angular_rate_at_contact == 2.5
+        assert detector.max_tilt == 0.75
+        assert detector.max_altitude_error == 30.0
+
+
 class TestVectorizedEvaluation:
     def test_evaluate_handles_batch(self, detector):
         """evaluate() should work across a batch of environments."""

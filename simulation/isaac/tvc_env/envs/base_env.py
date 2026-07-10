@@ -191,7 +191,11 @@ class TVCEnvBase:
         )
 
         # Contact state machine
-        contact_sm = ContactStateMachine(num_envs=num_envs, device=device)
+        contact_sm = ContactStateMachine.from_task_config(
+            self._config.config,
+            num_envs=num_envs,
+            device=device,
+        )
         crash_detector = CrashDetector.from_task_config(self._config.config)
 
         # Reset manager

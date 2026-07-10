@@ -38,8 +38,12 @@ class CrashDetector:
     @classmethod
     def from_task_config(cls, task_config: dict) -> "CrashDetector":
         """Create CrashDetector from task YAML config."""
-        term = task_config.get("termination", {})
+        task = task_config.get("task", task_config)
+        term = task.get("termination", {})
         return cls(
+            max_impact_speed=term.get("max_impact_speed", 3.0),
+            max_tilt_at_contact=term.get("max_tilt_at_contact", 0.5),
+            max_angular_rate_at_contact=term.get("max_angular_rate_at_contact", 3.0),
             max_tilt=term.get("max_tilt", 1.57),
             max_altitude_error=term.get("max_altitude_error", 10.0),
         )

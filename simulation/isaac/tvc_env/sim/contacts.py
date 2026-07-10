@@ -40,7 +40,8 @@ class ContactStateMachine:
     @classmethod
     def from_task_config(cls, task_config: dict, num_envs: int, device=None) -> "ContactStateMachine":
         """Create state machine from task YAML config."""
-        contact_cfg = task_config.get("contact", {})
+        task = task_config.get("task", task_config)
+        contact_cfg = task.get("contact", {})
         return cls(
             num_envs=num_envs,
             dwell_frames=contact_cfg.get("dwell_frames", 10),
@@ -77,7 +78,8 @@ class ContactStateMachine:
             Updated state tensor (num_envs,).
         """
         prev_state = self._state.clone()
-        in_contact_bool = in_contact.bool()
+        force_contact = contact_force.to(device=self.device).abs() >= self.min_contact_force
+        in_contact_bool = in_contact.bool() & force_contact
         is_crashed_bool = is_crashed.bool()
 
         # Reset dwell counter when leaving contact
