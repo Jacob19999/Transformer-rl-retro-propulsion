@@ -10,7 +10,7 @@ from __future__ import annotations
 import torch
 from torch import Tensor
 from tvc_env.common.constants import ContactState
-from tvc_env.common.quaternions import to_euler
+from tvc_env.common.quaternions import tilt_angle
 
 
 def check_tilt_termination(
@@ -26,9 +26,7 @@ def check_tilt_termination(
     Returns:
         Bool tensor (num_envs,) — True where tilt exceeded.
     """
-    roll, pitch, _ = to_euler(quaternion_wxyz)
-    tilt = torch.sqrt(roll ** 2 + pitch ** 2)
-    return tilt > max_tilt
+    return tilt_angle(quaternion_wxyz) > max_tilt
 
 
 def check_altitude_termination(

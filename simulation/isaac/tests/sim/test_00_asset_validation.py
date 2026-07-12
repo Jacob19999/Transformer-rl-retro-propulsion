@@ -21,6 +21,13 @@ from tvc_env.asset.asset_validator import validate_asset, AssetValidationError
 # Paths relative to the simulation/isaac/ directory
 METADATA_PATH = Path(__file__).parents[2] / "assets/metadata/edf_drone_v2.asset.yaml"
 VEHICLE_CONFIG_PATH = Path(__file__).parents[2] / "configs/vehicle/edf_drone_v2.yaml"
+USD_PATH = Path(__file__).parents[2] / "assets/usd/drone_v2_physics.usd"
+
+try:
+    from pxr import Usd
+    PXR_AVAILABLE = True
+except ImportError:
+    PXR_AVAILABLE = False
 
 
 @pytest.fixture
@@ -76,6 +83,13 @@ class TestAssetValidationOffline:
         assert len(metadata["fin_joint_names"]) == 4
         assert len(metadata["hinge_axes"]) == 4
         assert len(metadata["fin_cop_positions"]) == 4
+
+    @pytest.mark.skipif(not PXR_AVAILABLE, reason="OpenUSD pxr bindings not available")
+    def test_authored_usd_matches_metadata(self, metadata, vehicle_config):
+        """The shipped binary USD, not only the synthetic fixture, must validate."""
+        stage = Usd.Stage.Open(str(USD_PATH))
+        assert stage is not None
+        assert validate_asset(metadata, vehicle_config, stage=stage) == []
 
 
 # NOTE: Isaac Sim tests below require the sim runtime.

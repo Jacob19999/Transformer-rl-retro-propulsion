@@ -12,7 +12,7 @@ from __future__ import annotations
 import torch
 from torch import Tensor
 from tvc_env.common.constants import ContactState
-from tvc_env.common.quaternions import to_euler
+from tvc_env.common.quaternions import tilt_angle
 
 
 def _target_position(env_state, config: dict, default: list[float]) -> Tensor:
@@ -64,9 +64,7 @@ def compute_attitude_error_reward(env_state, config: dict) -> Tensor:
     Returns:
         Tensor (num_envs,) — tilt magnitude in radians.
     """
-    roll, pitch, _ = to_euler(env_state.quaternion_wxyz)
-    tilt = torch.sqrt(roll ** 2 + pitch ** 2)  # (num_envs,)
-    return tilt
+    return tilt_angle(env_state.quaternion_wxyz)
 
 
 def compute_angular_velocity_reward(env_state, config: dict) -> Tensor:
@@ -110,8 +108,7 @@ def compute_hover_stability_reward(env_state, config: dict) -> Tensor:
 
     target = _target_position(env_state, config, [0, 0, 5])
     pos_err = (env_state.position - target).norm(dim=-1)
-    roll, pitch, _ = to_euler(env_state.quaternion_wxyz)
-    tilt = torch.sqrt(roll ** 2 + pitch ** 2)
+    tilt = tilt_angle(env_state.quaternion_wxyz)
 
     within_tolerance = (pos_err < max_pos_err) & (tilt < max_tilt)
     return within_tolerance.float()
@@ -157,27 +154,50 @@ def compute_touchdown_softness_reward(env_state, config: dict) -> Tensor:
         Tensor (num_envs,) — softness score [0, 1], higher for softer landing.
     """
     is_landed = env_state.contact_state == ContactState.LANDED
-    # Reward based on inverse of downward velocity (FRD z = down).
-    # Lower downward speed at touchdown = softer landing.
-    downward_speed = env_state.linear_vel_frd[:, 2].clamp(min=0.0)  # (num_envs,)
+    # LANDED is emitted after a dwell period, so current velocity is already
+    # near zero. Use the first-contact speed captured by the environment.
+    touchdown_speed = getattr(env_state, "touchdown_speed", None)
+    downward_speed = (
+        touchdown_speed
+        if touchdown_speed is not None
+        else env_state.linear_vel_frd[:, 2].clamp(min=0.0)
+    )
     softness = torch.exp(-downward_speed)  # Exponential decay with speed
     return softness * is_landed.float()
 
 
 def compute_landing_success_reward(env_state, config: dict) -> Tensor:
-    """One-time reward for landing inside the configured pad radius.
+    """One-time reward for a successful landing.
 
-    The task success criterion is LANDED plus ``success.max_pad_distance``.
-    Paying this reward for every LANDED contact let PPO learn the easier
-    "touch down softly anywhere" strategy seen in fix4/curriculum eval logs.
+    Success requires LANDED plus ``success.max_pad_distance`` (lateral
+    accuracy) plus, when ``success.max_touchdown_speed`` is configured,
+    a soft enough impact. Paying this reward for every LANDED contact
+    let PPO learn the easier "touch down softly anywhere" strategy seen
+    in fix4/curriculum eval logs; tightening on touchdown speed too
+    excludes "land on pad but slam into it" from counting as success
+    (Phase-1 follow-on: the ppo_landing_seed0_20260426_192920 5M run
+    reported max_touchdown_speed 0.347 m/s, so a 0.25 m/s gate forces
+    the policy to learn a genuinely soft terminal flare).
     """
     is_landed = env_state.contact_state == ContactState.LANDED
     task = config.get("task", config)
-    max_pad_distance = float(task.get("success", {}).get("max_pad_distance", 0.5))
+    success_cfg = task.get("success", {})
+    max_pad_distance = float(success_cfg.get("max_pad_distance", 0.5))
+    max_touchdown_speed = success_cfg.get("max_touchdown_speed")
     target = _target_position(env_state, config, [0, 0, 0])
     horiz_dist = (env_state.position[:, :2] - target[:, :2]).norm(dim=-1)
     on_pad = horiz_dist <= max_pad_distance
-    return (is_landed & on_pad).float()
+    success = is_landed & on_pad
+    if max_touchdown_speed is not None:
+        touchdown_speed = getattr(env_state, "touchdown_speed", None)
+        downward_speed = (
+            touchdown_speed
+            if touchdown_speed is not None
+            else env_state.linear_vel_frd[:, 2].clamp(min=0.0)
+        )
+        soft_enough = downward_speed <= float(max_touchdown_speed)
+        success = success & soft_enough
+    return success.float()
 
 
 def compute_pad_accuracy_reward(env_state, config: dict) -> Tensor:
@@ -227,16 +247,28 @@ def compute_horizontal_closure_reward(env_state, config: dict) -> Tensor:
 
 
 def compute_vertical_speed_shaping(env_state, config: dict) -> Tensor:
-    """Reward for maintaining appropriate descent rate during approach.
+    """One-sided fast-descent penalty.
 
-    Returns:
-        Tensor (num_envs,) — shaped descent rate signal.
+    Returns ``max(v_down - target_descent, 0)``: zero whenever the vehicle is
+    descending no faster than the target rate (or hovering / climbing), and
+    growing linearly in excess descent speed.
+
+    The previous implementation used ``|v_down - target|`` (two-sided), which
+    was the largest single per-step term in the integrated episode budget
+    (Phase-1 diagnosis, run ppo_landing_seed0_20260426_192920: -78.8 of
+    -129.6 per-step total at 9 m/s descent over ~75 steps). With the
+    landing_success/pad_accuracy terminal so easily missed from large
+    spawns, that cost dominated the policy's incentive landscape and made
+    fast descent (rushing to terminate to cap costs) more attractive than
+    correcting laterally first. Switching to a one-sided penalty makes
+    "hover and correct laterally, then descend slowly" cheap and only
+    penalizes truly unsafe descent rates — closer to the safe-landing
+    objective and consistent with CLAUDE.md rule 2 on per-step magnitude
+    balance.
     """
-    # Target descent: small downward velocity, penalize upward or too-fast descent
     downward_speed = env_state.linear_vel_frd[:, 2]  # z=down in FRD
-    # Penalize both upward flight and very fast descent
-    target_descent = 0.5  # m/s ideal descent rate
-    return (downward_speed - target_descent).abs()
+    target_descent = 0.5  # m/s — fastest descent that incurs no penalty
+    return (downward_speed - target_descent).clamp(min=0.0)
 
 
 def compute_delta_v_cost(env_state, config: dict) -> Tensor:

@@ -60,6 +60,15 @@ class EpisodeRecord:
     pad_distance: float        # m horizontal at termination (NaN if not landed)
     max_downward_speed: float
     mean_throttle: float
+    # Phase-1 lateral-accuracy diagnosis: signed positions let us tell
+    # "aim and miss" (touchdown_xy points roughly from spawn toward pad)
+    # apart from "open-loop drift" (touchdown_xy ~ spawn_xy + initial_v_xy * t).
+    spawn_x: float
+    spawn_y: float
+    spawn_xy_dist: float
+    touchdown_x: float         # NaN if not landed/crashed
+    touchdown_y: float
+    touchdown_throttle: float  # commanded throttle on the terminal step
 
 
 def main():
@@ -76,8 +85,8 @@ def main():
     simulation_app = None
     env = None
     try:
-        from isaacsim import SimulationApp
-        simulation_app = SimulationApp({"headless": args.headless})
+        from isaac_launcher import launch_simulation_app
+        simulation_app = launch_simulation_app(headless=args.headless)
     except ImportError:
         print("ERROR: Isaac Sim not available.", file=sys.stderr, flush=True)
         watchdog.stop()
@@ -191,59 +200,88 @@ def main():
             throttle_sum = 0.0
             throttle_count = 0
             t0 = time.time()
+            # Spawn pose: env auto-resets at episode boundary, so the obs we
+            # already hold reflects the new spawn. position_error = target - pos
+            # in world frame (3D), so spawn xy = pad_xy - obs[0,0:2].
+            pad_xy0 = env._target_position[0, :2]
+            spawn_xy = (pad_xy0 - obs[0, 0:2]).detach().cpu().tolist()
+            spawn_x = float(spawn_xy[0])
+            spawn_y = float(spawn_xy[1])
+            spawn_xy_dist = float((pad_xy0 - obs[0, 0:2]).norm().item())
+            touchdown_x = float("nan")
+            touchdown_y = float("nan")
+            touchdown_throttle = float("nan")
+            episode_finished = False
 
             with torch.no_grad():
                 while step < max_episode_steps:
                     raw_action = model.deterministic_action(policy_observation(obs))
                     env_action = raw_to_env_action(raw_action)
-                    throttle_sum += float(env_action[:, 4].sum().item())
-                    throttle_count += int(env_action.shape[0])
+                    throttle_cmd = float(env_action[0, 4].item())
+                    throttle_sum += throttle_cmd
+                    throttle_count += 1
                     obs_dict, _, terminated, truncated, info = env.step(env_action)
                     next_obs = obs_dict["policy"]
 
                     contact_pre = info["contact_state_pre_reset"].long()
                     vel_frd_pre = info["linear_vel_frd_pre_reset"]
                     pos_pre = info["position_pre_reset"]
+                    impact_speed_pre = info["touchdown_speed_pre_reset"]
                     max_downward = max(max_downward, float(vel_frd_pre[0, 2].clamp(min=0.0).item()))
 
                     landed_now = bool((contact_pre == int(ContactState.LANDED))[0])
                     crashed_now = bool((contact_pre == int(ContactState.CRASHED))[0])
                     done = bool((terminated | truncated)[0])
 
-                    if landed_now:
-                        outcome = "LANDED"
-                        touchdown_speed = float(vel_frd_pre[0, 2].clamp(min=0.0).item())
+                    if landed_now or crashed_now:
+                        outcome = "LANDED" if landed_now else "CRASHED"
+                        touchdown_speed = float(impact_speed_pre[0].item())
                         pad_xy = env._target_position[0, :2]
-                        pad_distance = float((pos_pre[0, :2] - pad_xy).norm().item())
-                    elif crashed_now:
-                        outcome = "CRASHED"
-                        touchdown_speed = float(vel_frd_pre[0, 2].clamp(min=0.0).item())
-                        pad_xy = env._target_position[0, :2]
-                        pad_distance = float((pos_pre[0, :2] - pad_xy).norm().item())
+                        td_offset = pos_pre[0, :2] - pad_xy
+                        pad_distance = float(td_offset.norm().item())
+                        touchdown_x = float(pos_pre[0, 0].item())
+                        touchdown_y = float(pos_pre[0, 1].item())
+                        touchdown_throttle = throttle_cmd
 
                     obs = next_obs
                     simulation_app.update()
                     step += 1
                     if done:
+                        episode_finished = True
                         break
+
+            if not episode_finished:
+                obs_dict, _ = env.reset()
+                obs = obs_dict["policy"]
 
             duration = time.time() - t0
             mean_throttle = throttle_sum / max(throttle_count, 1)
+
+            def _r(x: float, n: int = 4) -> float:
+                return round(x, n) if x == x else float("nan")
+
             rec = EpisodeRecord(
                 episode=ep_idx,
                 outcome=outcome,
                 duration_s=round(step * rl_dt, 3),
-                touchdown_speed=round(touchdown_speed, 4) if touchdown_speed == touchdown_speed else float("nan"),
-                pad_distance=round(pad_distance, 4) if pad_distance == pad_distance else float("nan"),
+                touchdown_speed=_r(touchdown_speed),
+                pad_distance=_r(pad_distance),
                 max_downward_speed=round(max_downward, 3),
                 mean_throttle=round(mean_throttle, 4),
+                spawn_x=round(spawn_x, 4),
+                spawn_y=round(spawn_y, 4),
+                spawn_xy_dist=round(spawn_xy_dist, 4),
+                touchdown_x=_r(touchdown_x),
+                touchdown_y=_r(touchdown_y),
+                touchdown_throttle=_r(touchdown_throttle),
             )
             episodes.append(rec)
             print(
                 f"ep={ep_idx:>3}/{args.episodes} outcome={rec.outcome:<7} "
-                f"dur={rec.duration_s:>5.2f}s td_speed={rec.touchdown_speed:>6.3f} "
-                f"pad_dist={rec.pad_distance:>6.3f} max_vz={rec.max_downward_speed:>5.2f} "
-                f"thr_mean={rec.mean_throttle:>4.2f} wall={duration:>4.1f}s",
+                f"spawn_xy=({rec.spawn_x:>+5.2f},{rec.spawn_y:>+5.2f}) d0={rec.spawn_xy_dist:>4.2f} "
+                f"td_xy=({rec.touchdown_x:>+5.2f},{rec.touchdown_y:>+5.2f}) pad_d={rec.pad_distance:>5.2f} "
+                f"td_speed={rec.touchdown_speed:>5.2f} td_thr={rec.touchdown_throttle:>4.2f} "
+                f"dur={rec.duration_s:>5.2f}s wall={duration:>4.1f}s",
                 flush=True,
             )
             if out_dir is not None:
@@ -266,6 +304,40 @@ def main():
                 "max": round(max(values), 4),
             }
 
+        # Aim-and-miss vs. drift diagnostic: bin landed episodes by spawn distance
+        # and summarize how much horizontal range was closed. Closure ratio
+        # 1.0 = touched down on pad, 0.0 = ended at the spawn xy (no closure),
+        # negative = drifted further from pad than spawn.
+        def _closure_stats(records):
+            ratios = []
+            for r in records:
+                d0 = r.spawn_xy_dist
+                if d0 < 1e-3 or r.pad_distance != r.pad_distance:
+                    continue
+                ratios.append((d0 - r.pad_distance) / d0)
+            if not ratios:
+                return {"mean": float("nan"), "min": float("nan"), "max": float("nan"), "n": 0}
+            return {
+                "mean": round(sum(ratios) / len(ratios), 4),
+                "min": round(min(ratios), 4),
+                "max": round(max(ratios), 4),
+                "n": len(ratios),
+            }
+
+        spawn_bins = [(0.0, 0.5), (0.5, 1.0), (1.0, 1.5), (1.5, 2.0), (2.0, 3.0)]
+        by_spawn = {}
+        for lo, hi in spawn_bins:
+            bucket = [r for r in landed if lo <= r.spawn_xy_dist < hi]
+            if not bucket:
+                continue
+            by_spawn[f"d0_{lo:.1f}_{hi:.1f}"] = {
+                "n": len(bucket),
+                "mean_pad_distance": round(sum(r.pad_distance for r in bucket) / len(bucket), 4),
+                "max_pad_distance": round(max(r.pad_distance for r in bucket), 4),
+                "mean_closure_ratio": _closure_stats(bucket)["mean"],
+                "on_pad_fraction": round(sum(1 for r in bucket if r.pad_distance < 0.5) / len(bucket), 4),
+            }
+
         summary = {
             "checkpoint": str(ckpt_path),
             "trained_steps": ckpt.get("step", None),
@@ -276,6 +348,9 @@ def main():
             "on_pad_fraction": round(len(on_pad) / n, 4),  # landed AND within 0.5 m
             "touchdown_speed_landed": _stats([r.touchdown_speed for r in landed]),
             "pad_distance_landed": _stats([r.pad_distance for r in landed]),
+            "spawn_xy_distance": _stats([r.spawn_xy_dist for r in episodes]),
+            "closure_ratio_landed": _closure_stats(landed),
+            "by_spawn_distance": by_spawn,
             "duration_s": _stats([r.duration_s for r in episodes]),
         }
         print("=" * 72, flush=True)
@@ -299,7 +374,8 @@ def main():
             env.close()
         if simulation_app is not None:
             print("Closing Isaac Sim...", flush=True)
-            simulation_app.close()
+            from isaac_launcher import close_simulation_app
+            close_simulation_app(simulation_app)
         watchdog.stop()
 
 

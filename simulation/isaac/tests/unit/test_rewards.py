@@ -99,6 +99,21 @@ def test_touchdown_softness_reward_only_pays_when_landed():
     assert torch.allclose(reward[2], torch.exp(torch.tensor(-0.2)))
 
 
+def test_touchdown_rewards_use_first_contact_speed_after_dwell():
+    state = _state(torch.zeros(1, 3), torch.tensor([ContactState.LANDED]))
+    state.linear_vel_frd = torch.zeros(1, 3)
+    state.touchdown_speed = torch.tensor([1.5])
+
+    softness = compute_touchdown_softness_reward(state, {})
+    success = compute_landing_success_reward(
+        state,
+        {"task": {"success": {"max_pad_distance": 0.5, "max_touchdown_speed": 0.25}}},
+    )
+
+    assert torch.allclose(softness, torch.exp(torch.tensor([-1.5])))
+    assert torch.equal(success, torch.zeros(1))
+
+
 def test_landing_success_reward_requires_pad_radius():
     target = torch.zeros(3, 3)
     positions = torch.tensor(
@@ -121,6 +136,35 @@ def test_landing_success_reward_requires_pad_radius():
     )
 
     assert torch.allclose(reward, torch.tensor([1.0, 0.0, 0.0]))
+
+
+def test_landing_success_reward_gates_on_touchdown_speed_when_configured():
+    """When success.max_touchdown_speed is set, hard-touchdown landings inside
+    the pad radius no longer earn the success bonus."""
+    target = torch.zeros(3, 3)
+    # All three envs land on-pad (xy = 0).
+    positions = torch.zeros(3, 3, dtype=torch.float32)
+    contact = torch.tensor([ContactState.LANDED, ContactState.LANDED, ContactState.LANDED])
+    state = _state(positions, contact)
+    # FRD: +z is down, so positive values = downward speed at touchdown.
+    state.linear_vel_frd = torch.tensor(
+        [
+            [0.0, 0.0, 0.10],   # soft  (under 0.25 gate) → counts
+            [0.0, 0.0, 0.30],   # hard  (over 0.25 gate)  → no success
+            [0.0, 0.0, 0.25],   # exactly at gate         → counts (≤)
+        ],
+        dtype=torch.float32,
+    )
+
+    reward = compute_landing_success_reward(
+        state,
+        {
+            "_target_position_world": target,
+            "task": {"success": {"max_pad_distance": 0.5, "max_touchdown_speed": 0.25}},
+        },
+    )
+
+    assert torch.allclose(reward, torch.tensor([1.0, 0.0, 1.0]))
 
 
 def test_horizontal_closure_reward_sign_tracks_pad_closing_velocity():

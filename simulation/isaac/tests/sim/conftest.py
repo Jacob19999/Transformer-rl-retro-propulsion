@@ -25,6 +25,7 @@ try:
     import pxr.Usd as Usd
     import pxr.UsdGeom as UsdGeom
     import pxr.UsdPhysics as UsdPhysics
+    from pxr import Gf
     _PXR_AVAILABLE = True
 except ImportError:
     _PXR_AVAILABLE = False
@@ -49,7 +50,16 @@ def usd_stage():
         UsdGeom.Xform.Define(stage, f"/Drone/{fin_name}")
 
     # Revolute joints: children of Body
-    for joint_name in ["joint_FwdFin", "joint_RightFin", "joint_AftFin", "joint_LeftFin"]:
-        UsdPhysics.RevoluteJoint.Define(stage, f"/Drone/Body/{joint_name}")
+    joint_frames = {
+        "joint_FwdFin": ("Y", Gf.Quatf(0.0, 0.0, 0.0, 1.0)),
+        "joint_RightFin": ("X", Gf.Quatf(0.0, 0.0, 0.0, 1.0)),
+        "joint_AftFin": ("Y", Gf.Quatf(1.0, 0.0, 0.0, 0.0)),
+        "joint_LeftFin": ("X", Gf.Quatf(1.0, 0.0, 0.0, 0.0)),
+    }
+    for joint_name, (axis, rotation) in joint_frames.items():
+        joint = UsdPhysics.RevoluteJoint.Define(stage, f"/Drone/Body/{joint_name}")
+        joint.GetAxisAttr().Set(axis)
+        joint.GetLocalRot0Attr().Set(rotation)
+        joint.GetLocalRot1Attr().Set(rotation)
 
     return stage

@@ -36,4 +36,7 @@ task:
   termination:
     max_tilt: 1.57                    # rad (90°)
     max_altitude_error: 10.0          # m
+    max_impact_speed: 3.0             # m/s downward at first PhysX contact, source: safety estimate
+    max_tilt_at_contact: 0.5          # rad, source: landing-envelope estimate
+    max_angular_rate_at_contact: 3.0  # rad/s, source: landing-envelope estimate
     crash: true

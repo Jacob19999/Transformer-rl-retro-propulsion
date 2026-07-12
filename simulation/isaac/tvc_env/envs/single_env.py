@@ -86,11 +86,10 @@ class SingleEnvDebug(TVCDirectRLEnv):
 
         try:
             import math
-            from tvc_env.common.quaternions import to_euler
+            from tvc_env.common.quaternions import tilt_angle
 
             state = self._build_vehicle_state()
-            roll, pitch, _ = to_euler(state.quaternion_wxyz)
-            tilt_deg = math.degrees(float(torch.sqrt(roll ** 2 + pitch ** 2)[0]))
+            tilt_deg = math.degrees(float(tilt_angle(state.quaternion_wxyz)[0]))
             pos_error = (
                 state.position[0] - self._target_position.to(state.position.device)
             ).norm().item()

@@ -14,6 +14,12 @@ vehicle:
     count: 4
     area: 0.002                       # m², source: measured
     max_deflection: 0.262             # rad (15°), source: measured
+    C_N_alpha: 3.5                    # 1/rad, source: semi-empirical estimate
+    k_sat: 2.0                        # 1/rad², source: semi-empirical estimate
+    C_D_0: 0.05                       # unitless, source: estimate (zero-angle blockage)
+    C_D_alpha2: 1.5                   # 1/rad², source: estimate
+    duct_confinement_factor: 1.3      # unitless, source: estimate
+    max_thrust_loss_fraction: 0.3     # unitless, source: conservative model bound
     # COP offset from hinge joint origin in fin-local z-axis, source: estimate
     cop_offset: [0.0, 0.0, -0.05]    # m
 
@@ -22,3 +28,6 @@ vehicle:
     diameter: 0.12                    # m, source: measured
     cd_body: 1.0                      # source: estimate (bluff body)
     reference_area: 0.011             # m² (π * (0.06)²), source: derived
+    # Linearized rotational aero/structural damping. This was previously a
+    # hidden 0.27 default in direct_rl_env.py; keep the tuned nominal explicit.
+    angular_damping: 0.27             # N·m·s/rad, source: simulation-tuned estimate (PID hover sweeps)

@@ -56,14 +56,8 @@ def parse_args():
 
 def bootstrap_isaac_sim(headless: bool = True, physics_config: str | None = None):
     """Initialize Isaac Sim application context."""
-    # Isaac Sim App must be started before any omni imports
-    from isaacsim import SimulationApp
-    kit_config = {
-        "headless": headless,
-        "renderer": "RaytracedLighting",
-    }
-    simulation_app = SimulationApp(kit_config)
-    return simulation_app
+    from isaac_launcher import launch_simulation_app
+    return launch_simulation_app(headless=headless)
 
 
 def run_test(test_name: str, physics_config: str | None = None):
@@ -140,8 +134,9 @@ def main():
         watchdog.stop()
         if simulation_app is not None:
             print("Closing Isaac Sim...", flush=True)
-            simulation_app.close()
-            print("Isaac Sim closed.", flush=True)
+            from isaac_launcher import close_simulation_app
+            closed = close_simulation_app(simulation_app)
+            print("Isaac Sim closed." if closed else "Isaac Sim fast shutdown requested.", flush=True)
 
 
 if __name__ == "__main__":

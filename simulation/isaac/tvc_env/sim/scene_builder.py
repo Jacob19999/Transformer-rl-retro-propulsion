@@ -42,6 +42,10 @@ class SceneConfig:
     num_position_iterations: int = 4
     num_velocity_iterations: int = 1
     enable_external_forces_every_iteration: bool = True
+    fin_drive_stiffness: float = 80.0
+    fin_drive_damping: float = 2.0
+    fin_effort_limit: float = 1.08
+    fin_velocity_limit: float = 7.54
     gpu_temp_buffer_capacity: int | None = None
     gpu_max_rigid_contact_count: int | None = None
     gpu_max_rigid_patch_count: int | None = None
@@ -228,10 +232,6 @@ def build_scene(config: SceneConfig) -> TVCSimScene:
         scene = InteractiveScene(scene_cfg)
     attach_stage_to_usd_context()
 
-    # Copy scene environment (ground, lights, materials) from the validated USD
-    # so the test scene matches the authored scene exactly.
-    _add_scene_environment(config.drone_usd_path)
-
     with use_stage(sim.get_initial_stage()):
         sim.reset()
     scene.reset()
@@ -279,45 +279,13 @@ def _warmup_viewport(sim: "SimulationContext") -> None:
             break
 
 
-def _add_scene_environment(drone_usd_path: str) -> None:
-    """Copy scene-level prims (ground, lights, materials) from the drone USD.
-
-    The validated ``drone_v2_physics.usd`` already contains the full scene:
-    FlatGrid, SphereLight, Environment, and ``/_materials`` as siblings of the
-    Drone defaultPrim.  Isaac Lab's ``ArticulationCfg`` only spawns the
-    defaultPrim, so we copy the remaining prims here so the test scene matches
-    the validated scene exactly.
-    """
-    try:
-        import omni.usd
-        from pxr import Usd, Sdf
-    except ImportError:
-        return
-
-    host_stage = omni.usd.get_context().get_stage()
-    if host_stage is None:
-        return
-
-    drone_stage = Usd.Stage.Open(drone_usd_path)
-    if drone_stage is None:
-        return
-
-    src_layer = drone_stage.GetRootLayer()
-    dst_layer = host_stage.GetEditTarget().GetLayer()
-
-    for prim_path_str in ["/_materials", "/FlatGrid", "/SphereLight", "/Environment"]:
-        prim_path = Sdf.Path(prim_path_str)
-        if drone_stage.GetPrimAtPath(prim_path).IsValid():
-            if not host_stage.GetPrimAtPath(prim_path).IsValid():
-                Sdf.CopySpec(src_layer, prim_path, dst_layer, prim_path)
-
-
 def _create_scene_cfg(config: SceneConfig):
     """Create InteractiveSceneCfg from SceneConfig."""
     try:
         from isaaclab.scene import InteractiveSceneCfg
-        from isaaclab.assets import ArticulationCfg
+        from isaaclab.assets import ArticulationCfg, AssetBaseCfg
         from isaaclab.actuators import ImplicitActuatorCfg
+        from isaaclab.sensors import ContactSensorCfg
         from isaaclab.utils import configclass
         import isaaclab.sim as sim_utils
     except ImportError as e:
@@ -325,8 +293,24 @@ def _create_scene_cfg(config: SceneConfig):
 
     @configclass
     class TVCSceneCfg(InteractiveSceneCfg):
-        # Scene environment (ground, lights, materials) is copied from
-        # drone_v2_physics.usd by _add_scene_environment() — no spawners needed.
+        ground: AssetBaseCfg = AssetBaseCfg(
+            prim_path="/World/GroundPlane",
+            init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -0.05)),
+            spawn=sim_utils.CuboidCfg(
+                size=(200.0, 200.0, 0.1),
+                collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
+                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.18, 0.20, 0.22)),
+                physics_material=sim_utils.RigidBodyMaterialCfg(
+                    static_friction=0.8,
+                    dynamic_friction=0.7,
+                    restitution=0.05,
+                ),
+            ),
+        )
+        light: AssetBaseCfg = AssetBaseCfg(
+            prim_path="/World/SphereLight",
+            spawn=sim_utils.SphereLightCfg(intensity=2500.0, radius=5.0),
+        )
 
         # EDF drone articulation
         drone: ArticulationCfg = ArticulationCfg(
@@ -337,6 +321,7 @@ def _create_scene_cfg(config: SceneConfig):
             articulation_root_prim_path=None,
             spawn=sim_utils.UsdFileCfg(
                 usd_path=config.drone_usd_path,
+                activate_contact_sensors=True,
                 rigid_props=sim_utils.RigidBodyPropertiesCfg(
                     disable_gravity=False,
                     retain_accelerations=False,
@@ -359,10 +344,19 @@ def _create_scene_cfg(config: SceneConfig):
             actuators={
                 "fins": ImplicitActuatorCfg(
                     joint_names_expr=[".*"],
-                    stiffness=80.0,
-                    damping=2.0,
+                    stiffness=config.fin_drive_stiffness,
+                    damping=config.fin_drive_damping,
+                    effort_limit_sim=config.fin_effort_limit,
+                    velocity_limit_sim=config.fin_velocity_limit,
                 ),
             },
+        )
+
+        # Body contact is the landing candidate; fin-link contact is unsafe.
+        contact_sensor: ContactSensorCfg = ContactSensorCfg(
+            prim_path="{ENV_REGEX_NS}/drone/.*",
+            update_period=0.0,
+            history_length=1,
         )
 
     return TVCSceneCfg(

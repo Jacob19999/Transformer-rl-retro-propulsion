@@ -69,3 +69,4 @@ class VehicleState:
     motor_omega: Tensor         # rad/s, current rotor speed (num_envs,)
     contact_state: Tensor       # ContactState enum value, int (num_envs,)
     height: Tensor              # m, altitude above ground (num_envs,)
+    touchdown_speed: Tensor | None = None  # m/s, first-contact downward speed (num_envs,)

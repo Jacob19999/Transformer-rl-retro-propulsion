@@ -63,25 +63,31 @@ class FinAeroModel:
         return cls(
             fin_area=fins.get("area", 0.002),
             max_deflection=fins.get("max_deflection", 0.262),
+            C_N_alpha=fins.get("C_N_alpha", 3.5),
+            k_sat=fins.get("k_sat", 2.0),
+            C_D_0=fins.get("C_D_0", 0.05),
+            C_D_alpha2=fins.get("C_D_alpha2", 1.5),
             exhaust_speed=edf.get("exhaust_speed_nominal", 40.0),
+            duct_confinement_factor=fins.get("duct_confinement_factor", 1.3),
         )
 
     def compute_forces(
         self,
         fin_angles: Tensor,
-        throttle_fraction: Tensor,
+        rotor_speed_fraction: Tensor,
     ) -> FinForceResult:
         """Compute aerodynamic forces for all fins in all environments.
 
         Args:
             fin_angles: Tensor of shape (num_envs, 4) — actual fin deflection angles (rad).
-            throttle_fraction: Tensor of shape (num_envs,) — current throttle [0, 1].
+            rotor_speed_fraction: Tensor of shape (num_envs,) — current omega/omega_max [0, 1].
 
         Returns:
             FinForceResult with forces in fin-local frame.
         """
-        # Dynamic pressure scales with throttle² (thrust ∝ ω², exhaust speed ∝ ω, q ∝ ω²)
-        q = self._q_base * throttle_fraction.unsqueeze(-1) ** 2  # (num_envs, 1)
+        # Jet dynamic pressure follows actual rotor speed, including spool lag.
+        rotor_speed_fraction = rotor_speed_fraction.clamp(0.0, 1.0)
+        q = self._q_base * rotor_speed_fraction.unsqueeze(-1) ** 2  # (num_envs, 1)
         q = q * self.duct_confinement_factor * self.fin_area  # (num_envs, 1)
 
         alpha = fin_angles  # (num_envs, 4)

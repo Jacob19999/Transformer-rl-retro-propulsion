@@ -32,7 +32,7 @@ _R_ISAAC_TO_FRD = _R_FRD_TO_ISAAC.T  # Orthogonal, so inverse = transpose
 
 
 def frd_to_isaac(v: Tensor) -> Tensor:
-    """Convert a 3-vector or batch of 3-vectors from body-FRD to Isaac world frame.
+    """Convert vectors from FRD components to Isaac local-axis components.
 
     Args:
         v: Tensor of shape (..., 3) in body-FRD frame.
@@ -40,12 +40,13 @@ def frd_to_isaac(v: Tensor) -> Tensor:
     Returns:
         Tensor of shape (..., 3) in Isaac world frame.
     """
-    R = _R_FRD_TO_ISAAC.to(v.device, v.dtype)
-    return (R @ v.unsqueeze(-1)).squeeze(-1)
+    if v.shape[-1] != 3:
+        raise ValueError(f"Expected vectors with trailing dimension 3, got {tuple(v.shape)}")
+    return torch.stack((v[..., 0], -v[..., 1], -v[..., 2]), dim=-1)
 
 
 def isaac_to_frd(v: Tensor) -> Tensor:
-    """Convert a 3-vector or batch of 3-vectors from Isaac world frame to body-FRD.
+    """Convert vectors from Isaac local-axis components to FRD components.
 
     Args:
         v: Tensor of shape (..., 3) in Isaac world frame.
@@ -53,8 +54,9 @@ def isaac_to_frd(v: Tensor) -> Tensor:
     Returns:
         Tensor of shape (..., 3) in body-FRD frame.
     """
-    R = _R_ISAAC_TO_FRD.to(v.device, v.dtype)
-    return (R @ v.unsqueeze(-1)).squeeze(-1)
+    if v.shape[-1] != 3:
+        raise ValueError(f"Expected vectors with trailing dimension 3, got {tuple(v.shape)}")
+    return torch.stack((v[..., 0], -v[..., 1], -v[..., 2]), dim=-1)
 
 
 def frd_position_to_isaac(pos: Tensor) -> Tensor:

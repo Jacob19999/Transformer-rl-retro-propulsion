@@ -15,7 +15,7 @@ Evaluation is vectorized for num_envs environments.
 from __future__ import annotations
 import torch
 from torch import Tensor
-from tvc_env.common.quaternions import to_euler
+from tvc_env.common.quaternions import tilt_angle
 
 
 class CrashDetector:
@@ -66,9 +66,7 @@ class CrashDetector:
         in_contact: Tensor,       # (num_envs,) bool
     ) -> Tensor:
         """Detect crash from excessive tilt at the moment of contact."""
-        roll, pitch, yaw = to_euler(quaternion_wxyz)
-        tilt = torch.sqrt(roll ** 2 + pitch ** 2)
-        return in_contact.bool() & (tilt > self.max_tilt_at_contact)
+        return in_contact.bool() & (tilt_angle(quaternion_wxyz) > self.max_tilt_at_contact)
 
     def check_angular_rate_at_contact(
         self,
@@ -80,9 +78,7 @@ class CrashDetector:
 
     def check_excessive_tilt(self, quaternion_wxyz: Tensor) -> Tensor:
         """Detect crash from exceeding absolute tilt limit (90° = flipped over)."""
-        roll, pitch, yaw = to_euler(quaternion_wxyz)
-        tilt = torch.sqrt(roll ** 2 + pitch ** 2)
-        return tilt > self.max_tilt
+        return tilt_angle(quaternion_wxyz) > self.max_tilt
 
     def check_altitude_error(
         self,

@@ -288,9 +288,9 @@ def main():
             flush=True,
         )
         print("Bootstrapping Isaac Sim...", flush=True)
-        from isaacsim import SimulationApp
+        from isaac_launcher import launch_simulation_app
 
-        simulation_app = SimulationApp({"headless": args.headless})
+        simulation_app = launch_simulation_app(headless=args.headless)
     except ImportError:
         print("ERROR: Isaac Sim not available.", file=sys.stderr, flush=True)
         watchdog.stop()
@@ -298,7 +298,7 @@ def main():
 
     try:
         from tvc_env.common.constants import ContactState
-        from tvc_env.common.quaternions import to_euler
+        from tvc_env.common.quaternions import tilt_angle, to_euler
         from tvc_env.controllers.landing_guidance import LandingGuidance
         from tvc_env.controllers.pid_adapter import PIDController
         from tvc_env.envs.base_env import BaseEnvConfig
@@ -424,7 +424,7 @@ def main():
             roll_v = float(roll[0].item())
             pitch_v = float(pitch[0].item())
             yaw_v = float(yaw[0].item())
-            tilt = math.sqrt(roll_v * roll_v + pitch_v * pitch_v)
+            tilt = float(tilt_angle(quat_wxyz.unsqueeze(0))[0].item())
             initial_payload = {
                 "type": "state_vector",
                 "phase": "initial_reset",
@@ -513,7 +513,7 @@ def main():
             roll_v = float(roll[0].item())
             pitch_v = float(pitch[0].item())
             yaw_v = float(yaw[0].item())
-            tilt = math.sqrt(roll_v * roll_v + pitch_v * pitch_v)
+            tilt = float(tilt_angle(quat_wxyz.unsqueeze(0))[0].item())
             tilts.append(tilt)
 
             ang_rate = float(ang_vel_frd.norm().item())
@@ -701,8 +701,9 @@ def main():
             env.close()
         if simulation_app is not None:
             print("Closing Isaac Sim...", flush=True)
-            simulation_app.close()
-            print("Isaac Sim closed.", flush=True)
+            from isaac_launcher import close_simulation_app
+            closed = close_simulation_app(simulation_app)
+            print("Isaac Sim closed." if closed else "Isaac Sim fast shutdown requested.", flush=True)
         watchdog.stop()
 
 

@@ -66,9 +66,9 @@ def parse_args():
 
 def bootstrap_isaac_sim(headless: bool = False):
     """Initialize Isaac Sim application context."""
-    from isaacsim import SimulationApp
+    from isaac_launcher import launch_simulation_app
 
-    return SimulationApp({"headless": headless, "renderer": "RaytracedLighting"})
+    return launch_simulation_app(headless=headless, renderer="RaytracedLighting")
 
 
 def main():
@@ -107,7 +107,8 @@ def main():
             sys.exit(1)
     finally:
         if simulation_app is not None:
-            simulation_app.close()
+            from isaac_launcher import close_simulation_app
+            close_simulation_app(simulation_app)
 
 
 if __name__ == "__main__":

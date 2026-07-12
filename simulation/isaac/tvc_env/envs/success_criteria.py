@@ -9,7 +9,7 @@ from __future__ import annotations
 import torch
 from torch import Tensor
 from tvc_env.common.constants import ContactState
-from tvc_env.common.quaternions import to_euler
+from tvc_env.common.quaternions import tilt_angle
 
 
 class HoverSuccessTracker:
@@ -47,8 +47,7 @@ class HoverSuccessTracker:
         """
         target = target_position.to(position.device)
         pos_err = (position - target).norm(dim=-1)  # (num_envs,)
-        roll, pitch, _ = to_euler(quaternion_wxyz)
-        tilt = torch.sqrt(roll ** 2 + pitch ** 2)
+        tilt = tilt_angle(quaternion_wxyz)
         ang_rate = angular_vel.norm(dim=-1)
 
         within = (pos_err < self.max_position_error) & (tilt < self.max_tilt) & (ang_rate < self.max_angular_rate)

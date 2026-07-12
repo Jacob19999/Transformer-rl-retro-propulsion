@@ -63,7 +63,11 @@ class BodyInterface:
         """
         return self._art.data.root_ang_vel_w.clone()
 
-    def get_linear_velocity_body_frd(self) -> Tensor:
+    def get_linear_velocity_body_frd(
+        self,
+        velocity_world: Tensor | None = None,
+        quaternion_wxyz: Tensor | None = None,
+    ) -> Tensor:
         """Get root linear velocity in body-FRD frame.
 
         Converts from Isaac world frame using frames.py (single conversion boundary).
@@ -71,22 +75,30 @@ class BodyInterface:
         Returns:
             Tensor of shape (num_envs, 3) in body-FRD frame (m/s).
         """
-        vel_world = self.get_root_linear_velocity_world()
-        q_wxyz = self.get_root_quaternion_wxyz()
+        vel_world = self.get_root_linear_velocity_world() if velocity_world is None else velocity_world
+        q_wxyz = self.get_root_quaternion_wxyz() if quaternion_wxyz is None else quaternion_wxyz
         # Rotate world velocity into body frame: v_body = R^T * v_world
         q_inv = quat_inv(normalize(q_wxyz))
         vel_body_isaac = rotate_vector(q_inv, vel_world)
         # Convert from Isaac body convention to FRD
         return isaac_velocity_to_frd(vel_body_isaac)
 
-    def get_angular_velocity_body_frd(self) -> Tensor:
+    def get_angular_velocity_body_frd(
+        self,
+        angular_velocity_world: Tensor | None = None,
+        quaternion_wxyz: Tensor | None = None,
+    ) -> Tensor:
         """Get root angular velocity in body-FRD frame.
 
         Returns:
             Tensor of shape (num_envs, 3) in body-FRD frame (rad/s).
         """
-        ang_vel_world = self.get_root_angular_velocity_world()
-        q_wxyz = self.get_root_quaternion_wxyz()
+        ang_vel_world = (
+            self.get_root_angular_velocity_world()
+            if angular_velocity_world is None
+            else angular_velocity_world
+        )
+        q_wxyz = self.get_root_quaternion_wxyz() if quaternion_wxyz is None else quaternion_wxyz
         q_inv = quat_inv(normalize(q_wxyz))
         ang_vel_body_isaac = rotate_vector(q_inv, ang_vel_world)
         return isaac_velocity_to_frd(ang_vel_body_isaac)

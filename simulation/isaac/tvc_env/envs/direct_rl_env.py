@@ -46,6 +46,10 @@ class TVCDirectRLEnv(TVCEnvBase):
     ):
         TVCEnvBase.__init__(self, config)
         self._pending_actions = None
+        self._touchdown_speed = None
+        self._max_downward_speed_step = None
+        self._landing_contact_force_step = None
+        self._unsafe_contact_step = None
         self._omega_max = 3000.0
         self._target_position_local = torch.tensor(
             config.config.get("task", {}).get("target_position", [0.0, 0.0, 5.0]),
@@ -73,6 +77,11 @@ class TVCDirectRLEnv(TVCEnvBase):
             servo_config = yaml.safe_load(f)
 
         scene_config = SceneConfig.from_yaml(self._config.config)
+        servo_params = servo_config.get("servo", servo_config)
+        scene_config.fin_drive_stiffness = float(servo_params.get("drive_stiffness", 80.0))
+        scene_config.fin_drive_damping = float(servo_params.get("drive_damping", 2.0))
+        scene_config.fin_effort_limit = float(servo_params.get("stall_torque", 1.08))
+        scene_config.fin_velocity_limit = float(servo_params.get("max_angular_velocity", 7.54))
         self._sim_scene = build_scene(scene_config)
         self._drone = self._sim_scene["drone"]
 
@@ -83,6 +92,12 @@ class TVCDirectRLEnv(TVCEnvBase):
             self._sim_scene, self._drone, metadata,
             vehicle_config, edf_config, servo_config,
             device=device,
+        )
+        self._touchdown_speed = torch.zeros(self._config.num_envs, dtype=torch.float32, device=device)
+        self._max_downward_speed_step = torch.zeros_like(self._touchdown_speed)
+        self._landing_contact_force_step = torch.zeros_like(self._touchdown_speed)
+        self._unsafe_contact_step = torch.zeros(
+            self._config.num_envs, dtype=torch.bool, device=device
         )
 
         edf_params = edf_config.get("edf", edf_config)
@@ -115,15 +130,30 @@ class TVCDirectRLEnv(TVCEnvBase):
         """
         action = action.to(self.device)
         self._pre_physics_step(action)
+        self._max_downward_speed_step.zero_()
+        self._landing_contact_force_step.zero_()
+        self._unsafe_contact_step.zero_()
 
         for _ in range(self._config.decimation):
+            downward_speed = (-self._body_iface.get_root_linear_velocity_world()[:, 2]).clamp(min=0.0)
+            self._max_downward_speed_step = torch.maximum(
+                self._max_downward_speed_step, downward_speed
+            )
             self._apply_action()
             self._sim_scene.step()
+            landing_force, unsafe_contact = self._sensor_iface.read_contact_summary(
+                self._contact_sm.min_contact_force
+            )
+            self._landing_contact_force_step = torch.maximum(
+                self._landing_contact_force_step, landing_force
+            )
+            self._unsafe_contact_step |= unsafe_contact
 
         self._update_contact_state()
         self._step_count += 1
-        terminated, time_out = self._get_dones()
-        reward = self._get_rewards()
+        state_pre_reset = self._build_vehicle_state()
+        terminated, time_out = self._get_dones(state_pre_reset)
+        reward = self._get_rewards(state_pre_reset)
 
         # Snapshot pre-reset vehicle state so eval/telemetry can attribute
         # terminal events to LANDED vs CRASHED and record touchdown
@@ -132,11 +162,13 @@ class TVCDirectRLEnv(TVCEnvBase):
         # observations are read, which previously made `landed_fraction` and
         # `crashed_fraction` always zero in eval logs even when terminal
         # events were firing.
-        state_pre_reset = self._build_vehicle_state()
         info = {
             "contact_state_pre_reset": state_pre_reset.contact_state.clone(),
             "linear_vel_frd_pre_reset": state_pre_reset.linear_vel_frd.clone(),
             "position_pre_reset": state_pre_reset.position.clone(),
+            "touchdown_speed_pre_reset": self._touchdown_speed.clone(),
+            "motor_omega_pre_reset": state_pre_reset.motor_omega.clone(),
+            "observation_pre_reset": self._get_observations(state_pre_reset)["policy"],
         }
 
         # Auto-reset terminated/timed-out envs
@@ -144,6 +176,8 @@ class TVCDirectRLEnv(TVCEnvBase):
         if len(reset_ids) > 0:
             self._link_force_iface.clear_external_wrenches(reset_ids)
             self._reset_manager.reset_envs(reset_ids)
+            self._contact_sensor.reset(reset_ids)
+            self._touchdown_speed[reset_ids] = 0.0
             self._step_count[reset_ids] = 0
             self._sim_scene.step()  # propagate reset state
 
@@ -157,9 +191,16 @@ class TVCDirectRLEnv(TVCEnvBase):
         Returns:
             (obs_dict, info)
         """
+        if seed is not None:
+            torch.manual_seed(seed)
         indices = torch.arange(self._config.num_envs, device=self.device, dtype=torch.int64)
         self._link_force_iface.clear_external_wrenches(indices)
         self._reset_manager.reset_envs(indices)
+        self._contact_sensor.reset(indices)
+        self._touchdown_speed.zero_()
+        self._max_downward_speed_step.zero_()
+        self._landing_contact_force_step.zero_()
+        self._unsafe_contact_step.zero_()
         self._step_count.zero_()
         self._pending_actions = None
         self._sim_scene.step()  # propagate reset state
@@ -211,7 +252,8 @@ class TVCDirectRLEnv(TVCEnvBase):
 
         # Compute aero forces from measured PhysX joint angles, not the target cache.
         measured_fin_angles = self._body_iface.get_fin_joint_positions()
-        fin_dispatch = self._fin_dispatch.compute_body_frame_forces(measured_fin_angles, throttle)
+        rotor_fraction = (new_omega / max(float(self._edf_model.omega_max), 1.0)).clamp(0.0, 1.0)
+        fin_dispatch = self._fin_dispatch.compute_body_frame_forces(measured_fin_angles, rotor_fraction)
         dynamics_cfg = self._config.config.get("dynamics", {})
         enable_fin_forces = dynamics_cfg.get("enable_fin_forces", True)
         enable_thrust_loss = dynamics_cfg.get("enable_thrust_loss", True)
@@ -233,7 +275,10 @@ class TVCDirectRLEnv(TVCEnvBase):
             spin_axis=spin_axis,
         )
         raw_thrust = edf_output.thrust_force
-        max_loss = torch.full_like(raw_thrust, 0.3 * self._edf_model.max_thrust)
+        max_loss = torch.full_like(
+            raw_thrust,
+            self._max_fin_thrust_loss_fraction * self._edf_model.max_thrust,
+        )
         thrust_loss = torch.minimum(fin_dispatch.thrust_loss.clamp(min=0.0), max_loss)
         thrust_loss = torch.minimum(thrust_loss, raw_thrust)
         if not enable_thrust_loss:
@@ -253,7 +298,9 @@ class TVCDirectRLEnv(TVCEnvBase):
         gyro_torque = gyro_torque * float(dynamics_cfg.get("edf_gyro_torque_scale", 1.0))
         # Body aero/structural damping closes the underdamped roll/pitch mode
         # left by fin-servo lag and EDF gyro coupling during hover recovery.
-        body_angular_damping = float(dynamics_cfg.get("body_angular_damping", 0.27))
+        body_angular_damping = float(
+            dynamics_cfg.get("body_angular_damping", self._body_angular_damping)
+        )
         body_damping_torque = -body_angular_damping * body_ang_frd
         edf_torque_body = static_torque + dynamic_torque + gyro_torque + body_damping_torque
 
@@ -299,25 +346,27 @@ class TVCDirectRLEnv(TVCEnvBase):
 
     # ---- Observation / Reward / Done ----
 
-    def _get_observations(self) -> dict:
+    def _get_observations(self, state: VehicleState | None = None) -> dict:
         """Assemble observation dict with 'policy' key."""
         from tvc_env.envs.observations import assemble_observation
 
-        state = self._build_vehicle_state()
+        if state is None:
+            state = self._build_vehicle_state()
         obs = assemble_observation(state, self._target_position, self._omega_max)
 
         return {"policy": obs}
 
-    def _get_rewards(self) -> Tensor:
+    def _get_rewards(self, state: VehicleState | None = None) -> Tensor:
         """Compute total reward via reward_registry."""
         from tvc_env.envs.reward_registry import compute_total_reward
 
-        state = self._build_vehicle_state()
+        if state is None:
+            state = self._build_vehicle_state()
         task_cfg = self._config.config
         reward_weights = task_cfg.get("task", task_cfg).get("reward", {})
         return compute_total_reward(reward_weights, state, task_cfg)
 
-    def _get_dones(self) -> tuple[Tensor, Tensor]:
+    def _get_dones(self, state: VehicleState | None = None) -> tuple[Tensor, Tensor]:
         """Evaluate termination conditions.
 
         Returns:
@@ -325,7 +374,8 @@ class TVCDirectRLEnv(TVCEnvBase):
         """
         from tvc_env.envs.terminations import check_all_terminations
 
-        state = self._build_vehicle_state()
+        if state is None:
+            state = self._build_vehicle_state()
         dones = check_all_terminations(
             state.quaternion_wxyz,
             state.position,
@@ -343,45 +393,28 @@ class TVCDirectRLEnv(TVCEnvBase):
         return dones, time_out
 
     def _update_contact_state(self) -> None:
-        """Advance the contact state machine using kinematic proxy.
+        """Advance landing/crash state from PhysX contact reports."""
+        contact_force = self._landing_contact_force_step
+        in_contact = contact_force >= self._contact_sm.min_contact_force
+        unsafe_contact = self._unsafe_contact_step
 
-        The original `SensorInterface` requires an Isaac Lab `ContactSensor` that
-        is not currently wired into the scene. As a stand-in, we treat a low,
-        slow vehicle as `in_contact` and pipe that plus crash heuristics into the
-        ContactStateMachine so reward/termination logic actually fire on
-        touchdown. Replace with a real contact sensor once available.
-        """
-        device = self._drone.device
-        height = self._body_iface.get_altitude()
-        lin_vel_w = self._body_iface.get_root_linear_velocity_world()
-        vz = lin_vel_w[:, 2]
-        # Contact is a kinematic question (am I close to the ground), not a
-        # dynamic one. Previously this was gated by `vz.abs() < 0.50`, which
-        # silently hid hard impacts from the crash detector — a drone falling
-        # at 15 m/s never registered as `in_contact`, so neither LANDED nor
-        # CRASHED ever fired and the policy received no terminal signal for
-        # crashes. The crash detector below decides whether the contact is
-        # benign (LANDED-bound via dwell counter) or violent (impact_speed >
-        # max_impact_speed → CRASHED). Brief upward bounces are filtered by
-        # excluding upward motion above the contact band.
-        in_contact = (height < 0.40) & (vz < 0.50)
-
-        impact_speed = (-vz).clamp(min=0.0)
+        previous_state = self._contact_sm.state
+        first_contact = in_contact & (previous_state == ContactState.AIRBORNE)
+        self._touchdown_speed[first_contact] = self._max_downward_speed_step[first_contact]
+        impact_speed = torch.where(
+            first_contact,
+            self._max_downward_speed_step,
+            self._touchdown_speed,
+        )
         ang_vel_frd = self._body_iface.get_angular_velocity_body_frd()
         ang_rate = ang_vel_frd.norm(dim=-1)
         q = self._body_iface.get_root_quaternion_wxyz()
 
-        is_crashed = self._crash_detector.check_impact_speed(impact_speed, in_contact)
+        is_crashed = unsafe_contact | self._crash_detector.check_impact_speed(impact_speed, first_contact)
         is_crashed = is_crashed | self._crash_detector.check_tilt_at_contact(q, in_contact)
         is_crashed = is_crashed | self._crash_detector.check_angular_rate_at_contact(ang_rate, in_contact)
         is_crashed = is_crashed | self._crash_detector.check_excessive_tilt(q)
 
-        # Force surrogate (any positive value above threshold registers as contact).
-        contact_force = torch.where(
-            in_contact,
-            torch.full_like(height, 5.0),
-            torch.zeros_like(height),
-        ).to(device=device)
         self._contact_sm.update(in_contact, is_crashed, contact_force)
 
     def _build_vehicle_state(self) -> VehicleState:
@@ -391,8 +424,8 @@ class TVCDirectRLEnv(TVCEnvBase):
         q = self._body_iface.get_root_quaternion_wxyz()
         lin_vel_w = self._body_iface.get_root_linear_velocity_world()
         ang_vel_w = self._body_iface.get_root_angular_velocity_world()
-        lin_vel_frd = self._body_iface.get_linear_velocity_body_frd()
-        ang_vel_frd = self._body_iface.get_angular_velocity_body_frd()
+        lin_vel_frd = self._body_iface.get_linear_velocity_body_frd(lin_vel_w, q)
+        ang_vel_frd = self._body_iface.get_angular_velocity_body_frd(ang_vel_w, q)
         fin_angles = self._body_iface.get_fin_joint_positions()
         fin_rates = self._body_iface.get_fin_joint_velocities()
         omega = self._reset_manager.omega_state
@@ -411,6 +444,7 @@ class TVCDirectRLEnv(TVCEnvBase):
             motor_omega=omega,
             contact_state=contact,
             height=height,
+            touchdown_speed=self._touchdown_speed,
         )
 
     # ---- Gymnasium spaces ----

@@ -7,21 +7,51 @@ task:
   episode_length_s: 30.0
 
   spawn:
-    position_range: [[-2.0, -2.0, 8.0], [2.0, 2.0, 12.0]]  # m
+    # Final / un-curricularized spawn box used at eval and after the staged
+    # curriculum reaches its last stage. Altitude raised from 8-12 m to
+    # 16-20 m: Phase-1 diagnosis showed peak descent ~9.5 m/s leaves only
+    # ~1 s from 8 m altitude — too short for the policy to null lateral
+    # spawn velocity (up to ±1 m/s) AND correct toward the pad. Higher
+    # spawn altitude buys the action policy more time for both.
+    position_range: [[-2.0, -2.0, 16.0], [2.0, 2.0, 20.0]]  # m
     velocity_range: [[-1.0, -1.0, -2.0], [1.0, 1.0, 0.0]]   # m/s (biased downward)
     attitude_range: [[-0.1, -0.1, -0.2], [0.1, 0.1, 0.2]]   # rad
     curriculum:
       enabled: true
-      # Rule 5 spawn curriculum. Diagnostic evidence: fix4
-      # (runs/ppo_landing_seed0_20260426_192920) improved the mid-run
-      # mean_pad_distance to 1.56 m but still plateaued near 1.9 m from the
-      # full +/-2 m XY spawn box. Train starts close to the pad so the policy
-      # can learn on-pad touchdown first, then linearly anneals back to the
-      # non-curricularized full spawn used for eval.
-      position_start_range: [[-0.5, -0.5, 8.0], [0.5, 0.5, 12.0]]
-      position_end_range: [[-2.0, -2.0, 8.0], [2.0, 2.0, 12.0]]
-      start_step: 0
-      end_step: 4000000
+      mode: staged
+      success_window_size: 1024     # rolling window of terminal events for success-fraction
+      # Rule 5 spawn curriculum (CLAUDE.md), upgraded from linear-anneal to
+      # feedback-driven staged advancement. Diagnostic evidence: linear
+      # anneal in run ppo_landing_seed0_20260426_192920 reached its best
+      # mean_pad_distance (1.56 m) at step 2.75 M (mid-curriculum) and then
+      # *regressed* to 1.89 m by 5 M as the spawn box widened to ±2 m,
+      # indicating the policy did not retain lateral guidance under the
+      # full task. Staged mode dwells at each width until success becomes
+      # consistent before widening, so the policy never "graduates" past a
+      # difficulty it has not yet mastered. ``advance_success_fraction`` is
+      # the fraction of recent terminal events that must be successful
+      # landings (LANDED + on-pad + soft-enough per success criteria below).
+      stages:
+        - position_range: [[-0.5, -0.5, 16.0], [0.5, 0.5, 20.0]]
+          min_steps: 200000
+          max_steps: 1500000
+          advance_success_fraction: 0.60
+          min_terminations: 256
+        - position_range: [[-1.0, -1.0, 16.0], [1.0, 1.0, 20.0]]
+          min_steps: 200000
+          max_steps: 1500000
+          advance_success_fraction: 0.45
+          min_terminations: 256
+        - position_range: [[-1.5, -1.5, 16.0], [1.5, 1.5, 20.0]]
+          min_steps: 250000
+          max_steps: 1500000
+          advance_success_fraction: 0.35
+          min_terminations: 256
+        - position_range: [[-2.0, -2.0, 16.0], [2.0, 2.0, 20.0]]
+          min_steps: 500000
+          max_steps: 0                # 0 = no cap; final stage holds for the rest of training
+          advance_success_fraction: 1.0  # ignored at final stage
+          min_terminations: 256
 
   contact:
     dwell_frames: 15
@@ -39,7 +69,14 @@ task:
     angular_velocity: -0.10
     control_effort: -0.02
     control_rate: -0.01
-    vertical_speed_shaping: -0.30       # encourage moderate descent rate around 0.5 m/s
+    # vertical_speed_shaping is now ONE-SIDED: cost = max(v_down - 0.5, 0).
+    # Slow descent / hover / climb cost zero; only fast descent is penalized.
+    # Phase-1 diagnosis: previous two-sided |v_down - 0.5| was the largest
+    # single per-step term (-78.8 of -129.6 integrated over a 75-step
+    # descent at 9 m/s) and incentivized rushing to terminate over
+    # correcting laterally. Weight unchanged at -0.30; the magnitude shift
+    # comes from the function rewrite in rewards.py.
+    vertical_speed_shaping: -0.30
     delta_v_cost: -0.20                 # per-step thrust ratio (T/T_max)^2; small fuel penalty (delta-v proxy)
     # Terminal events (large magnitudes — these must dominate the integrated return
     # so the agent prefers landing-and-stopping over hovering-out-the-clock).
@@ -47,13 +84,23 @@ task:
     off_pad_landing_penalty: -150.0     # one-time on LANDED outside 0.5 m; fix4/bodyerr learned soft off-pad touchdowns
     touchdown_softness: 25.0            # one-time on LANDED, scaled by exp(-impact_speed)
     pad_accuracy: 200.0                 # one-time on LANDED, scaled by exp(-horiz_dist) — bumped from 75 + steepened from exp(-2d) so lateral guidance has gradient at d > 1 m
-    landing_success: 250.0              # one-time only when LANDED inside success.max_pad_distance; off-pad touchdown is not task success
+    landing_success: 250.0              # one-time only when LANDED inside success.max_pad_distance AND under success.max_touchdown_speed
 
   success:
     state: LANDED
     max_pad_distance: 0.5             # m from pad center
+    # Landings harder than this no longer earn the +250 success bonus
+    # (touchdown_softness still pays exp(-v) for a soft impact regardless,
+    # and off_pad_landing_penalty still applies if the lateral miss is too
+    # large). Tightened from the implicit "any speed counts" so the
+    # policy is forced to learn a real terminal flare; the prior 5 M run
+    # reported max_touchdown_speed 0.347 m/s — slightly above this gate.
+    max_touchdown_speed: 0.25         # m/s
 
   termination:
     max_tilt: 1.57                    # rad (90°)
-    max_altitude_error: 25.0          # m, 3D distance from pad before fail-stop (covers spawn box + margin)
+    max_altitude_error: 30.0          # m, vertical error from pad altitude before fail-stop
+    max_impact_speed: 3.0             # m/s downward at first PhysX contact, source: safety estimate
+    max_tilt_at_contact: 0.5          # rad, source: landing-envelope estimate
+    max_angular_rate_at_contact: 3.0  # rad/s, source: landing-envelope estimate
     crash: true

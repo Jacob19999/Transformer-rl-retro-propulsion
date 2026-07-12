@@ -16,6 +16,7 @@ from tvc_env.common.quaternions import (
     rotate_vector,
     to_rotation_matrix,
     from_euler,
+    tilt_angle,
     to_euler,
     isaac_wxyz_to_xyzw,
     xyzw_to_isaac_wxyz,
@@ -155,3 +156,16 @@ class TestEulerConversions:
         assert abs(r.item() - roll.item()) < 1e-5
         assert abs(p.item() - pitch.item()) < 1e-5
         assert abs(y.item() - yaw.item()) < 1e-5
+
+
+class TestTiltAngle:
+    def test_yaw_does_not_change_tilt(self):
+        zero = torch.tensor(0.0)
+        q = from_euler(zero, zero, torch.tensor(1.7))
+        assert torch.allclose(tilt_angle(q), zero, atol=1e-6)
+
+    def test_combined_rotation_matches_body_vertical(self):
+        q = from_euler(torch.tensor(0.6), torch.tensor(0.5), torch.tensor(1.2))
+        body_up_world = rotate_vector(q, torch.tensor([0.0, 0.0, 1.0]))
+        expected = torch.acos(body_up_world[2].clamp(-1.0, 1.0))
+        assert torch.allclose(tilt_angle(q), expected, atol=1e-6)

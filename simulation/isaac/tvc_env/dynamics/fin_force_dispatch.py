@@ -61,7 +61,7 @@ class FinForceDispatch:
     def compute_body_frame_forces(
         self,
         fin_angles: Tensor,        # (num_envs, 4), measured fin positions (rad)
-        throttle: Tensor,          # (num_envs,), normalized throttle [0, 1]
+        rotor_speed_fraction: Tensor,  # (num_envs,), current omega/omega_max [0, 1]
     ) -> FinDispatchResult:
         """Compute per-fin side forces in body-FRD at COP positions.
 
@@ -70,7 +70,7 @@ class FinForceDispatch:
         injection from symmetric fin commands while preserving control torque
         signs through the force magnitude.
         """
-        aero_result = self.aero_model.compute_forces(fin_angles, throttle)
+        aero_result = self.aero_model.compute_forces(fin_angles, rotor_speed_fraction)
         normals = self.normal_dirs.to(device=fin_angles.device, dtype=fin_angles.dtype)
         forces_body = aero_result.normal_force.unsqueeze(-1) * normals.unsqueeze(0)
 

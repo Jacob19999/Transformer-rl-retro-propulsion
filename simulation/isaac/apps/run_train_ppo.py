@@ -43,10 +43,8 @@ def parse_args():
         default=1.0,
         help=(
             "Scalar multiplier on the env reward before PPO. Default 1.0 lets the "
-            "YAML reward weights speak directly; setting it << 1 collapses the "
-            "relative magnitude of one-time terminal rewards versus integrated "
-            "per-step costs and is the usual cause of 'agent learns to minimize "
-            "throttle and ride out the clock'."
+            "YAML reward weights speak directly. This scales terminal and per-step "
+            "terms equally, so it cannot repair an imbalance between them."
         ),
     )
     parser.add_argument("--max-grad-norm", type=float, default=0.5)
@@ -94,7 +92,19 @@ def parse_args():
     parser.add_argument("--early-stop-min-delta", type=float, default=1e-3)
     parser.add_argument("--early-stop-warmup-updates", type=int, default=8)
     parser.add_argument("--early-stop-ema-alpha", type=float, default=0.2)
-    parser.add_argument("--no-early-stop", action="store_true")
+    plateau_group = parser.add_mutually_exclusive_group()
+    plateau_group.add_argument(
+        "--loss-plateau-early-stop",
+        action="store_true",
+        default=False,
+        help="Opt in to stopping on PPO loss EMA; evaluation metrics are the safer convergence signal.",
+    )
+    plateau_group.add_argument(
+        "--no-early-stop",
+        dest="loss_plateau_early_stop",
+        action="store_false",
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument(
         "--max-wall-time",
         type=float,
@@ -119,6 +129,8 @@ class EvalMetrics:
 class LandingEvalMetrics:
     landed_fraction: float
     crashed_fraction: float
+    timeout_fraction: float
+    success_fraction: float
     mean_touchdown_speed: float
     max_touchdown_speed: float
     mean_pad_distance: float
@@ -161,9 +173,9 @@ def main():
             f"bc_steps={args.bc_steps}, headless={args.headless}",
             flush=True,
         )
-        from isaacsim import SimulationApp
+        from isaac_launcher import launch_simulation_app
 
-        simulation_app = SimulationApp({"headless": args.headless})
+        simulation_app = launch_simulation_app(headless=args.headless)
     except ImportError:
         print("ERROR: Isaac Sim not available.", file=sys.stderr, flush=True)
         watchdog.stop()
@@ -178,11 +190,15 @@ def main():
         from tvc_env.common.constants import ContactState
         from tvc_env.common.frames import isaac_position_to_frd
         from tvc_env.common.quaternions import inverse as quat_inv, normalize, rotate_vector
-        from tvc_env.common.quaternions import to_euler
+        from tvc_env.common.quaternions import tilt_angle
         from tvc_env.controllers.landing_guidance import LandingGuidance
         from tvc_env.controllers.pid_adapter import PIDController
         from tvc_env.envs.base_env import BaseEnvConfig
-        from tvc_env.envs.curriculum import apply_spawn_position_range, resolve_spawn_curriculum
+        from tvc_env.envs.curriculum import (
+            StagedCurriculumTracker,
+            apply_spawn_position_range,
+            resolve_spawn_curriculum,
+        )
         from tvc_env.envs.direct_rl_env import TVCDirectRLEnv
 
         random.seed(args.seed)
@@ -215,14 +231,39 @@ def main():
         act_dim = 5
         max_fin_angle = float(env._servo_model.max_command_angle)
 
+        # Build staged-curriculum tracker if the task YAML requests staged mode.
+        # Linear-mode tasks set staged_tracker = None and follow the legacy
+        # step-based interpolation. The tracker owns stage advancement state;
+        # resolve_spawn_curriculum stays a pure function and reads the stage
+        # index from the tracker (default 0 in linear mode).
+        _curriculum_cfg = (
+            config.config.get("task", {}).get("spawn", {}).get("curriculum", {})
+        )
+        staged_tracker: StagedCurriculumTracker | None = None
+        if (
+            bool(_curriculum_cfg.get("enabled", False))
+            and str(_curriculum_cfg.get("mode", "linear")).lower() == "staged"
+        ):
+            staged_tracker = StagedCurriculumTracker(
+                stages=list(_curriculum_cfg.get("stages") or []),
+                success_window_size=int(_curriculum_cfg.get("success_window_size", 1024)),
+            )
+
+        def _stage_index() -> int:
+            return staged_tracker.stage_index if staged_tracker is not None else 0
+
         def set_training_spawn(global_step_value: int):
-            curriculum_state = resolve_spawn_curriculum(config.config, global_step_value)
+            curriculum_state = resolve_spawn_curriculum(
+                config.config, global_step_value, stage_index=_stage_index()
+            )
             if curriculum_state.enabled:
                 apply_spawn_position_range(config.config, curriculum_state.position_range)
             return curriculum_state
 
         def set_eval_spawn():
-            curriculum_state = resolve_spawn_curriculum(config.config, args.total_steps)
+            curriculum_state = resolve_spawn_curriculum(
+                config.config, args.total_steps, stage_index=_stage_index()
+            )
             if curriculum_state.enabled:
                 apply_spawn_position_range(config.config, curriculum_state.final_position_range)
             return curriculum_state
@@ -232,14 +273,23 @@ def main():
 
         initial_spawn_curriculum = set_training_spawn(0)
         if initial_spawn_curriculum.enabled:
-            print(
-                "Spawn curriculum enabled: "
-                f"xy_half_width starts at {spawn_xy_half_width(initial_spawn_curriculum.position_range):.2f} m "
-                f"and anneals to {spawn_xy_half_width(initial_spawn_curriculum.final_position_range):.2f} m "
-                f"by step {int(config.config['task']['spawn']['curriculum'].get('end_step', 0)):,}. "
-                "Eval uses the final full spawn range.",
-                flush=True,
-            )
+            if initial_spawn_curriculum.mode == "staged":
+                print(
+                    f"Spawn curriculum enabled (staged, {initial_spawn_curriculum.num_stages} stages): "
+                    f"stage 0 xy_half_width={spawn_xy_half_width(initial_spawn_curriculum.position_range):.2f} m, "
+                    f"final xy_half_width={spawn_xy_half_width(initial_spawn_curriculum.final_position_range):.2f} m. "
+                    "Stage advancement is feedback-driven (success-fraction threshold). Eval uses the final stage.",
+                    flush=True,
+                )
+            else:
+                print(
+                    "Spawn curriculum enabled (linear): "
+                    f"xy_half_width starts at {spawn_xy_half_width(initial_spawn_curriculum.position_range):.2f} m "
+                    f"and anneals to {spawn_xy_half_width(initial_spawn_curriculum.final_position_range):.2f} m "
+                    f"by step {int(config.config['task']['spawn']['curriculum'].get('end_step', 0)):,}. "
+                    "Eval uses the final full spawn range.",
+                    flush=True,
+                )
         if args.body_frame_position_error:
             print(
                 "PPO policy observation uses body-FRD position error for obs[0:3]; "
@@ -380,7 +430,8 @@ def main():
             )
         if guidance_enabled:
             print(
-                "Landing guidance enabled explicitly: moving-altitude observations and touchdown disarm are part of this task definition.",
+                "Landing guidance enabled explicitly: moving-altitude observations and "
+                "touchdown disarm are part of this task definition.",
                 flush=True,
             )
         eval_guidance = make_guidance() if guidance_enabled else None
@@ -394,17 +445,20 @@ def main():
             if eval_guidance is not None:
                 eval_guidance.reset(obs=obs)
             n_steps = int(seconds / rl_dt)
-            landed_step = torch.full((num_envs,), -1, dtype=torch.int64, device=device)
-            touchdown_speed = torch.zeros(num_envs, device=device)
-            touchdown_pad_dist = torch.zeros(num_envs, device=device)
-            crashed = torch.zeros(num_envs, dtype=torch.bool, device=device)
+            landed_count = 0
+            crashed_count = 0
+            timeout_count = 0
+            successful_landing_count = 0
+            touchdown_speed_sum = 0.0
+            touchdown_speed_max = float("-inf")
+            touchdown_pad_dist_sum = 0.0
+            touchdown_pad_dist_max = float("-inf")
             delta_v_proxy = torch.zeros(num_envs, device=device)
             throttle_sum = 0.0
             throttle_count = 0
             max_eval_throttle = 0.0
             max_upward_speed = 0.0
             max_downward_speed = 0.0
-            prev_contact = torch.full((num_envs,), int(ContactState.AIRBORNE), dtype=torch.int64, device=device)
             omega_max = max(float(env._omega_max), 1.0)
             with torch.no_grad():
                 for step in range(n_steps):
@@ -424,26 +478,35 @@ def main():
                     contact_pre = info["contact_state_pre_reset"].long()
                     vel_frd_pre = info["linear_vel_frd_pre_reset"]
                     pos_pre = info["position_pre_reset"]
-                    just_landed = (
-                        (landed_step == -1)
-                        & (prev_contact != int(ContactState.LANDED))
-                        & (contact_pre == int(ContactState.LANDED))
-                    )
-                    if just_landed.any():
-                        landed_step = torch.where(just_landed, torch.full_like(landed_step, step), landed_step)
-                        td_speed = vel_frd_pre[:, 2].clamp(min=0.0)
-                        touchdown_speed = torch.where(just_landed, td_speed, touchdown_speed)
+                    impact_speed_pre = info["touchdown_speed_pre_reset"]
+                    landed_now = contact_pre == int(ContactState.LANDED)
+                    crashed_now = contact_pre == int(ContactState.CRASHED)
+                    timeout_now = trunc.bool()
+                    if landed_now.any():
+                        td_speed = impact_speed_pre[landed_now]
                         pad_xy = env._target_position[:, :2]
                         pad_dist = (pos_pre[:, :2] - pad_xy).norm(dim=-1)
-                        touchdown_pad_dist = torch.where(just_landed, pad_dist, touchdown_pad_dist)
-                    crashed = crashed | (contact_pre == int(ContactState.CRASHED))
-                    state = env._build_vehicle_state()
+                        landed_pad_dist = pad_dist[landed_now]
+                        landed_count += int(landed_now.sum().item())
+                        touchdown_speed_sum += float(td_speed.sum().item())
+                        touchdown_speed_max = max(touchdown_speed_max, float(td_speed.max().item()))
+                        touchdown_pad_dist_sum += float(landed_pad_dist.sum().item())
+                        touchdown_pad_dist_max = max(
+                            touchdown_pad_dist_max, float(landed_pad_dist.max().item())
+                        )
+                        successful_landing_count += int(
+                            (
+                                (td_speed <= args.landing_touchdown_speed_limit)
+                                & (landed_pad_dist <= args.landing_pad_distance_limit)
+                            ).sum().item()
+                        )
+                    crashed_count += int(crashed_now.sum().item())
+                    timeout_count += int(timeout_now.sum().item())
                     vertical_down_speed = vel_frd_pre[:, 2]
                     max_downward_speed = max(max_downward_speed, float(vertical_down_speed.max().item()))
                     max_upward_speed = max(max_upward_speed, float((-vertical_down_speed).max().item()))
-                    ratio = (state.motor_omega / omega_max).clamp(min=0.0, max=1.0).pow(2)
+                    ratio = (info["motor_omega_pre_reset"] / omega_max).clamp(0.0, 1.0).pow(2)
                     delta_v_proxy = delta_v_proxy + ratio * rl_dt
-                    prev_contact = contact_pre
                     reset_ids = (done | trunc).nonzero(as_tuple=False).squeeze(-1)
                     if len(reset_ids) > 0:
                         eval_pid.reset(reset_ids)
@@ -451,23 +514,25 @@ def main():
                             eval_guidance.reset(obs=next_obs, env_ids=reset_ids)
                     obs = next_obs
                     simulation_app.update()
-            landed_mask = landed_step >= 0
-            landed_fraction = float(landed_mask.float().mean().item())
-            crashed_fraction = float(crashed.float().mean().item())
-            mean_td = float(touchdown_speed[landed_mask].mean().item()) if landed_mask.any() else float("nan")
-            max_td = float(touchdown_speed[landed_mask].max().item()) if landed_mask.any() else float("nan")
-            mean_pd = float(touchdown_pad_dist[landed_mask].mean().item()) if landed_mask.any() else float("nan")
-            max_pd = float(touchdown_pad_dist[landed_mask].max().item()) if landed_mask.any() else float("nan")
+            episode_count = landed_count + crashed_count + timeout_count
+            landed_fraction = landed_count / max(episode_count, 1)
+            crashed_fraction = crashed_count / max(episode_count, 1)
+            timeout_fraction = timeout_count / max(episode_count, 1)
+            success_fraction = successful_landing_count / max(episode_count, 1)
+            mean_td = touchdown_speed_sum / landed_count if landed_count else float("nan")
+            max_td = touchdown_speed_max if landed_count else float("nan")
+            mean_pd = touchdown_pad_dist_sum / landed_count if landed_count else float("nan")
+            max_pd = touchdown_pad_dist_max if landed_count else float("nan")
             mean_dv = float(delta_v_proxy.mean().item())
             passed = (
-                landed_fraction >= 0.8
+                success_fraction >= 0.8
                 and crashed_fraction <= 0.05
-                and (max_td if max_td == max_td else float("inf")) < args.landing_touchdown_speed_limit
-                and (max_pd if max_pd == max_pd else float("inf")) < args.landing_pad_distance_limit
             )
             return LandingEvalMetrics(
                 landed_fraction=landed_fraction,
                 crashed_fraction=crashed_fraction,
+                timeout_fraction=timeout_fraction,
+                success_fraction=success_fraction,
                 mean_touchdown_speed=mean_td,
                 max_touchdown_speed=max_td,
                 mean_pad_distance=mean_pd,
@@ -505,8 +570,7 @@ def main():
                             eval_guidance.reset(obs=next_obs, env_ids=reset_ids)
                     obs = next_obs
                     pos_errors.extend(obs[:, 0:3].norm(dim=-1).detach().cpu().tolist())
-                    roll, pitch, _yaw = to_euler(obs[:, 3:7])
-                    tilts.extend(torch.sqrt(roll * roll + pitch * pitch).detach().cpu().tolist())
+                    tilts.extend(tilt_angle(obs[:, 3:7]).detach().cpu().tolist())
                     rates.extend(obs[:, 10:13].norm(dim=-1).detach().cpu().tolist())
                     simulation_app.update()
             mean_pos = sum(pos_errors) / len(pos_errors)
@@ -602,9 +666,22 @@ def main():
         if train_guidance is not None:
             train_guidance.reset(obs=obs)
 
+        # Pull success criterion thresholds once for the staged-tracker. Reading
+        # from the task config dict directly keeps this independent of the
+        # LandingTask adapter (which is rebuilt on reset).
+        _success_cfg = config.config.get("task", {}).get("success", {})
+        _success_max_pad_distance = float(_success_cfg.get("max_pad_distance", 0.5))
+        _success_max_td_speed = _success_cfg.get("max_touchdown_speed")
+        _success_max_td_speed = (
+            float(_success_max_td_speed) if _success_max_td_speed is not None else None
+        )
+
         while global_step < args.total_steps:
             update += 1
             spawn_curriculum = set_training_spawn(global_step)
+            stage_success_count = 0
+            stage_termination_count = 0
+            stage_env_steps = 0
             for t in range(rollout_steps):
                 global_step += num_envs
                 obs_policy = policy_observation(obs)
@@ -617,7 +694,7 @@ def main():
 
                 env_action = raw_to_env_action(action_raw, obs, train_pid, train_guidance)
                 throttle_buf[t] = env_action[:, 4]
-                obs_dict, reward, terminated, truncated, _ = env.step(env_action)
+                obs_dict, reward, terminated, truncated, info = env.step(env_action)
                 done = terminated | truncated
                 next_obs = obs_dict["policy"]
                 reset_ids = done.nonzero(as_tuple=False).squeeze(-1)
@@ -626,9 +703,58 @@ def main():
                     if train_guidance is not None:
                         train_guidance.reset(obs=next_obs, env_ids=reset_ids)
                 reward_buf[t] = reward * args.reward_scale
+                if truncated.any():
+                    with torch.no_grad():
+                        terminal_obs = policy_observation(info["observation_pre_reset"])
+                        _terminal_mean, terminal_value = model(terminal_obs)
+                    reward_buf[t] += args.gamma * terminal_value * truncated.float()
                 done_buf[t] = done.float()
+
+                # Tally terminal events for the staged-curriculum tracker.
+                # info["contact_state_pre_reset"] is set by the env before
+                # auto-reset, so LANDED/CRASHED markers survive the boundary.
+                if staged_tracker is not None and is_landing:
+                    contact_pre = info["contact_state_pre_reset"].long()
+                    pos_pre = info["position_pre_reset"]
+                    impact_speed_pre = info["touchdown_speed_pre_reset"]
+                    landed = contact_pre == int(ContactState.LANDED)
+                    crashed = contact_pre == int(ContactState.CRASHED)
+                    pad_xy = env._target_position[:, :2]
+                    horiz = (pos_pre[:, :2] - pad_xy).norm(dim=-1)
+                    on_pad = horiz <= _success_max_pad_distance
+                    if _success_max_td_speed is not None:
+                        soft = impact_speed_pre <= _success_max_td_speed
+                        success = landed & on_pad & soft
+                    else:
+                        success = landed & on_pad
+                    stage_success_count += int(success.sum().item())
+                    stage_termination_count += int((landed | crashed).sum().item())
+                    stage_env_steps += num_envs
+
                 obs = next_obs
                 simulation_app.update()
+
+            # End-of-rollout staged-curriculum bookkeeping. Feed this slice's
+            # counts into the tracker, then advance if the success threshold
+            # for the current stage has been crossed (or the stage budget is
+            # exhausted).
+            stage_advanced = False
+            if staged_tracker is not None:
+                staged_tracker.record_step(
+                    num_env_steps=stage_env_steps,
+                    success_count=stage_success_count,
+                    termination_count=stage_termination_count,
+                )
+                if staged_tracker.should_advance():
+                    advanced_to = staged_tracker.advance()
+                    spawn_curriculum = set_training_spawn(global_step)
+                    print(
+                        f"[curriculum] advanced to stage {advanced_to}/{staged_tracker.num_stages - 1}: "
+                        f"xy_half_width={spawn_xy_half_width(spawn_curriculum.position_range):.2f} m "
+                        f"(success_fraction at advance was based on prior stage's window)",
+                        flush=True,
+                    )
+                    stage_advanced = True
 
             with torch.no_grad():
                 _next_mean, next_value = model(policy_observation(obs))
@@ -653,7 +779,6 @@ def main():
             b_values = value_buf.reshape(-1)
             b_advantages = (b_advantages - b_advantages.mean()) / (b_advantages.std() + 1e-8)
 
-            inds = torch.randperm(batch_size, device=device)
             clipfracs = []
             approx_kl = torch.tensor(0.0, device=device)
             pg_loss_acc = 0.0
@@ -662,6 +787,7 @@ def main():
             loss_acc = 0.0
             n_minibatches = 0
             for _epoch in range(args.update_epochs):
+                inds = torch.randperm(batch_size, device=device)
                 for start in range(0, batch_size, minibatch_size):
                     mb_inds = inds[start : start + minibatch_size]
                     _a, newlogprob, entropy, newvalue = model.get_action_and_value(
@@ -717,7 +843,7 @@ def main():
                 )
                 loss_plateau_delta = abs(loss_ema - previous_loss_ema)
                 if (
-                    not args.no_early_stop
+                    args.loss_plateau_early_stop
                     and update >= args.early_stop_warmup_updates
                     and loss_plateau_delta <= args.early_stop_min_delta
                 ):
@@ -725,7 +851,7 @@ def main():
                 else:
                     loss_plateau_count = 0
                 stop_for_loss_plateau = (
-                    not args.no_early_stop
+                    args.loss_plateau_early_stop
                     and loss_plateau_count >= args.early_stop_patience
                 )
             log_record = {
@@ -754,8 +880,20 @@ def main():
                 "throttle_min": round(float(throttle_buf.min().item()), 4),
                 "throttle_max": round(float(throttle_buf.max().item()), 4),
                 "spawn_curriculum_enabled": spawn_curriculum.enabled,
+                "spawn_curriculum_mode": spawn_curriculum.mode,
                 "spawn_curriculum_progress": round(float(spawn_curriculum.progress), 4),
                 "spawn_xy_half_width_m": round(spawn_xy_half_width(spawn_curriculum.position_range), 3),
+                "spawn_stage_index": spawn_curriculum.stage_index,
+                "spawn_num_stages": spawn_curriculum.num_stages,
+                "stage_success_count": stage_success_count,
+                "stage_termination_count": stage_termination_count,
+                "stage_success_fraction": (
+                    round(staged_tracker.success_fraction(), 4) if staged_tracker is not None else None
+                ),
+                "stage_steps_in_stage": (
+                    staged_tracker.steps_in_stage if staged_tracker is not None else None
+                ),
+                "stage_advanced_this_update": bool(stage_advanced) if staged_tracker is not None else False,
             }
             print(json.dumps(log_record, separators=(",", ":")), flush=True)
             append_jsonl("train_log.jsonl", log_record)
@@ -771,17 +909,45 @@ def main():
                 last_eval_bucket = eval_bucket
                 if is_landing:
                     metrics = evaluate_landing(model, args.eval_seconds)
-                    best_eval = (
-                        metrics
-                        if best_eval is None or metrics.mean_delta_v_proxy < best_eval.mean_delta_v_proxy
-                        else best_eval
+                    candidate_key = (
+                        metrics.success_fraction,
+                        metrics.landed_fraction,
+                        -metrics.crashed_fraction,
+                        -(
+                            metrics.mean_pad_distance
+                            if metrics.mean_pad_distance == metrics.mean_pad_distance
+                            else float("inf")
+                        ),
+                        -(
+                            metrics.mean_touchdown_speed
+                            if metrics.mean_touchdown_speed == metrics.mean_touchdown_speed
+                            else float("inf")
+                        ),
                     )
+                    best_key = None if best_eval is None else (
+                        best_eval.success_fraction,
+                        best_eval.landed_fraction,
+                        -best_eval.crashed_fraction,
+                        -(
+                            best_eval.mean_pad_distance
+                            if best_eval.mean_pad_distance == best_eval.mean_pad_distance
+                            else float("inf")
+                        ),
+                        -(
+                            best_eval.mean_touchdown_speed
+                            if best_eval.mean_touchdown_speed == best_eval.mean_touchdown_speed
+                            else float("inf")
+                        ),
+                    )
+                    is_best = best_key is None or candidate_key > best_key
                 else:
                     metrics = evaluate(model, args.eval_seconds)
-                    best_eval = (
-                        metrics
-                        if best_eval is None or metrics.mean_pos < best_eval.mean_pos
-                        else best_eval
+                    is_best = best_eval is None or metrics.mean_pos < best_eval.mean_pos
+                if is_best:
+                    best_eval = metrics
+                    torch.save(
+                        {"model": model.state_dict(), "args": vars(args), "step": global_step},
+                        output_dir / "ppo_best.pt",
                     )
                 (output_dir / "eval_latest.json").write_text(
                     json.dumps(asdict(metrics), indent=2), encoding="utf-8"
@@ -815,7 +981,11 @@ def main():
                 break
 
         elapsed = time.time() - start_time
-        final_metrics = evaluate_landing(model, args.eval_seconds) if is_landing else evaluate(model, args.eval_seconds)
+        final_metrics = (
+            evaluate_landing(model, args.eval_seconds)
+            if is_landing
+            else evaluate(model, args.eval_seconds)
+        )
         torch.save({"model": model.state_dict(), "args": vars(args), "step": global_step}, output_dir / "ppo_final.pt")
         (output_dir / "eval_final.json").write_text(json.dumps(asdict(final_metrics), indent=2), encoding="utf-8")
         append_jsonl(
@@ -846,8 +1016,9 @@ def main():
             env.close()
         if simulation_app is not None:
             print("Closing Isaac Sim...", flush=True)
-            simulation_app.close()
-            print("Isaac Sim closed.", flush=True)
+            from isaac_launcher import close_simulation_app
+            closed = close_simulation_app(simulation_app)
+            print("Isaac Sim closed." if closed else "Isaac Sim fast shutdown requested.", flush=True)
         watchdog.stop()
 
 

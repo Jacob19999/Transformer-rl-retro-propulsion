@@ -70,10 +70,11 @@ asset:
   # Rotor spin axis in body-FRD frame (rotor spins around body z-axis)
   rotor_spin_axis: [0.0, 0.0, 1.0]
 
-  # Contact regions — prim names that should contact ground on landing
-  # (not body or fin links)
-  landing_contact_regions:
-    - "landing_leg_px"
-    - "landing_leg_py"
-    - "landing_leg_mx"
-    - "landing_leg_my"
+  # Landing legs are compound collision shapes on Body, so PhysX reports their
+  # normal force on the Body rigid link. Any fin-link contact is unsafe.
+  landing_contact_body: "Body"
+  unsafe_contact_links:
+    - "FwdFin"
+    - "RightFin"
+    - "AftFin"
+    - "LeftFin"

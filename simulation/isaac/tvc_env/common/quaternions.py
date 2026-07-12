@@ -160,6 +160,18 @@ def to_euler(q: Tensor) -> tuple[Tensor, Tensor, Tensor]:
     return roll, pitch, yaw
 
 
+def tilt_angle(q: Tensor) -> Tensor:
+    """Return yaw-invariant body tilt from the world vertical in radians.
+
+    Isaac quaternions rotate local axes into world axes. The dot product of
+    local +Z with world +Z is the (2, 2) rotation-matrix element.
+    """
+    q = normalize(q)
+    x, y = q[..., 1], q[..., 2]
+    cos_tilt = 1.0 - 2.0 * (x * x + y * y)
+    return torch.acos(cos_tilt.clamp(-1.0, 1.0))
+
+
 # Convention converters — the SINGLE boundary between wxyz and xyzw
 def isaac_wxyz_to_xyzw(q: Tensor) -> Tensor:
     """Convert from Isaac Lab 2.3.2 (w,x,y,z) to body-frame (x,y,z,w) ordering.

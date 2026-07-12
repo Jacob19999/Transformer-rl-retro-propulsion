@@ -96,7 +96,10 @@ class BaseEnvConfig:
         if edf_config_path.exists():
             with open(edf_config_path, "r") as f:
                 edf_cfg = yaml.safe_load(f).get("edf", {})
-            null_fields = [k for k, v in edf_cfg.items() if v is None]
+            # These nulls have defined model semantics: k_T/k_Q are derived
+            # when omitted and d_omega_max=None disables the optional slew cap.
+            allowed_nulls = {"k_T", "k_Q", "d_omega_max"}
+            null_fields = [k for k, v in edf_cfg.items() if v is None and k not in allowed_nulls]
             if null_fields:
                 raise ValueError(
                     f"Cannot start training: EDF config has null to-be-calibrated values: "
@@ -137,6 +140,7 @@ class TVCEnvBase:
         from tvc_env.dynamics.wind_model import WindModel
         from tvc_env.sim.body_interface import BodyInterface
         from tvc_env.sim.link_force_interface import LinkForceInterface
+        from tvc_env.sim.sensor_interface import SensorInterface
         from tvc_env.sim.wrench_dispatch import WrenchDispatch
         from tvc_env.sim.contacts import ContactStateMachine
         from tvc_env.sim.crash_logic import CrashDetector
@@ -184,6 +188,8 @@ class TVCEnvBase:
         # Sim interfaces
         body_iface = BodyInterface(articulation, art_map)
         link_force_iface = LinkForceInterface(articulation, art_map, cops)
+        contact_sensor = scene["contact_sensor"]
+        sensor_iface = SensorInterface(contact_sensor, metadata)
         wrench_dispatch = WrenchDispatch(
             mode=self._config.dispatch_mode,
             link_force_interface=link_force_iface,
@@ -214,9 +220,17 @@ class TVCEnvBase:
         self._art_map = art_map
         self._body_iface = body_iface
         self._link_force_iface = link_force_iface
+        self._contact_sensor = contact_sensor
+        self._sensor_iface = sensor_iface
         self._wrench_dispatch = wrench_dispatch
         self._wind_model = wind_model
         self._aero_model = aero_model
+        self._body_angular_damping = float(
+            vehicle_config.get("body", {}).get("angular_damping", 0.0)
+        )
+        self._max_fin_thrust_loss_fraction = float(
+            vehicle_config.get("fins", {}).get("max_thrust_loss_fraction", 0.3)
+        )
         self._fin_dispatch = FinForceDispatch.from_metadata_and_config(
             metadata,
             vehicle_config,

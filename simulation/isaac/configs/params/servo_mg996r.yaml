@@ -9,3 +9,5 @@ servo:
   tau_servo: 0.05                    # s, source: estimate (first-order lag time constant; tune from bench)
   deadband: 0.017                    # rad (~1°), source: estimate
   max_command_angle: 0.262           # rad (15°), source: measured (mechanical linkage limit)
+  drive_stiffness: 80.0              # N·m/rad, source: simulation estimate; PhysX drive is capped by stall_torque
+  drive_damping: 2.0                 # N·m·s/rad, source: simulation estimate; tune from loaded bench response

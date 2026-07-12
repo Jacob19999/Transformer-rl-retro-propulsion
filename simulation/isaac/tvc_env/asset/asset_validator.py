@@ -137,6 +137,7 @@ def _validate_usd_structure(metadata: dict[str, Any], stage, diagnostics: list[s
     """
     try:
         import pxr.UsdPhysics as UsdPhysics
+        from pxr import Gf
     except ImportError:
         diagnostics.append("WARNING: pxr not available, skipping USD prim checks")
         return
@@ -172,7 +173,12 @@ def _validate_usd_structure(metadata: dict[str, Any], stage, diagnostics: list[s
             )
 
     # Fin joints are children of Body
-    for joint_name in metadata["fin_joint_names"]:
+    axis_vectors = {
+        "X": Gf.Vec3f(1.0, 0.0, 0.0),
+        "Y": Gf.Vec3f(0.0, 1.0, 0.0),
+        "Z": Gf.Vec3f(0.0, 0.0, 1.0),
+    }
+    for joint_name, hinge_axis_frd in zip(metadata["fin_joint_names"], metadata["hinge_axes"]):
         joint_path = f"{root_path}/{body_link_name}/{joint_name}"
         joint_prim = stage.GetPrimAtPath(joint_path)
         if not joint_prim.IsValid():
@@ -184,6 +190,25 @@ def _validate_usd_structure(metadata: dict[str, Any], stage, diagnostics: list[s
             raise AssetValidationError(
                 f"Joint '{joint_path}' is not a RevoluteJoint. "
                 f"All fin joints must use UsdPhysics.RevoluteJoint schema."
+            )
+
+        joint = UsdPhysics.RevoluteJoint(joint_prim)
+        axis_token = str(joint.GetAxisAttr().Get()).upper()
+        local_axis = axis_vectors.get(axis_token)
+        if local_axis is None:
+            raise AssetValidationError(f"Joint '{joint_path}' has unsupported axis '{axis_token}'.")
+        local_rot = joint.GetLocalRot0Attr().Get()
+        resolved_axis = local_rot.Transform(local_axis)
+        expected_axis = (
+            float(hinge_axis_frd[0]),
+            -float(hinge_axis_frd[1]),
+            -float(hinge_axis_frd[2]),
+        )
+        if any(abs(float(resolved_axis[i]) - expected_axis[i]) > 1e-4 for i in range(3)):
+            raise AssetValidationError(
+                f"Joint '{joint_path}' axis {tuple(round(float(v), 4) for v in resolved_axis)} "
+                f"does not match metadata FRD axis {tuple(hinge_axis_frd)} "
+                f"(expected Isaac-local axis {expected_axis})."
             )
 
 

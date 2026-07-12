@@ -33,8 +33,8 @@ def main():
     sys.path.insert(0, str(sim_root))
 
     try:
-        from isaacsim import SimulationApp
-        simulation_app = SimulationApp({"headless": args.headless})
+        from isaac_launcher import launch_simulation_app
+        simulation_app = launch_simulation_app(headless=args.headless)
     except ImportError:
         print("ERROR: Isaac Sim not available.", file=sys.stderr)
         sys.exit(1)
@@ -122,7 +122,8 @@ def main():
             sys.exit(1)
 
     finally:
-        simulation_app.close()
+        from isaac_launcher import close_simulation_app
+        close_simulation_app(simulation_app)
 
 
 if __name__ == "__main__":
