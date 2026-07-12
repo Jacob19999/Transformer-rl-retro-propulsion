@@ -1,7 +1,7 @@
 """
-Per-link force application at COP using Isaac Lab's wrench composer API.
+Per-link force application at COP using Isaac Lab's instantaneous wrench composer API.
 
-Uses Articulation.permanent_wrench_composer.set_forces_and_torques() with the
+Uses Articulation.instantaneous_wrench_composer.set_forces_and_torques() with the
 positions parameter per research decision R2, applying forces at fin COP offsets
 rather than link origins.
 
@@ -29,17 +29,6 @@ class LinkForceInterface:
         self._art = articulation
         self._map = art_map
         self._cop_positions_body = cop_positions_body  # (4, 3)
-
-    def refresh_link_poses(self) -> None:
-        """Mark link poses as stale so the wrench composer re-reads them.
-
-        The permanent wrench composer caches link poses and never refreshes
-        them during normal stepping (only on articulation reset).  With
-        ``is_global=True`` the kernel needs up-to-date link quaternions for
-        the world-to-link rotation, so we must invalidate the cache each
-        time we set new forces.
-        """
-        self._art.permanent_wrench_composer._link_poses_updated = False
 
     def apply_fin_forces_at_cop(
         self,
@@ -87,7 +76,7 @@ class LinkForceInterface:
         cop_world_offset = rotate_vector(q.reshape(-1, 4), cop_body_isaac.reshape(-1, 3)).reshape(num_envs, num_fins, 3)
         cop_world = root_position_w.unsqueeze(1) + cop_world_offset
 
-        self._art.permanent_wrench_composer.set_forces_and_torques(
+        self._art.instantaneous_wrench_composer.set_forces_and_torques(
             forces=forces_world,
             body_ids=fin_body_ids,
             positions=cop_world,
@@ -109,7 +98,7 @@ class LinkForceInterface:
         torques = torque_world.unsqueeze(1)
         body_ids = torch.tensor([body_id], device=device)
 
-        self._art.permanent_wrench_composer.set_forces_and_torques(
+        self._art.instantaneous_wrench_composer.set_forces_and_torques(
             forces=forces,
             torques=torques,
             body_ids=body_ids,
@@ -135,12 +124,12 @@ class LinkForceInterface:
     def clear_external_wrenches(self, env_ids: Tensor | None = None) -> None:
         """Clear all permanent external wrench slots for selected environments.
 
-        Isaac Lab's permanent wrench composer carries forces across physics
-        steps until explicitly reset. Clear it before episode reset propagation
-        so stale terminal-step thrust/fin forces cannot affect the new episode.
+        Clear both composers before episode reset propagation so stale
+        terminal-step forces cannot affect the new episode.
         """
         if env_ids is not None:
             env_ids = env_ids.to(device=self._art.device, dtype=torch.int64)
+        self._art.instantaneous_wrench_composer.reset(env_ids)
         self._art.permanent_wrench_composer.reset(env_ids)
 
     def clear_external_forces(self) -> None:
@@ -154,7 +143,7 @@ class LinkForceInterface:
         num_fins = 4
         zeros = torch.zeros(num_envs, num_fins, 3, device=self._art.device)
         fin_body_ids = torch.tensor(self._map.fin_body_indices, device=self._art.device)
-        self._art.permanent_wrench_composer.set_forces_and_torques(
+        self._art.instantaneous_wrench_composer.set_forces_and_torques(
             forces=zeros,
             torques=zeros,
             body_ids=fin_body_ids,

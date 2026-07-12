@@ -18,6 +18,7 @@ class _Art:
 
     def __init__(self):
         self.num_instances = 2
+        self.instantaneous_wrench_composer = _Composer()
         self.permanent_wrench_composer = _Composer()
 
 
@@ -33,3 +34,4 @@ def test_clear_external_wrenches_resets_selected_env_slots():
     iface.clear_external_wrenches(env_ids)
 
     assert torch.equal(art.permanent_wrench_composer.reset_env_ids, env_ids)
+    assert torch.equal(art.instantaneous_wrench_composer.reset_env_ids, env_ids)

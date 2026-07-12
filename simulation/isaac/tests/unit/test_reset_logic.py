@@ -10,13 +10,21 @@ class _Body:
         self.root_state = None
         self.env_ids = None
         self.joint_targets = None
+        self.joint_state = None
+        self.buffers_reset = None
 
     def set_root_state(self, position, quaternion_wxyz, linear_vel, angular_vel, env_ids=None):
         self.root_state = (position, quaternion_wxyz, linear_vel, angular_vel)
         self.env_ids = env_ids
 
-    def set_fin_joint_targets(self, positions):
+    def set_fin_joint_targets(self, positions, env_ids=None):
         self.joint_targets = positions.clone()
+
+    def write_fin_joint_state(self, positions, velocities, env_ids=None):
+        self.joint_state = (positions.clone(), velocities.clone(), env_ids.clone())
+
+    def reset_buffers(self, env_ids=None):
+        self.buffers_reset = env_ids.clone()
 
 
 class _Servo:
@@ -70,3 +78,6 @@ def test_reset_adds_env_origins_and_forwards_env_ids():
     assert torch.equal(body.env_ids, env_ids)
     assert torch.allclose(manager.servo_state[env_ids], torch.zeros(2, 4))
     assert torch.allclose(manager.omega_state[env_ids], torch.zeros(2))
+    assert torch.allclose(body.joint_state[0], torch.zeros(2, 4))
+    assert torch.allclose(body.joint_state[1], torch.zeros(2, 4))
+    assert torch.equal(body.buffers_reset, env_ids)

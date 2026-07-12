@@ -16,7 +16,7 @@ import sys
 import os
 from pathlib import Path
 
-from runner_safety import WallClockWatchdog, force_process_exit
+from runner_safety import WallClockWatchdog
 
 
 def parse_args():
@@ -92,6 +92,7 @@ def run_test(test_name: str, physics_config: str | None = None):
         exit_code = pytest.main([
             str(tests_sim_dir / f"{test_name}.py"),
             "-v",
+            "-x",
             "--tb=long",
         ])
         return exit_code == 0
@@ -140,4 +141,7 @@ def main():
 
 
 if __name__ == "__main__":
-    force_process_exit(main())
+    # The validation runner shuts down cleanly on current Isaac Lab.  A hard
+    # os._exit here could discard pytest's final status on Windows and report
+    # a passing physics gate as failed.
+    raise SystemExit(main())

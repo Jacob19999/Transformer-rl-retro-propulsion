@@ -34,17 +34,20 @@ task:
       stages:
         - position_range: [[-0.5, -0.5, 16.0], [0.5, 0.5, 20.0]]
           min_steps: 200000
-          max_steps: 1500000
+          # 8M-step run ppo_landing_seed0_20260428_172431 reached the final
+          # stage with stage_success_fraction=0.0 because max_steps forced
+          # graduation. Hold until the measured mastery threshold instead.
+          max_steps: 0
           advance_success_fraction: 0.60
           min_terminations: 256
         - position_range: [[-1.0, -1.0, 16.0], [1.0, 1.0, 20.0]]
           min_steps: 200000
-          max_steps: 1500000
+          max_steps: 0
           advance_success_fraction: 0.45
           min_terminations: 256
         - position_range: [[-1.5, -1.5, 16.0], [1.5, 1.5, 20.0]]
           min_steps: 250000
-          max_steps: 1500000
+          max_steps: 0
           advance_success_fraction: 0.35
           min_terminations: 256
         - position_range: [[-2.0, -2.0, 16.0], [2.0, 2.0, 20.0]]

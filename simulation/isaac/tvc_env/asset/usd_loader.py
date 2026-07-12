@@ -52,7 +52,7 @@ def load_asset_metadata(metadata_yaml_path: str | Path) -> dict[str, Any]:
     path = Path(metadata_yaml_path)
     if not path.exists():
         raise FileNotFoundError(f"Asset metadata not found: {path}")
-    with open(path, "r") as f:
+    with open(path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     return data.get("asset", data)
 

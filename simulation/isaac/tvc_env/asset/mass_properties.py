@@ -33,7 +33,7 @@ def load_vehicle_config(vehicle_yaml_path: str | Path) -> dict[str, Any]:
     path = Path(vehicle_yaml_path)
     if not path.exists():
         raise FileNotFoundError(f"Vehicle config not found: {path}")
-    with open(path, "r") as f:
+    with open(path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     return data.get("vehicle", data)
 
@@ -117,6 +117,24 @@ def validate_mass_properties(
                 f"Mass mismatch: USD={usd_props.mass_kg:.4f}kg, "
                 f"config={config_mass:.4f}kg, rel_err={rel_err:.4f} > {tolerance}"
             )
+
+    # Config stores body offsets in FRD, while USD MassAPI uses the asset's
+    # Isaac-local axes (x forward, y left, z up).
+    config_com_frd = config.get("body_com_offset")
+    if config_com_frd is not None:
+        config_com_isaac = [
+            float(config_com_frd[0]),
+            -float(config_com_frd[1]),
+            -float(config_com_frd[2]),
+        ]
+        for axis, usd_val, cfg_val in zip("xyz", usd_props.com_offset, config_com_isaac):
+            abs_err = abs(float(usd_val) - cfg_val)
+            allowed = max(1e-5, tolerance * max(abs(cfg_val), 1e-3))
+            if abs_err > allowed:
+                warnings.append(
+                    f"COM mismatch [{axis}]: USD Isaac-local={float(usd_val):.6f}m, "
+                    f"config FRD converted={cfg_val:.6f}m, abs_err={abs_err:.6f} > {allowed:.6f}"
+                )
 
     # Validate inertia tensor diagonal
     config_inertia = config.get("inertia_tensor", {})

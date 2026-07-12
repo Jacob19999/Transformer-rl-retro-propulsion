@@ -69,6 +69,8 @@ class ResetManager:
         contact_state_machine,
         task_config: dict[str, Any],
         env_origins: Tensor | None = None,
+        com_offset_model=None,
+        wind_model=None,
     ):
         self._body = body_interface
         self._servo = servo_model
@@ -76,6 +78,9 @@ class ResetManager:
         self._contacts = contact_state_machine
         self._task_config = task_config
         self._env_origins = env_origins
+        self._com_offset_model = com_offset_model
+        self._wind_model = wind_model
+        self._num_envs = 0
 
         # Persistent actuator states
         self._servo_state = None
@@ -87,6 +92,7 @@ class ResetManager:
         self._servo_state = self._servo.reset(num_envs, device)
         self._omega_state = self._edf.reset(num_envs, device)
         self._omega_prev = self._omega_state.clone()
+        self._num_envs = num_envs
         if self._env_origins is None:
             self._env_origins = torch.zeros(num_envs, 3, dtype=torch.float32, device=device)
         else:
@@ -107,13 +113,21 @@ class ResetManager:
         )
         positions = positions + self._env_origins[env_ids]
 
+        # Apply the episode's physical COM before writing root state. Offsets
+        # are sampled in body-FRD and converted at the Isaac boundary.
+        if self._com_offset_model is not None:
+            offsets = self._com_offset_model.sample_offsets(self._num_envs, env_ids)
+            self._body.set_body_com_offset_frd(offsets[env_ids], env_ids)
+
         # Set root state via body interface
         self._body.set_root_state(positions, quaternions, linear_vels, angular_vels, env_ids=env_ids)
 
         # Reset servo and EDF states for these envs
         if self._servo_state is not None:
             self._servo_state[env_ids] = 0.0
-            self._body.set_fin_joint_targets(self._servo_state)
+            zeros = self._servo_state[env_ids]
+            self._body.write_fin_joint_state(zeros, torch.zeros_like(zeros), env_ids=env_ids)
+            self._body.set_fin_joint_targets(zeros, env_ids=env_ids)
         if self._omega_state is not None:
             task = self._task_config.get("task", self._task_config)
             spawn = task.get("spawn", {})
@@ -125,6 +139,12 @@ class ResetManager:
 
         # Reset contact state machine
         self._contacts.reset(env_ids)
+        if self._wind_model is not None:
+            self._wind_model.reset(env_ids)
+
+        # Isaac Lab requires reset() after state writers so actuator caches and
+        # wrench composers cannot carry state across the episode boundary.
+        self._body.reset_buffers(env_ids)
 
     @property
     def servo_state(self) -> Tensor:

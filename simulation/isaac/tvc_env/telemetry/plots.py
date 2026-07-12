@@ -38,7 +38,7 @@ def load_telemetry_csv(csv_path: str | Path) -> dict[str, list[float]]:
         Dict mapping column name → list of values.
     """
     data: dict[str, list[Any]] = {}
-    with open(csv_path) as f:
+    with open(csv_path, encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             for key, val in row.items():

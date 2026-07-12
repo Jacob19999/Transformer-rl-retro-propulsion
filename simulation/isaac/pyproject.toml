@@ -22,3 +22,4 @@ include = ["tvc_env*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit"]
+pythonpath = ["."]

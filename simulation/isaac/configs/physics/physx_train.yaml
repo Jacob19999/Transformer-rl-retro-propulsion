@@ -3,7 +3,7 @@ physics:
   dt: 0.00833
   gravity: [0.0, 0.0, -9.81]
   enable_scene_query_support: false
-  gpu_pipeline: true
+  device: cuda:0           # Isaac Lab 2.3.2 selects CPU/GPU through SimulationCfg.device
   gpu_temp_buffer_capacity: 16777216
   gpu_max_rigid_contact_count: 524288
   gpu_max_rigid_patch_count: 81920

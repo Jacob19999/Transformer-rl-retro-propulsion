@@ -4,8 +4,9 @@ Quaternion math using (w,x,y,z) convention — as used by Isaac Lab 2.3.2.
 All quaternions in this codebase use (w,x,y,z) ordering internally.
 Convention converters are provided for the single boundary with body-frame (xyzw) code.
 
-IMPORTANT: Isaac Lab 2.3.2 uses (w,x,y,z). Isaac Lab 3.0 switches to (x,y,z,w).
-Do not migrate convention without updating this module and all callers.
+IMPORTANT: Isaac Lab's public articulation tensors expose (w,x,y,z), while
+lower-level USD/Warp APIs may use (x,y,z,w). Do not infer ordering from a
+package version; verify the specific API boundary before converting.
 """
 
 import torch

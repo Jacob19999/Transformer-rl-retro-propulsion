@@ -6,7 +6,7 @@ disturbances:
 
   wind:
     enabled: true
-    steady_vector: [2.0, 0.5, 0.0]  # m/s, world frame (x=right, y=up, z=back in Isaac)
+    steady_vector: [2.0, 0.5, 0.0]  # m/s, Isaac world frame (x=forward, y=left, z=up)
 
   gust:
     enabled: true

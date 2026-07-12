@@ -86,8 +86,18 @@ def parse_args():
     parser.add_argument("--landing-far-descent-rate", type=float, default=0.15)
     parser.add_argument("--landing-descent-brake-gain", type=float, default=0.35)
     parser.add_argument("--landing-min-descent-throttle", type=float, default=0.30)
-    parser.add_argument("--landing-touchdown-speed-limit", type=float, default=1.5)
-    parser.add_argument("--landing-pad-distance-limit", type=float, default=0.5)
+    parser.add_argument(
+        "--landing-touchdown-speed-limit",
+        type=float,
+        default=None,
+        help="Evaluation success gate; defaults to task.success.max_touchdown_speed.",
+    )
+    parser.add_argument(
+        "--landing-pad-distance-limit",
+        type=float,
+        default=None,
+        help="Evaluation success gate; defaults to task.success.max_pad_distance.",
+    )
     parser.add_argument("--early-stop-patience", type=int, default=12)
     parser.add_argument("--early-stop-min-delta", type=float, default=1e-3)
     parser.add_argument("--early-stop-warmup-updates", type=int, default=8)
@@ -224,6 +234,17 @@ def main():
             overrides=overrides,
             sim_root=sim_root,
         )
+        config.validate_for_training()
+        task_success_cfg = config.config.get("task", {}).get("success", {})
+        if args.task == "landing" and args.landing_touchdown_speed_limit is None:
+            configured_speed = task_success_cfg.get("max_touchdown_speed")
+            args.landing_touchdown_speed_limit = (
+                float(configured_speed) if configured_speed is not None else None
+            )
+        if args.task == "landing" and args.landing_pad_distance_limit is None:
+            args.landing_pad_distance_limit = float(task_success_cfg.get("max_pad_distance", 0.5))
+        # Persist resolved task gates rather than the pre-config None defaults.
+        (output_dir / "args.json").write_text(json.dumps(vars(args), indent=2), encoding="utf-8")
         env = TVCDirectRLEnv(config)
         num_envs = config.num_envs
         device = env.device
@@ -494,12 +515,10 @@ def main():
                         touchdown_pad_dist_max = max(
                             touchdown_pad_dist_max, float(landed_pad_dist.max().item())
                         )
-                        successful_landing_count += int(
-                            (
-                                (td_speed <= args.landing_touchdown_speed_limit)
-                                & (landed_pad_dist <= args.landing_pad_distance_limit)
-                            ).sum().item()
-                        )
+                        successful = landed_pad_dist <= args.landing_pad_distance_limit
+                        if args.landing_touchdown_speed_limit is not None:
+                            successful &= td_speed <= args.landing_touchdown_speed_limit
+                        successful_landing_count += int(successful.sum().item())
                     crashed_count += int(crashed_now.sum().item())
                     timeout_count += int(timeout_now.sum().item())
                     vertical_down_speed = vel_frd_pre[:, 2]
@@ -513,7 +532,7 @@ def main():
                         if eval_guidance is not None:
                             eval_guidance.reset(obs=next_obs, env_ids=reset_ids)
                     obs = next_obs
-                    simulation_app.update()
+                    env.render()
             episode_count = landed_count + crashed_count + timeout_count
             landed_fraction = landed_count / max(episode_count, 1)
             crashed_fraction = crashed_count / max(episode_count, 1)
@@ -572,7 +591,7 @@ def main():
                     pos_errors.extend(obs[:, 0:3].norm(dim=-1).detach().cpu().tolist())
                     tilts.extend(tilt_angle(obs[:, 3:7]).detach().cpu().tolist())
                     rates.extend(obs[:, 10:13].norm(dim=-1).detach().cpu().tolist())
-                    simulation_app.update()
+                    env.render()
             mean_pos = sum(pos_errors) / len(pos_errors)
             max_pos = max(pos_errors)
             mean_tilt = sum(tilts) / len(tilts)
@@ -627,7 +646,7 @@ def main():
                     if bc_guidance is not None:
                         bc_guidance.reset(obs=next_obs, env_ids=reset_ids)
                 obs = next_obs
-                simulation_app.update()
+                env.render()
 
                 if (step + 1) % max(1, args.bc_steps // 5) == 0:
                     print(f"  bc_step={step + 1}/{args.bc_steps} loss={loss.item():.5f}", flush=True)
@@ -732,7 +751,7 @@ def main():
                     stage_env_steps += num_envs
 
                 obs = next_obs
-                simulation_app.update()
+                env.render()
 
             # End-of-rollout staged-curriculum bookkeeping. Feed this slice's
             # counts into the tracker, then advance if the success threshold
@@ -788,6 +807,7 @@ def main():
             n_minibatches = 0
             for _epoch in range(args.update_epochs):
                 inds = torch.randperm(batch_size, device=device)
+                epoch_kls = []
                 for start in range(0, batch_size, minibatch_size):
                     mb_inds = inds[start : start + minibatch_size]
                     _a, newlogprob, entropy, newvalue = model.get_action_and_value(
@@ -796,7 +816,8 @@ def main():
                     logratio = newlogprob - b_logprobs[mb_inds]
                     ratio = logratio.exp()
                     with torch.no_grad():
-                        approx_kl = ((ratio - 1.0) - logratio).mean()
+                        minibatch_kl = ((ratio - 1.0) - logratio).mean()
+                        epoch_kls.append(minibatch_kl)
                         clipfracs.append(((ratio - 1.0).abs() > args.clip_coef).float().mean().item())
 
                     pg_loss1 = -b_advantages[mb_inds] * ratio
@@ -821,6 +842,9 @@ def main():
                     entropy_acc += float(entropy_loss.detach().item())
                     loss_acc += float(loss.detach().item())
                     n_minibatches += 1
+                # PPO's KL stop is an epoch-level diagnostic.  Using only the
+                # last minibatch made the stop decision depend on shuffle order.
+                approx_kl = torch.stack(epoch_kls).mean()
                 if approx_kl > args.target_kl:
                     break
 
@@ -1001,7 +1025,10 @@ def main():
         print(f"Training complete in {elapsed:.1f}s, steps={global_step:,}", flush=True)
         print(f"Final eval: {asdict(final_metrics)}", flush=True)
         print(f"Run directory: {output_dir}", flush=True)
-        return 0 if final_metrics.passed else 1
+        # A completed optimization run is operationally successful even when
+        # its learned policy has not met the research convergence gate. The
+        # pass/fail result remains explicit in eval_final.json and logs.
+        return 0
 
     except Exception as exc:
         print(f"\nERROR: PPO training failed: {exc}", file=sys.stderr, flush=True)

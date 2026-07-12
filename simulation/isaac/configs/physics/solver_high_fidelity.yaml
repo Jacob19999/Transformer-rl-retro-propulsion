@@ -3,7 +3,7 @@ physics:
   dt: 0.001                # 1000 Hz for high-fidelity sim
   gravity: [0.0, 0.0, -9.81]
   enable_scene_query_support: true
-  gpu_pipeline: false
+  device: cuda:0           # explicit; set to cpu only for deliberate CPU validation
   solver_type: 1
   num_position_iterations: 16
   num_velocity_iterations: 1

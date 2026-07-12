@@ -90,10 +90,6 @@ class WrenchDispatch:
         if self._link_iface is None:
             raise RuntimeError("per_link_force mode requires a LinkForceInterface")
 
-        # Refresh link poses so the is_global=True conversion uses current
-        # body orientations (permanent wrench composer caches poses).
-        self._link_iface.refresh_link_poses()
-
         # Convert forces from body-FRD to Isaac world frame
         num_envs, num_fins, _ = forces_body_frd.shape
         forces_flat = forces_body_frd.reshape(-1, 3)  # (num_envs*4, 3)
@@ -117,7 +113,9 @@ class WrenchDispatch:
             body_id=self._body_link_index,
         )
 
-        self._link_iface.write_data_to_sim()
+        # TVCSimScene.step() performs the single scene.write_data_to_sim()
+        # immediately after action application. Do not flush the articulation
+        # here as well; that would run actuator conversion twice per substep.
 
     def _dispatch_collapsed(
         self,
@@ -149,4 +147,4 @@ class WrenchDispatch:
             total_torque_world,
             body_id=self._body_link_index,
         )
-        self._link_iface.write_data_to_sim()
+        # Flushed once by TVCSimScene.step().

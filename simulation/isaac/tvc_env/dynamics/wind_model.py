@@ -32,6 +32,7 @@ class WindModel:
         gust_duration: float = 0.5,          # s
         gust_interval_min: float = 5.0,      # s
         gust_interval_max: float = 15.0,     # s
+        num_envs: int = 1,
         device: torch.device = None,
     ):
         self.cd = cd
@@ -43,19 +44,24 @@ class WindModel:
         self.gust_interval_min = gust_interval_min
         self.gust_interval_max = gust_interval_max
         self.device = device
+        self.num_envs = int(num_envs)
 
         if steady_vector is None:
             steady_vector = [0.0, 0.0, 0.0]
-        self._steady_wind = torch.tensor(steady_vector, dtype=torch.float32, device=device)
+        self._steady_wind = torch.tensor(steady_vector, dtype=torch.float32, device=device).unsqueeze(0).expand(
+            self.num_envs, -1
+        ).clone()
 
         # Gust state — sample an initial cooldown so the first gust is delayed.
-        self._gust_active = False
-        self._gust_remaining = 0.0
-        self._gust_cooldown = self._sample_gust_cooldown() if gust_enabled else 0.0
-        self._gust_direction = torch.zeros(3, device=device)
+        self._gust_active = torch.zeros(self.num_envs, dtype=torch.bool, device=device)
+        self._gust_remaining = torch.zeros(self.num_envs, device=device)
+        self._gust_cooldown = self._sample_gust_cooldown(self.num_envs) if gust_enabled else torch.zeros(
+            self.num_envs, device=device
+        )
+        self._gust_direction = torch.zeros(self.num_envs, 3, device=device)
 
     @classmethod
-    def from_disturbance_config(cls, config: dict, device=None) -> "WindModel":
+    def from_disturbance_config(cls, config: dict, num_envs: int = 1, device=None) -> "WindModel":
         """Create WindModel from disturbance config dict."""
         dist = config.get("disturbances", config)
         wind = dist.get("wind", {})
@@ -71,49 +77,58 @@ class WindModel:
             gust_duration=gust.get("duration", 0.5),
             gust_interval_min=gust.get("interval", [5.0, 15.0])[0],
             gust_interval_max=gust.get("interval", [5.0, 15.0])[1],
+            num_envs=num_envs,
             device=device,
         )
 
-    def _sample_gust_cooldown(self) -> float:
-        """Sample the wait time until the next gust begins."""
+    def _sample_gust_cooldown(self, count: int) -> Tensor:
+        """Sample independent wait times until the next gust begins."""
         interval_span = max(self.gust_interval_max - self.gust_interval_min, 0.0)
-        if interval_span == 0.0:
-            return self.gust_interval_min
-
-        if self.device is not None:
-            rand = torch.rand(1, device=self.device).item()
-        else:
-            rand = torch.rand(1).item()
+        rand = torch.rand(count, device=self.device)
         return self.gust_interval_min + rand * interval_span
+
+    def reset(self, env_ids: Tensor | None = None) -> None:
+        """Reset gust state for newly reset environments."""
+        if env_ids is None:
+            env_ids = torch.arange(self.num_envs, device=self.device, dtype=torch.int64)
+        else:
+            env_ids = env_ids.to(device=self.device, dtype=torch.int64)
+        self._gust_active[env_ids] = False
+        self._gust_remaining[env_ids] = 0.0
+        self._gust_direction[env_ids] = 0.0
+        self._gust_cooldown[env_ids] = (
+            self._sample_gust_cooldown(len(env_ids)) if self.gust_enabled else 0.0
+        )
 
     def update_gust(self, dt: float) -> None:
         """Update gust state machine (step dt seconds)."""
         if not self.gust_enabled:
             return
 
-        if self._gust_active:
-            self._gust_remaining -= dt
-            if self._gust_remaining <= 0:
-                self._gust_active = False
-                self._gust_cooldown = self._sample_gust_cooldown()
-        else:
-            self._gust_cooldown -= dt
-            if self._gust_cooldown <= 0:
-                self._gust_active = True
-                self._gust_remaining = self.gust_duration
-                # Random gust direction in the horizontal world plane (Z-up).
-                angle = torch.rand(1).item() * 6.283
-                self._gust_direction = torch.tensor(
-                    [torch.cos(torch.tensor(angle)).item(), torch.sin(torch.tensor(angle)).item(), 0.0],
-                    device=self.device,
-                )
+        active = self._gust_active
+        self._gust_remaining[active] -= dt
+        finished = active & (self._gust_remaining <= 0.0)
+        if finished.any():
+            self._gust_active[finished] = False
+            self._gust_cooldown[finished] = self._sample_gust_cooldown(int(finished.sum().item()))
+
+        inactive = ~self._gust_active
+        self._gust_cooldown[inactive] -= dt
+        starting = inactive & (self._gust_cooldown <= 0.0)
+        if starting.any():
+            count = int(starting.sum().item())
+            angles = torch.rand(count, device=self.device) * (2.0 * torch.pi)
+            self._gust_active[starting] = True
+            self._gust_remaining[starting] = self.gust_duration
+            self._gust_direction[starting, 0] = torch.cos(angles)
+            self._gust_direction[starting, 1] = torch.sin(angles)
+            self._gust_direction[starting, 2] = 0.0
 
     def get_effective_wind_world(self) -> Tensor:
         """Get current total wind vector in Isaac world frame (m/s)."""
-        wind = self._steady_wind.clone()
-        if self._gust_active:
-            wind = wind + self._gust_direction * self.gust_magnitude
-        return wind
+        return self._steady_wind + self._gust_direction * (
+            self._gust_active.float() * self.gust_magnitude
+        ).unsqueeze(-1)
 
     def compute_drag_force(
         self,
@@ -133,8 +148,13 @@ class WindModel:
         Returns:
             Tensor (num_envs, 3) — drag force in body-FRD frame (N).
         """
-        wind_world = self.get_effective_wind_world()  # (3,)
-        v_rel_world = linear_vel_world - wind_world.unsqueeze(0)  # (num_envs, 3)
+        wind_world = self.get_effective_wind_world()  # (num_envs, 3)
+        if wind_world.shape[0] != linear_vel_world.shape[0]:
+            raise ValueError(
+                f"Wind batch ({wind_world.shape[0]}) does not match body batch "
+                f"({linear_vel_world.shape[0]})."
+            )
+        v_rel_world = linear_vel_world - wind_world  # (num_envs, 3)
 
         speed_sq = (v_rel_world ** 2).sum(dim=-1, keepdim=True)  # (num_envs, 1)
         speed = speed_sq.sqrt()  # (num_envs, 1)

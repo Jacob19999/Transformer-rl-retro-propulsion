@@ -95,7 +95,7 @@ def main():
                 obs, _ = env.reset()
 
             step += 1
-            simulation_app.update()
+            env.render()
 
     except KeyboardInterrupt:
         print("\nStopped by user")

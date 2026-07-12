@@ -49,7 +49,7 @@ def resolve_task_config(
     if not yaml_path.exists():
         raise FileNotFoundError(f"Task config not found: {yaml_path}")
 
-    with open(yaml_path, "r") as f:
+    with open(yaml_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 

@@ -98,6 +98,44 @@ def assemble_observation(
     return obs
 
 
+def apply_sensor_noise(obs: Tensor, config: dict) -> Tensor:
+    """Apply configured measurement noise without contaminating true physics state.
+
+    Position and height share one sampled position error so the observation
+    remains internally consistent. Attitude noise is composed as a small local
+    Euler rotation and the quaternion is renormalized.
+    """
+    sensor_cfg = config.get("disturbances", {}).get("sensor_noise", {})
+    if not sensor_cfg.get("enabled", False):
+        return obs
+
+    from tvc_env.common.quaternions import from_euler, multiply, normalize
+
+    noisy = obs.clone()
+    n = obs.shape[0]
+    position_std = float(sensor_cfg.get("position_std", 0.0))
+    velocity_std = float(sensor_cfg.get("velocity_std", 0.0))
+    attitude_std = float(sensor_cfg.get("attitude_std", 0.0))
+    angular_velocity_std = float(sensor_cfg.get("angular_velocity_std", 0.0))
+
+    if position_std > 0.0:
+        position_noise = torch.randn(n, 3, device=obs.device, dtype=obs.dtype) * position_std
+        # obs[0:3] is target - measured_position; height is measured z.
+        noisy[:, 0:3] -= position_noise
+        noisy[:, 13] += position_noise[:, 2]
+    if attitude_std > 0.0:
+        euler_noise = torch.randn(n, 3, device=obs.device, dtype=obs.dtype) * attitude_std
+        q_noise = from_euler(euler_noise[:, 0], euler_noise[:, 1], euler_noise[:, 2])
+        noisy[:, 3:7] = normalize(multiply(noisy[:, 3:7], q_noise))
+    if velocity_std > 0.0:
+        noisy[:, 7:10] += torch.randn(n, 3, device=obs.device, dtype=obs.dtype) * velocity_std
+    if angular_velocity_std > 0.0:
+        noisy[:, 10:13] += (
+            torch.randn(n, 3, device=obs.device, dtype=obs.dtype) * angular_velocity_std
+        )
+    return noisy
+
+
 def get_observation_space(include_wind: bool = False):
     """Return the Gymnasium Box observation space definition.
 

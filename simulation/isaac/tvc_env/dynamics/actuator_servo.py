@@ -40,7 +40,7 @@ class ServoModel:
     @classmethod
     def from_yaml(cls, yaml_path: str | Path) -> "ServoModel":
         """Load servo model from YAML config file."""
-        with open(yaml_path, "r") as f:
+        with open(yaml_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
         servo = config.get("servo", config)
         return cls(

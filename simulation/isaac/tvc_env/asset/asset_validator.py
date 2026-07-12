@@ -7,6 +7,7 @@ Raises descriptive errors on any failure.
 """
 
 from __future__ import annotations
+import math
 from typing import Any
 
 
@@ -72,7 +73,6 @@ def validate_asset(
         )
 
     # Validate hinge axes are unit vectors
-    import math
     for i, axis in enumerate(hinge_axes):
         norm = math.sqrt(sum(x * x for x in axis))
         if abs(norm - 1.0) > 0.01:
@@ -97,7 +97,7 @@ def validate_asset(
 
     # --- USD structural checks (require stage) ---
     if stage is not None:
-        _validate_usd_structure(metadata, stage, diagnostics)
+        _validate_usd_structure(metadata, vehicle_config, stage, diagnostics)
 
     # --- Articulation runtime checks ---
     if articulation is not None:
@@ -123,7 +123,9 @@ def _validate_metadata_structure(metadata: dict[str, Any]) -> None:
         )
 
 
-def _validate_usd_structure(metadata: dict[str, Any], stage, diagnostics: list[str]) -> None:
+def _validate_usd_structure(
+    metadata: dict[str, Any], vehicle_config: dict[str, Any], stage, diagnostics: list[str]
+) -> None:
     """Check USD prim hierarchy against metadata.
 
     Expected hierarchy (relative to stage defaultPrim, e.g. /Drone):
@@ -137,10 +139,18 @@ def _validate_usd_structure(metadata: dict[str, Any], stage, diagnostics: list[s
     """
     try:
         import pxr.UsdPhysics as UsdPhysics
-        from pxr import Gf
+        from pxr import Gf, UsdGeom
     except ImportError:
         diagnostics.append("WARNING: pxr not available, skipping USD prim checks")
         return
+
+    if str(UsdGeom.GetStageUpAxis(stage)).upper() != "Z":
+        raise AssetValidationError("Drone USD stage must use Z-up coordinates.")
+    meters_per_unit = float(UsdGeom.GetStageMetersPerUnit(stage))
+    if abs(meters_per_unit - 1.0) > 1e-9:
+        raise AssetValidationError(
+            f"Drone USD must use metersPerUnit=1.0, got {meters_per_unit}."
+        )
 
     # Resolve root path from stage defaultPrim (e.g. "/Drone"); fallback to ""
     default_prim = stage.GetDefaultPrim()
@@ -162,6 +172,15 @@ def _validate_usd_structure(metadata: dict[str, Any], stage, diagnostics: list[s
             f"USD asset must have PhysicsArticulationRootAPI applied to root link."
         )
 
+    from tvc_env.asset.mass_properties import extract_mass_properties_from_usd, validate_mass_properties
+
+    usd_mass = extract_mass_properties_from_usd(stage, body_path)
+    if usd_mass is None:
+        raise AssetValidationError(f"Body prim '{body_path}' is missing valid MassAPI properties.")
+    mass_issues = validate_mass_properties(usd_mass, vehicle_config)
+    if mass_issues:
+        raise AssetValidationError("USD mass-property mismatch:\n" + "\n".join(mass_issues))
+
     # Fin links are siblings of Body under the defaultPrim root
     for link_name in metadata["fin_link_names"]:
         fin_path = f"{root_path}/{link_name}"
@@ -178,7 +197,9 @@ def _validate_usd_structure(metadata: dict[str, Any], stage, diagnostics: list[s
         "Y": Gf.Vec3f(0.0, 1.0, 0.0),
         "Z": Gf.Vec3f(0.0, 0.0, 1.0),
     }
-    for joint_name, hinge_axis_frd in zip(metadata["fin_joint_names"], metadata["hinge_axes"]):
+    for joint_index, (joint_name, hinge_axis_frd) in enumerate(
+        zip(metadata["fin_joint_names"], metadata["hinge_axes"])
+    ):
         joint_path = f"{root_path}/{body_link_name}/{joint_name}"
         joint_prim = stage.GetPrimAtPath(joint_path)
         if not joint_prim.IsValid():
@@ -209,6 +230,15 @@ def _validate_usd_structure(metadata: dict[str, Any], stage, diagnostics: list[s
                 f"Joint '{joint_path}' axis {tuple(round(float(v), 4) for v in resolved_axis)} "
                 f"does not match metadata FRD axis {tuple(hinge_axis_frd)} "
                 f"(expected Isaac-local axis {expected_axis})."
+            )
+        expected_lo, expected_hi = metadata["joint_limits"][joint_index]
+        usd_lo = math.radians(float(joint.GetLowerLimitAttr().Get()))
+        usd_hi = math.radians(float(joint.GetUpperLimitAttr().Get()))
+        # Metadata rounds 15 degrees to 0.262 rad; allow 5e-4 rad (~0.03 deg).
+        if abs(usd_lo - float(expected_lo)) > 5e-4 or abs(usd_hi - float(expected_hi)) > 5e-4:
+            raise AssetValidationError(
+                f"Joint '{joint_path}' limits [{usd_lo:.6f}, {usd_hi:.6f}] rad do not match "
+                f"metadata [{float(expected_lo):.6f}, {float(expected_hi):.6f}] rad."
             )
 
 

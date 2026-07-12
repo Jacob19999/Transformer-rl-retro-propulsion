@@ -73,6 +73,10 @@ class EpisodeRecord:
 
 def main():
     args = parse_args()
+    if args.episodes <= 0:
+        raise ValueError("--episodes must be positive")
+    if args.max_episode_seconds <= 0.0:
+        raise ValueError("--max-episode-seconds must be positive")
     if args.max_wall_time is None:
         # generous: ~30s startup + episodes * (max_episode_s + reset overhead)
         args.max_wall_time = 60.0 + args.episodes * (args.max_episode_seconds + 2.0)
@@ -120,6 +124,12 @@ def main():
         max_fin_angle = float(env._servo_model.max_command_angle)
         rl_dt = config.physics_dt * config.decimation
         max_episode_steps = int(args.max_episode_seconds / rl_dt)
+        success_cfg = config.config.get("task", {}).get("success", {})
+        success_pad_distance = float(success_cfg.get("max_pad_distance", 0.5))
+        success_touchdown_speed = success_cfg.get("max_touchdown_speed")
+        success_touchdown_speed = (
+            float(success_touchdown_speed) if success_touchdown_speed is not None else None
+        )
 
         # Match the actor-critic architecture from run_train_ppo.py so the
         # checkpoint state-dict loads cleanly.
@@ -158,6 +168,17 @@ def main():
             raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
         ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
         train_args = ckpt.get("args", {})
+        trained_task = train_args.get("task")
+        if trained_task is not None and trained_task != args.task:
+            raise ValueError(
+                f"Checkpoint task is {trained_task!r}, but evaluation requested {args.task!r}."
+            )
+        if train_args.get("residual_pid") or train_args.get("landing_guidance"):
+            raise ValueError(
+                "This checkpoint was trained with an explicit PID/guidance wrapper. "
+                "run_eval_ppo.py evaluates pure PPO policies only; use the training "
+                "runner's wrapper-aware evaluation instead of silently changing the policy."
+            )
         body_frame_position_error = bool(train_args.get("body_frame_position_error", False))
         model = ActorCritic().to(device)
         model.load_state_dict(ckpt["model"])
@@ -244,7 +265,7 @@ def main():
                         touchdown_throttle = throttle_cmd
 
                     obs = next_obs
-                    simulation_app.update()
+                    env.render()
                     step += 1
                     if done:
                         episode_finished = True
@@ -293,7 +314,12 @@ def main():
         landed = [r for r in episodes if r.outcome == "LANDED"]
         crashed = [r for r in episodes if r.outcome == "CRASHED"]
         timeouts = [r for r in episodes if r.outcome == "TIMEOUT"]
-        on_pad = [r for r in landed if r.pad_distance < 0.5]
+        on_pad = [r for r in landed if r.pad_distance <= success_pad_distance]
+        successful = [
+            r
+            for r in on_pad
+            if success_touchdown_speed is None or r.touchdown_speed <= success_touchdown_speed
+        ]
 
         def _stats(values):
             if not values:
@@ -335,7 +361,9 @@ def main():
                 "mean_pad_distance": round(sum(r.pad_distance for r in bucket) / len(bucket), 4),
                 "max_pad_distance": round(max(r.pad_distance for r in bucket), 4),
                 "mean_closure_ratio": _closure_stats(bucket)["mean"],
-                "on_pad_fraction": round(sum(1 for r in bucket if r.pad_distance < 0.5) / len(bucket), 4),
+                "on_pad_fraction": round(
+                    sum(1 for r in bucket if r.pad_distance <= success_pad_distance) / len(bucket), 4
+                ),
             }
 
         summary = {
@@ -345,7 +373,10 @@ def main():
             "landed_fraction": round(len(landed) / n, 4),
             "crashed_fraction": round(len(crashed) / n, 4),
             "timeout_fraction": round(len(timeouts) / n, 4),
-            "on_pad_fraction": round(len(on_pad) / n, 4),  # landed AND within 0.5 m
+            "on_pad_fraction": round(len(on_pad) / n, 4),
+            "success_fraction": round(len(successful) / n, 4),
+            "success_max_pad_distance": success_pad_distance,
+            "success_max_touchdown_speed": success_touchdown_speed,
             "touchdown_speed_landed": _stats([r.touchdown_speed for r in landed]),
             "pad_distance_landed": _stats([r.pad_distance for r in landed]),
             "spawn_xy_distance": _stats([r.spawn_xy_dist for r in episodes]),

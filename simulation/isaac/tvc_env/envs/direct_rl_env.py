@@ -148,8 +148,11 @@ class TVCDirectRLEnv(TVCEnvBase):
                 self._landing_contact_force_step, landing_force
             )
             self._unsafe_contact_step |= unsafe_contact
-
-        self._update_contact_state()
+            # Contact dwell is defined in physics frames. Updating only once
+            # per decimated policy step made dwell_frames=15 mean 0.5 s rather
+            # than 0.125 s at 120 Hz, and turned brief within-step bounces into
+            # sustained contact. Advance the state machine on each PhysX report.
+            self._update_contact_state(landing_force, unsafe_contact, downward_speed)
         self._step_count += 1
         state_pre_reset = self._build_vehicle_state()
         terminated, time_out = self._get_dones(state_pre_reset)
@@ -173,13 +176,12 @@ class TVCDirectRLEnv(TVCEnvBase):
 
         # Auto-reset terminated/timed-out envs
         reset_ids = (terminated | time_out).nonzero(as_tuple=False).squeeze(-1)
-        if len(reset_ids) > 0:
+        if self._config.auto_reset and len(reset_ids) > 0:
             self._link_force_iface.clear_external_wrenches(reset_ids)
             self._reset_manager.reset_envs(reset_ids)
             self._contact_sensor.reset(reset_ids)
             self._touchdown_speed[reset_ids] = 0.0
             self._step_count[reset_ids] = 0
-            self._sim_scene.step()  # propagate reset state
 
         obs = self._get_observations()
         truncated = time_out & ~terminated
@@ -203,7 +205,6 @@ class TVCDirectRLEnv(TVCEnvBase):
         self._unsafe_contact_step.zero_()
         self._step_count.zero_()
         self._pending_actions = None
-        self._sim_scene.step()  # propagate reset state
         return self._get_observations(), {}
 
     def close(self) -> None:
@@ -211,6 +212,11 @@ class TVCDirectRLEnv(TVCEnvBase):
         if hasattr(self, "_sim_scene") and self._sim_scene is not None:
             self._sim_scene.close()
             self._sim_scene = None
+
+    def render(self) -> None:
+        """Pump Kit/render events without advancing an extra physics step."""
+        if self._sim_scene is not None:
+            self._sim_scene.render()
 
     # ---- Physics step hooks ----
 
@@ -348,11 +354,12 @@ class TVCDirectRLEnv(TVCEnvBase):
 
     def _get_observations(self, state: VehicleState | None = None) -> dict:
         """Assemble observation dict with 'policy' key."""
-        from tvc_env.envs.observations import assemble_observation
+        from tvc_env.envs.observations import apply_sensor_noise, assemble_observation
 
         if state is None:
             state = self._build_vehicle_state()
         obs = assemble_observation(state, self._target_position, self._omega_max)
+        obs = apply_sensor_noise(obs, self._config.config)
 
         return {"policy": obs}
 
@@ -392,18 +399,21 @@ class TVCDirectRLEnv(TVCEnvBase):
         )
         return dones, time_out
 
-    def _update_contact_state(self) -> None:
-        """Advance landing/crash state from PhysX contact reports."""
-        contact_force = self._landing_contact_force_step
+    def _update_contact_state(
+        self,
+        contact_force: Tensor,
+        unsafe_contact: Tensor,
+        downward_speed: Tensor,
+    ) -> None:
+        """Advance landing/crash state from one PhysX contact frame."""
         in_contact = contact_force >= self._contact_sm.min_contact_force
-        unsafe_contact = self._unsafe_contact_step
 
         previous_state = self._contact_sm.state
         first_contact = in_contact & (previous_state == ContactState.AIRBORNE)
-        self._touchdown_speed[first_contact] = self._max_downward_speed_step[first_contact]
+        self._touchdown_speed[first_contact] = downward_speed[first_contact]
         impact_speed = torch.where(
             first_contact,
-            self._max_downward_speed_step,
+            downward_speed,
             self._touchdown_speed,
         )
         ang_vel_frd = self._body_iface.get_angular_velocity_body_frd()

@@ -37,7 +37,7 @@ class SingleEnvDebug(TVCDirectRLEnv):
         if gizmos_config_path.exists():
             import yaml
 
-            with open(gizmos_config_path, "r") as f:
+            with open(gizmos_config_path, "r", encoding="utf-8") as f:
                 gizmos_config = yaml.safe_load(f)
         else:
             gizmos_config = {}

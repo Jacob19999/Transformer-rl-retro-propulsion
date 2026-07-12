@@ -98,7 +98,7 @@ def main() -> int:
     parser.add_argument("--metadata", type=Path, default=_DEFAULT_METADATA)
     parser.add_argument("--vehicle", type=Path, default=_DEFAULT_VEHICLE)
     parser.add_argument("--tolerance", type=float, default=0.01,
-                        help="Relative tolerance per field (default 0.01 = 1%)")
+                        help="Relative tolerance per field (default 0.01 = 1%%)")
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
 

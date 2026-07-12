@@ -35,20 +35,20 @@ class BaseEnvConfig:
         # Load env config if provided
         env_config = None
         if env_config_path is not None:
-            with open(env_config_path, "r") as f:
+            with open(env_config_path, "r", encoding="utf-8") as f:
                 env_config = yaml.safe_load(f)
 
         physics_config = None
         if physics_config_path is None:
             physics_config_path = self._default_physics_config_path(sim_root, env_config, overrides)
         if physics_config_path is not None:
-            with open(physics_config_path, "r") as f:
+            with open(physics_config_path, "r", encoding="utf-8") as f:
                 physics_config = yaml.safe_load(f)
 
         # Load disturbance config if provided
         disturbance_config = None
         if disturbance_config_path is not None:
-            with open(disturbance_config_path, "r") as f:
+            with open(disturbance_config_path, "r", encoding="utf-8") as f:
                 disturbance_config = yaml.safe_load(f)
 
         self.config = load_merged_config(
@@ -66,8 +66,11 @@ class BaseEnvConfig:
         self.env_spacing: float = env.get("env_spacing", 4.0)
         self.gizmos_enabled: bool = env.get("gizmos_enabled", False)
         self.dispatch_mode: str = env.get("dispatch_mode", "per_link_force")
+        self.auto_reset: bool = bool(env.get("reset_on_crash", True))
         physics = self.config.get("physics", {})
-        self.physics_dt: float = physics.get("dt", env.get("physics_dt", 1.0 / 120.0))
+        # The env clock is the task-facing source of truth (notably HIL uses
+        # 500 Hz); the selected PhysX file supplies a fallback and solver knobs.
+        self.physics_dt: float = env.get("physics_dt", physics.get("dt", 1.0 / 120.0))
         self.decimation: int = env.get("decimation", 4)
         self.task_name: str = task_name
 
@@ -94,7 +97,7 @@ class BaseEnvConfig:
         # Check EDF params
         edf_config_path = Path(__file__).parents[2] / "configs/params/edf_90mm.yaml"
         if edf_config_path.exists():
-            with open(edf_config_path, "r") as f:
+            with open(edf_config_path, "r", encoding="utf-8") as f:
                 edf_cfg = yaml.safe_load(f).get("edf", {})
             # These nulls have defined model semantics: k_T/k_Q are derived
             # when omitted and d_omega_max=None disables the optional slew cap.
@@ -138,6 +141,7 @@ class TVCEnvBase:
         from tvc_env.dynamics.actuator_servo import ServoModel
         from tvc_env.dynamics.propulsion_edf import EDFModel
         from tvc_env.dynamics.wind_model import WindModel
+        from tvc_env.dynamics.com_model import COMOffsetModel
         from tvc_env.sim.body_interface import BodyInterface
         from tvc_env.sim.link_force_interface import LinkForceInterface
         from tvc_env.sim.sensor_interface import SensorInterface
@@ -180,10 +184,17 @@ class TVCEnvBase:
         dist_cfg = self._config.config.get("disturbances", {})
         if dist_cfg.get("enabled") and dist_cfg.get("wind", {}).get("enabled"):
             wind_model = WindModel.from_disturbance_config(
-                self._config.config, device=device,
+                self._config.config, num_envs=num_envs, device=device,
             )
         else:
             wind_model = None
+
+        if dist_cfg.get("enabled") and dist_cfg.get("com_offset", {}).get("enabled"):
+            com_offset_model = COMOffsetModel.from_disturbance_config(
+                self._config.config, device=device,
+            )
+        else:
+            com_offset_model = None
 
         # Sim interfaces
         body_iface = BodyInterface(articulation, art_map)
@@ -213,6 +224,8 @@ class TVCEnvBase:
             contact_sm,
             self._config.config,
             env_origins=env_origins,
+            com_offset_model=com_offset_model,
+            wind_model=wind_model,
         )
         reset_mgr.initialize(num_envs, device)
 

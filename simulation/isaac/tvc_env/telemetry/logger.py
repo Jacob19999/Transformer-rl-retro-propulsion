@@ -79,7 +79,7 @@ class TelemetryLogger:
             self._file.close()
 
         path = self._output_dir / f"telemetry_ep{self._episode_id:04d}.csv"
-        self._file = open(path, "w", newline="")
+        self._file = open(path, "w", newline="", encoding="utf-8")
         self._writer = csv.DictWriter(self._file, fieldnames=_COLUMNS)
         self._writer.writeheader()
         self._step = 0

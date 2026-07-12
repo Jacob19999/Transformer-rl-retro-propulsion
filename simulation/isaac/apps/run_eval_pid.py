@@ -599,7 +599,7 @@ def main():
                 if guidance is not None:
                     guidance.reset(obs=obs)
 
-            simulation_app.update()
+            env.render()
 
         elapsed = time.time() - t_start
 

@@ -311,12 +311,14 @@ python apps/run_train_ppo.py --task landing \
 
 ---
 
-## 7. GTrXL-PPO Training
+## 7. GTrXL Environment Compatibility (No Trainer Yet)
 
-Scaffolding for Gated Transformer-XL PPO training (the primary research target).
+The repository does not yet implement sequence-aware GTrXL-PPO optimization.
+The command below is an explicit random-action environment smoke only and
+cannot produce a trained checkpoint. Without `--env-smoke-only`, it exits 2.
 
 ```bash
-python apps/run_train_gtrxl.py [OPTIONS]
+python apps/run_train_gtrxl.py --env-smoke-only [OPTIONS]
 ```
 
 
@@ -326,22 +328,16 @@ python apps/run_train_gtrxl.py [OPTIONS]
 | `--env-config`                 | `configs/env/train_128.yaml`        | Env config YAML                         |
 | `--disturbance`                | `configs/disturbances/nominal.yaml` | Disturbance config                      |
 | `--seed`                       | `0`                                 | Random seed                             |
-| `--total-steps`                | `10000000`                          | Total environment steps                 |
-| `--seq-len`                    | `32`                                | Transformer observation sequence length |
-| `--memory-dim`                 | `64`                                | GTrXL memory dimension                  |
 | `--output-dir`                 | `runs`                              | Base output directory                   |
 | `--headless` / `--no-headless` | headless                            | Viewport toggle                         |
+| `--env-smoke-only`             | false                               | Required acknowledgement: no training  |
+| `--smoke-steps`                | `100`                               | Random-action policy steps              |
 
 
 **Examples:**
 
 ```bash
-python apps/run_train_gtrxl.py --task hover --seed 0
-
-python apps/run_train_gtrxl.py --task landing \
-    --seq-len 64 --memory-dim 128 \
-    --disturbance configs/disturbances/wind.yaml \
-    --total-steps 20000000
+python apps/run_train_gtrxl.py --env-smoke-only --task hover --smoke-steps 100 --seed 0
 ```
 
 ---

@@ -201,7 +201,9 @@ def play_scripted_episode(
             if _sim_ctx is not None:
                 _sim_ctx.render()
             else:
-                simulation_app.update()
+                # Never pump Kit directly while the timeline is playing: a raw
+                # app update can advance an unobserved physics tick.
+                time.sleep(0.001)
 
             if step % max(print_every, 1) == 0:
                 _print_step_detail(step, episode_steps, env, action, obs, reward, notes)

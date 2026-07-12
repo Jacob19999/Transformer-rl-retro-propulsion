@@ -37,6 +37,8 @@ class SceneConfig:
     physics_dt: float = 1.0 / 120.0        # s
     decimation: int = 4                     # physics substeps per RL step
     gravity: tuple[float, float, float] = (0.0, 0.0, -9.81)
+    device: str = "cuda:0"
+    use_fabric: bool = True
     enable_scene_query_support: bool = False
     solver_type: int = 1                    # 1 = TGS
     num_position_iterations: int = 4
@@ -50,6 +52,8 @@ class SceneConfig:
     gpu_max_rigid_contact_count: int | None = None
     gpu_max_rigid_patch_count: int | None = None
     gpu_found_lost_pairs_capacity: int | None = None
+    contact_offset: float | None = None
+    rest_offset: float | None = None
 
     # Asset paths — absolute, resolved from this file's location
     drone_usd_path: str = _DRONE_USD
@@ -67,9 +71,13 @@ class SceneConfig:
             replicate_physics=env.get("replicate_physics", True),
             gizmos_enabled=env.get("gizmos_enabled", False),
             dispatch_mode=env.get("dispatch_mode", "per_link_force"),
-            physics_dt=physics.get("dt", env.get("physics_dt", 1.0 / 120.0)),
+            physics_dt=env.get("physics_dt", physics.get("dt", 1.0 / 120.0)),
             decimation=env.get("decimation", 4),
             gravity=tuple(physics.get("gravity", [0.0, 0.0, -9.81])),
+            device=physics.get(
+                "device", "cuda:0" if physics.get("gpu_pipeline", True) else "cpu"
+            ),
+            use_fabric=physics.get("use_fabric", True),
             enable_scene_query_support=physics.get("enable_scene_query_support", False),
             solver_type=physics.get("solver_type", 1),
             num_position_iterations=physics.get("num_position_iterations", 4),
@@ -81,6 +89,8 @@ class SceneConfig:
             gpu_max_rigid_contact_count=physics.get("gpu_max_rigid_contact_count"),
             gpu_max_rigid_patch_count=physics.get("gpu_max_rigid_patch_count"),
             gpu_found_lost_pairs_capacity=physics.get("gpu_found_lost_pairs_capacity"),
+            contact_offset=physics.get("contact_offset"),
+            rest_offset=physics.get("rest_offset"),
         )
 
 
@@ -96,17 +106,17 @@ class TVCSimScene:
         """One physics substep: write commands, advance sim, refresh articulation buffers.
 
         render=None auto-detects ISAAC_VIZ_SLOW env var (set via --slow flag).
-        When rendering, also pumps the Kit event loop so the viewport stays live.
+        SimulationContext.step(render=True) also pumps the Kit event loop.
         """
         if render is None:
             render = os.getenv("ISAAC_VIZ_SLOW", "0") == "1"
         self.scene.write_data_to_sim()
         self.sim.step(render=render)
         self.scene.update(self.physics_dt)
-        if render:
-            # Use sim.render() which safely guards against extra physics
-            # steps, instead of raw app.update().
-            self.sim.render()
+
+    def render(self) -> None:
+        """Refresh UI/render extensions while SimulationContext suppresses physics."""
+        self.sim.render()
 
     def __getitem__(self, key: str) -> Any:
         return self.scene[key]
@@ -116,24 +126,13 @@ class TVCSimScene:
         if duration_s <= 0.0:
             return
 
-        try:
-            import omni.kit.app
-            app = omni.kit.app.get_app()
-        except Exception:
-            time.sleep(duration_s)
-            return
-
-        if app is None:
-            time.sleep(duration_s)
-            return
-
         deadline = time.perf_counter() + duration_s
         while True:
             if time.perf_counter() >= deadline:
                 break
 
             try:
-                app.update()
+                self.sim.render()
             except Exception:
                 break
 
@@ -221,9 +220,12 @@ def build_scene(config: SceneConfig) -> TVCSimScene:
             physx_kwargs[field_name] = value
 
     sim_cfg = SimulationCfg(
+        device=config.device,
         dt=config.physics_dt,
+        render_interval=config.decimation,
         gravity=config.gravity,
         enable_scene_query_support=config.enable_scene_query_support,
+        use_fabric=config.use_fabric,
         physx=PhysxCfg(**physx_kwargs),
     )
     sim = SimulationContext(sim_cfg)
@@ -252,15 +254,14 @@ def _warmup_viewport(sim: "SimulationContext") -> None:
     because no draw calls have been issued to the RTX renderer.
     """
     try:
-        import omni.kit.app
-        app = omni.kit.app.get_app()
+        import omni.kit.app  # noqa: F401 - verifies the Kit runtime is live
     except ImportError:
         return
 
     # Phase 1: pump frames so the renderer picks up the stage contents.
     for _ in range(20):
         try:
-            app.update()
+            sim.render()
         except Exception:
             break
 
@@ -274,7 +275,7 @@ def _warmup_viewport(sim: "SimulationContext") -> None:
     # first test frame already shows the drone rather than a blank scene.
     for _ in range(10):
         try:
-            app.update()
+            sim.render()
         except Exception:
             break
 
@@ -298,7 +299,11 @@ def _create_scene_cfg(config: SceneConfig):
             init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -0.05)),
             spawn=sim_utils.CuboidCfg(
                 size=(200.0, 200.0, 0.1),
-                collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
+                collision_props=sim_utils.CollisionPropertiesCfg(
+                    collision_enabled=True,
+                    contact_offset=config.contact_offset,
+                    rest_offset=config.rest_offset,
+                ),
                 visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.18, 0.20, 0.22)),
                 physics_material=sim_utils.RigidBodyMaterialCfg(
                     static_friction=0.8,
@@ -322,6 +327,11 @@ def _create_scene_cfg(config: SceneConfig):
             spawn=sim_utils.UsdFileCfg(
                 usd_path=config.drone_usd_path,
                 activate_contact_sensors=True,
+                collision_props=sim_utils.CollisionPropertiesCfg(
+                    collision_enabled=True,
+                    contact_offset=config.contact_offset,
+                    rest_offset=config.rest_offset,
+                ),
                 rigid_props=sim_utils.RigidBodyPropertiesCfg(
                     disable_gravity=False,
                     retain_accelerations=False,

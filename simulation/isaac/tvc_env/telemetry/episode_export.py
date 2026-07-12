@@ -95,14 +95,14 @@ def export_episode(
 
     # Write metadata JSON
     meta_path = output_dir / f"episode_{episode_id:04d}_metadata.json"
-    with open(meta_path, "w") as f:
+    with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)
 
     # Write steps CSV
     steps_path = output_dir / f"episode_{episode_id:04d}_steps.csv"
     if steps:
         fieldnames = list(steps[0].keys())
-        with open(steps_path, "w", newline="") as f:
+        with open(steps_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(steps)
@@ -119,7 +119,7 @@ def load_episode_metadata(metadata_path: str | Path) -> dict[str, Any]:
     Returns:
         Dict with episode metadata and metrics.
     """
-    with open(metadata_path) as f:
+    with open(metadata_path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -167,7 +167,7 @@ def export_run_summary(
     }
 
     summary_path = output_dir / "run_summary.json"
-    with open(summary_path, "w") as f:
+    with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
 
     return summary_path

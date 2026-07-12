@@ -38,12 +38,19 @@ def usd_stage():
         pytest.skip("pxr not available for in-memory USD stage creation")
 
     stage = Usd.Stage.CreateInMemory()
+    UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
+    UsdGeom.SetStageMetersPerUnit(stage, 1.0)
 
     drone = UsdGeom.Xform.Define(stage, "/Drone")
     stage.SetDefaultPrim(drone.GetPrim())
 
     body = UsdGeom.Xform.Define(stage, "/Drone/Body")
     UsdPhysics.ArticulationRootAPI.Apply(body.GetPrim())
+    UsdPhysics.RigidBodyAPI.Apply(body.GetPrim())
+    mass = UsdPhysics.MassAPI.Apply(body.GetPrim())
+    mass.CreateMassAttr(3.1)
+    mass.CreateCenterOfMassAttr(Gf.Vec3f(0.0, 0.0, 0.01))
+    mass.CreateDiagonalInertiaAttr(Gf.Vec3f(0.05, 0.05, 0.02))
 
     # Fin bodies: siblings of Body, in canonical +X/+Y/-X/-Y order
     for fin_name in ["FwdFin", "RightFin", "AftFin", "LeftFin"]:
@@ -61,5 +68,7 @@ def usd_stage():
         joint.GetAxisAttr().Set(axis)
         joint.GetLocalRot0Attr().Set(rotation)
         joint.GetLocalRot1Attr().Set(rotation)
+        joint.GetLowerLimitAttr().Set(-15.0)
+        joint.GetUpperLimitAttr().Set(15.0)
 
     return stage

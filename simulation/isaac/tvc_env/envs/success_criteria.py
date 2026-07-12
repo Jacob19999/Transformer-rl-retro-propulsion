@@ -78,6 +78,7 @@ def check_landing_success(
     """
     is_landed = contact_state == ContactState.LANDED
     target = target_position.to(position.device)
-    horiz_dist = (position[:, :2] - target[:2]).norm(dim=-1)
+    target_xy = target[:2].unsqueeze(0) if target.dim() == 1 else target[:, :2]
+    horiz_dist = (position[:, :2] - target_xy).norm(dim=-1)
     on_pad = horiz_dist < max_pad_distance
     return is_landed & on_pad

@@ -19,18 +19,11 @@ env:
 
   # Match hardware servo control loop (500 Hz = 0.002 s)
   physics_dt: 0.002           # 500 Hz physics step (source: hardware control loop spec)
-  decimation: 16              # RL observation at 500/16 ≈ 31.25 Hz
+  decimation: 16              # RL observation at 500/16 = 31.25 Hz
   replicate_physics: false
 
-  # HIL episode settings
-  episode_length_s: 120.0     # 2-minute episodes for steady-state analysis
+  # Operator-controlled episode reset policy
   reset_on_crash: false       # Operator-controlled resets in HIL mode
-
-  # Deterministic spawn for reproducible comparison
-  spawn:
-    randomize_position: false
-    randomize_orientation: false
-    initial_altitude: 5.0     # m — fixed hover altitude
 
   # Sensor noise passthrough (real sensors provide noise)
   sensor_noise_enabled: false
@@ -42,3 +35,12 @@ env:
   telemetry_enabled: true
   telemetry_output_dir: "runs/hil_validation"
   telemetry_flush_every: 50   # Flush every 50 steps (~1.6 s at 31 Hz)
+
+task:
+  episode_length_s: 120.0     # 2-minute episodes for steady-state analysis
+  # Deterministic spawn for reproducible hardware comparison
+  spawn:
+    position_range: [[0.0, 0.0, 5.0], [0.0, 0.0, 5.0]]
+    velocity_range: [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+    attitude_range: [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+    initial_motor_omega_fraction: 0.88

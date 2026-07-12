@@ -3,7 +3,7 @@
 
 vehicle:
   total_mass: 3.1                     # kg, source: measured
-  body_com_offset: [0.0, 0.0, 0.01]  # m, in body-FRD frame, source: estimate
+  body_com_offset: [0.0, 0.0, -0.01] # m, body-FRD (1 cm up); matches USD local +Z, source: estimate
 
   inertia_tensor:                     # kg·m², source: measured (Isaac Sim MassAPI on /Drone/Body)
     Ixx: 0.05

@@ -13,7 +13,7 @@ from __future__ import annotations
 import torch
 from torch import Tensor
 
-from tvc_env.common.frames import isaac_velocity_to_frd
+from tvc_env.common.frames import frd_position_to_isaac, isaac_velocity_to_frd
 from tvc_env.common.quaternions import rotate_vector, inverse as quat_inv, normalize
 
 
@@ -28,6 +28,9 @@ class BodyInterface:
         """
         self._art = articulation
         self._map = art_map
+        # PhysX exposes COM properties on CPU. Keep the authored values so
+        # per-episode COM randomization is absolute rather than cumulative.
+        self._default_coms = articulation.root_physx_view.get_coms().clone()
 
     # ---- Root state reading ----
 
@@ -133,14 +136,47 @@ class BodyInterface:
 
     # ---- Joint state writing ----
 
-    def set_fin_joint_targets(self, positions: Tensor) -> None:
+    def set_fin_joint_targets(self, positions: Tensor, env_ids: Tensor | None = None) -> None:
         """Set fin joint position targets (for position-controlled joints).
 
         Args:
             positions: Tensor of shape (num_envs, 4) in radians.
         """
         joint_indices = torch.tensor(self._map.fin_joint_indices, device=positions.device)
-        self._art.set_joint_position_target(positions, joint_ids=joint_indices)
+        self._art.set_joint_position_target(positions, joint_ids=joint_indices, env_ids=env_ids)
+
+    def write_fin_joint_state(
+        self,
+        positions: Tensor,
+        velocities: Tensor,
+        env_ids: Tensor | None = None,
+    ) -> None:
+        """Write measured fin joint state during an episode reset.
+
+        Setting only a position target leaves the previous episode's joint
+        position and velocity in PhysX. Isaac Lab's articulation reset contract
+        requires writing both joint state tensors before clearing buffers.
+        """
+        joint_indices = torch.tensor(self._map.fin_joint_indices, device=positions.device)
+        self._art.write_joint_state_to_sim(
+            positions,
+            velocities,
+            joint_ids=joint_indices,
+            env_ids=env_ids,
+        )
+
+    def set_body_com_offset_frd(self, offsets_frd: Tensor, env_ids: Tensor) -> None:
+        """Apply absolute per-environment root-body COM offsets in body-FRD."""
+        env_ids_cpu = env_ids.to(device="cpu", dtype=torch.int64)
+        coms = self._default_coms.clone()
+        body_id = self._map.body_index
+        offsets_isaac = frd_position_to_isaac(offsets_frd).to(device="cpu", dtype=coms.dtype)
+        coms[env_ids_cpu, body_id, :3] += offsets_isaac
+        self._art.root_physx_view.set_coms(coms, env_ids_cpu)
+
+    def reset_buffers(self, env_ids: Tensor | None = None) -> None:
+        """Reset articulation actuator caches and external-wrench state."""
+        self._art.reset(env_ids)
 
     def set_root_state(
         self,
