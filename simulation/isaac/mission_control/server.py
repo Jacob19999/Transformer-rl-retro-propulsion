@@ -131,6 +131,8 @@ def config():
     policies = {'ppo': 'Legacy PPO 26M · old hinges', 'ppo_deterministic': 'Legacy PPO 34M · old hinges', 'pid': 'PID · radial hinges'}
     if 'ppo_radial' in policy_paths():
         policies = {'ppo_radial': 'PPO · radial 8S / battery aware', **policies}
+    if 'ppo_mission' in policy_paths():
+        policies = {'ppo_mission': 'EXPERIMENTAL PPO · recovery + waypoints', **policies}
     training = active_training_command()
     return dict(defaults=default_mission(), hardware=read_json(HERE / 'hardware.json'),
                 policies=policies,

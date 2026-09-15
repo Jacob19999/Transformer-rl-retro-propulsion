@@ -70,7 +70,9 @@ def main():
             obs_dim = saved['model']['actor.0.weight'].shape[1]
             if saved.get('args', {}).get('residual_pid') or saved.get('args', {}).get('landing_guidance'):
                 raise ValueError('This mission runner requires a direct-action PPO checkpoint')
-            overrides['env']['observe_battery'] = obs_dim == 28
+            overrides['env']['observe_battery'] = obs_dim in (28,43)
+            if request.get('waypoints') and obs_dim != 43:
+                raise ValueError('Waypoint missions require the experimental 43-observation mission PPO policy')
             if saved.get('task_config', {}).get('dynamics', {}).get('coupled_jet', {}).get('enabled'):
                 # A qualified policy must replay its actual training plant.
                 # User-selected initial conditions/battery/disturbances remain
@@ -82,6 +84,9 @@ def main():
                 overrides = deep_merge(plant, overrides)
                 overrides['env'].update(num_envs=1, replicate_physics=False)
                 overrides['task']['spawn']['curriculum'] = {'enabled':False}
+            overrides['task']['navigation'] = dict(enabled=obs_dim==43,waypoints=request.get('waypoints',[]))
+        elif request.get('waypoints'):
+            raise ValueError('Waypoint missions require the mission PPO policy; the PID baseline is landing-only')
         torch.manual_seed(request['seed'])
         config = BaseEnvConfig(task_name='landing', sim_root=ROOT,
                                env_config_path=ROOT / 'configs/env/single_env_debug.yaml',
@@ -177,6 +182,7 @@ def main():
                              contact_force_n=float(env._landing_contact_force_step[0]),
                              propulsive_delta_v_m_s=cumulative_delta_v,
                              rotation=env._rotation.record(),
+                             mission=env._navigation.record() if env._navigation else None,
                              body_rate_command=None)
                 stream.write(json.dumps(frame, allow_nan=False) + '\n')
                 frames += 1
@@ -250,7 +256,8 @@ def main():
                                               and all(stable_samples[-window:]))
         landed = latest['contact'] == int(ContactState.LANDED)
         landing_event_success = bool(landing_frame and landing_frame['impact_speed'] <= .25
-                                     and landing_frame['pad_distance'] <= .5)
+                                     and landing_frame['pad_distance'] <= .5
+                                     and (landing_frame['mission'] is None or landing_frame['mission']['ready_to_land']))
         success = landing_event_success and latest['impact_speed'] <= .25 and latest['pad_distance'] <= .5 and settled_after_shutdown is True
         outcome = ('CANCELLED' if cancelled else 'POST_LANDING_FAILURE' if landed and not settled_after_shutdown
                    else 'LANDED' if landed else 'CRASHED' if bool(terminated[0]) else 'TIMEOUT')
@@ -261,6 +268,7 @@ def main():
                        flight_energy_wh=(landing_frame['battery']['energy_wh'] if landing_frame and landing_frame['battery'] else None),
                        propulsive_delta_v_m_s=cumulative_delta_v,
                        flight_rotation=env._rotation.record(),
+                       mission=env._navigation.record() if env._navigation else None,
                        impact_speed=latest['impact_speed'], pad_distance=latest['pad_distance'], battery=latest['battery'])
         atomic_json(output / 'summary.json', summary)
         update(state='cancelled' if cancelled else 'complete', phase=outcome, frames=frames,

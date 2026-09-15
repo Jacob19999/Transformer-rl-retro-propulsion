@@ -114,7 +114,8 @@ def compute_midpoint_gyroscopic_torque(omega: Tensor, body_angular_vel: Tensor,
 
 
 def compute_coupled_midpoint_torques(body_angular_vel: Tensor, body_inertia: Tensor,
-        rotor_momentum: Tensor, external_torque: Tensor, dt: float) -> tuple[Tensor, Tensor]:
+        rotor_momentum: Tensor, external_torque: Tensor, dt: float,
+        correct_physx_projection: bool = False) -> tuple[Tensor, Tensor]:
     """Midpoint body-Euler + virtual-rotor operator for one external impulse.
 
     Solve I(w_mid-w_old) = dt/2 * (tau_ext - w_mid x (I w_mid + H)).
@@ -153,4 +154,37 @@ def compute_coupled_midpoint_torques(body_angular_vel: Tensor, body_inertia: Ten
     old_iw = (inertia @ old.unsqueeze(-1)).squeeze(-1)
     gyro = torch.linalg.cross(rotor_momentum, midpoint)
     correction = -torch.linalg.cross(midpoint, iw) + torch.linalg.cross(old, old_iw)
+    if correct_physx_projection:
+        # PhysX applies external acceleration, then its explicit body Euler
+        # update, then preserves the PRE-INTERNAL angular momentum magnitude.
+        # Inverting that scalar projection is necessary when H and body spin
+        # interact. Otherwise p=q=6.28,r=40 at 480Hz gained 22% energy in 2s.
+        # Let b=dt*I^-1*(-w_old x Iw_old), d=2*w_mid-w_old. Solve
+        # |I*(lambda*d-b)|^2=|I*d|^2, then apply I*(lambda*d-b-w_old)/dt.
+        # This is the documented PhysX discrete operator, not damping.
+        # See computeLinkInternalAcceleration in DyFeatherstoneForwardDynamic.cpp.
+        desired = 2*midpoint-old
+        desired_l = (inertia @ desired.unsqueeze(-1)).squeeze(-1)
+        ib = -dt*torch.linalg.cross(old, old_iw)
+        a = desired_l.square().sum(-1)
+        dot = (desired_l*ib).sum(-1)
+        discriminant = dot.square()+a*(a-ib.square().sum(-1))
+        scale = (dot+discriminant.clamp(min=0).sqrt())/a.clamp(min=1e-12)
+        scale = torch.where(a>1e-12,scale,torch.ones_like(scale))
+        correction = correction + (scale-1)[:,None]*desired_l/dt
     return gyro, correction
+
+
+def cayley_body_orientation(old_quaternion, old_body_rate, new_body_rate, dt):
+    """Lie midpoint orientation paired with the body angular-velocity solve.
+
+    R_new=R_old*Cayley(dt*w_mid). For unforced constant H, midpoint Euler
+    gives L_new-L_old=-dt*w_mid x (L_new+L_old)/2; the Cayley rotation thus
+    preserves WORLD angular momentum as well as the velocity solve's energy.
+    No preferred attitude, rate limit, controller or landing goal is involved.
+    """
+    from tvc_env.common.frames import frd_to_isaac
+    from tvc_env.common.quaternions import normalize, multiply
+    delta = torch.cat((torch.ones_like(old_body_rate[:,:1]),
+                       .25*dt*frd_to_isaac(old_body_rate+new_body_rate)),dim=-1)
+    return normalize(multiply(old_quaternion,normalize(delta)))

@@ -122,6 +122,11 @@ def main():
             count = min(n, args.episodes - len(records))
             obs = env.reset(seed=args.seed + batch)[0]['policy']
             initial = obs.clone()
+            initial_position = (env._body_iface.get_root_position()-env._env_origins).cpu().tolist()
+            initial_quaternion = env._body_iface.get_root_quaternion_wxyz().cpu().tolist()
+            initial_velocity = env._body_iface.get_linear_velocity_body_frd().cpu().tolist()
+            initial_rates = env._body_iface.get_angular_velocity_body_frd().cpu().tolist()
+            initial_waypoints = [env._navigation.record(i)['waypoints'] for i in range(count)] if env._navigation else [[] for _ in range(count)]
             finished = torch.arange(n, device=device) >= count
             max_down = torch.zeros(n, device=device)
             max_tilt = torch.zeros(n, device=device)
@@ -195,9 +200,11 @@ def main():
                                    max_body_rate_rad_s=float(max_body_rate[i]),
                                    waypoints_completed=int(info['waypoints_completed_pre_reset'][i]),
                                    mission_ready_to_land=mission_complete,
-                                   spawn_position=(-initial[i, :3]).cpu().tolist(),
-                                   spawn_quaternion=initial[i, 3:7].cpu().tolist(),
-                                   spawn_body_velocity=initial[i, 7:10].cpu().tolist(),
+                                   spawn_position=initial_position[i],
+                                   spawn_quaternion=initial_quaternion[i],
+                                   spawn_body_velocity=initial_velocity[i],
+                                   spawn_body_rates=initial_rates[i],
+                                   waypoints=initial_waypoints[i],
                                    spawn_motor_fraction=float(initial[i, 22]),
                                    terminal_position=pos.cpu().tolist())
                         records.append(rec)

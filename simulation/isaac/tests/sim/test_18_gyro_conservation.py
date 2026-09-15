@@ -64,14 +64,15 @@ def run():
     if method == 'combined_midpoint':
         import tvc_env.dynamics.rotor_reaction as rotor
         rotor.compute_midpoint_gyroscopic_torque = combined_midpoint_experiment
-    if method == 'inverse_projection':
+    if method in ('inverse_projection','inverse_cayley'):
         import tvc_env.dynamics.rotor_reaction as rotor
         rotor.compute_midpoint_gyroscopic_torque = inverse_projection_experiment
     cfg=BaseEnvConfig('landing',env_config_path='configs/env/train_512_8s_momentum.yaml',overrides={
         'physics': {'enable_external_forces_every_iteration': every_iteration},
         'env':{'num_envs':4,'physics_dt':1/hz,'decimation':1,'observe_battery':False,'reset_on_crash':False},'battery':{'enabled':False},
         'dynamics':{'enable_wind_force':False,'enable_fin_forces':False,'enable_edf_static_torque':False,
-                    'gyro_integration': 'coupled_midpoint' if method == 'production_coupled' else 'rotor_midpoint',
+                    'gyro_integration': ('coupled_cayley' if method=='production_cayley' else
+                                         'coupled_midpoint' if method == 'production_coupled' else 'rotor_midpoint'),
                     'enable_edf_dynamic_torque':False},
         'task':{'spawn':{'position_range':[[0,0,100],[0,0,100]],'velocity_range':[[0,0,0],[0,0,0]],
             'attitude_range':[[0,0,0],[0,0,0]],'curriculum':{'enabled':False}}}})
@@ -111,7 +112,19 @@ def run():
                    + env._edf_model.rotor_inertia*env._reset_manager.omega_state.abs())
         env._pre_physics_step(act)
         for _ in range(2*hz):
+            if method == 'inverse_cayley':
+                old_q = env._body_iface.get_root_quaternion_wxyz()
+                old_w = env._body_iface.get_angular_velocity_body_frd()
             env._apply_action();env._sim_scene.step()
+            if method == 'production_cayley':
+                env._correct_freeflight_orientation()
+            if method == 'inverse_cayley':
+                from tvc_env.common.quaternions import multiply
+                final_w = env._body_iface.get_angular_velocity_body_frd()
+                delta = normalize(torch.cat((torch.ones(4,1,device=env.device),frd_to_isaac(old_w+final_w)*(.25/hz)),dim=-1))
+                corrected_q = normalize(multiply(old_q,delta))
+                env._body_iface.set_root_state(env._body_iface.get_root_position(),corrected_q,
+                    env._body_iface.get_root_linear_velocity_world(),rotate_vector(corrected_q,frd_to_isaac(final_w)))
             if _ == 0:
                 first_rates = env._body_iface.get_angular_velocity_body_frd().cpu().tolist()
         after, h_after, final_rates = invariants()

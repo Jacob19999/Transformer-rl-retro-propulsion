@@ -140,6 +140,12 @@ def policy_paths():
         path = (ROOT / record['checkpoint']).resolve()
         if path.is_relative_to((ROOT / 'runs').resolve()) and path.suffix == '.pt' and path.is_file():
             result['ppo_radial'] = str(path.relative_to(ROOT))
+    mission_registry = ROOT / 'mission_control/mission_policy_registry.json'
+    if mission_registry.exists():
+        record = json.loads(mission_registry.read_text())
+        path = (ROOT / record['checkpoint']).resolve()
+        if path.is_relative_to((ROOT/'runs').resolve()) and path.suffix=='.pt' and path.is_file():
+            result['ppo_mission'] = str(path.relative_to(ROOT))
     return result
 
 
@@ -147,4 +153,6 @@ def default_mission():
     result = copy.deepcopy(DEFAULTS)
     if 'ppo_radial' in policy_paths():
         result['controller'] = 'ppo_radial'
+    if 'ppo_mission' in policy_paths():
+        result['controller'] = 'ppo_mission'
     return result

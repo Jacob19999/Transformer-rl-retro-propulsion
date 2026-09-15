@@ -109,16 +109,25 @@ class WaypointMission:
         self.curves[env_ids] = catmull_rom(p0,p1,p2,p3)
 
     def update_features(self, position):
-        squared = (self.curves-position[:,None,:]).square().sum(-1)
-        nearest = squared.argmin(-1)
-        nearest_point = self.curves[self.ids, nearest]
-        tangent = self.curves[self.ids,(nearest+1).clamp(max=48)]-self.curves[self.ids,(nearest-1).clamp(min=0)]
+        segments = self.curves[:,1:]-self.curves[:,:-1]
+        alpha = (((position[:,None,:]-self.curves[:,:-1])*segments).sum(-1)
+                 /segments.square().sum(-1).clamp(min=1e-9)).clamp(0,1)
+        projections = self.curves[:,:-1]+alpha[:,:,None]*segments
+        nearest = (projections-position[:,None,:]).square().sum(-1).argmin(-1)
+        nearest_point = projections[self.ids,nearest]
+        tangent = segments[self.ids,nearest]
         self.tangent = tangent/tangent.norm(dim=-1,keepdim=True).clamp(min=1e-6)
         self.path_error = nearest_point-position
         kind = self.kinds[self.ids,self.index]
         # The lookahead is a public path reference, not an action controller.
         # It avoids demanding a stop at each fly-through point.
-        lookahead = self.curves[self.ids,(nearest+8).clamp(max=48)]
+        lengths = segments.norm(dim=-1)
+        arc = torch.cat((torch.zeros_like(lengths[:,:1]),lengths.cumsum(-1)),dim=-1)
+        distance = arc[self.ids,nearest]+alpha[self.ids,nearest]*lengths[self.ids,nearest]
+        lookahead_arc = torch.minimum(distance+self.speeds[self.ids,self.index].clamp(min=2),arc[:,-1])
+        lookahead_index = torch.searchsorted(arc.contiguous(),lookahead_arc[:,None].contiguous()).squeeze(-1).clamp(1,48)-1
+        fraction = ((lookahead_arc-arc[self.ids,lookahead_index]) / lengths[self.ids,lookahead_index].clamp(min=1e-9)).clamp(0,1)
+        lookahead = self.curves[self.ids,lookahead_index]+fraction[:,None]*segments[self.ids,lookahead_index]
         self.goal = torch.where((kind==FLYPASS)[:,None],lookahead,self.positions[self.ids,self.index])
         self.path_error = torch.where(self.ready_to_land[:,None],torch.zeros_like(self.path_error),self.path_error)
         self.tangent = torch.where(self.ready_to_land[:,None],torch.zeros_like(self.tangent),self.tangent)
@@ -146,7 +155,12 @@ class WaypointMission:
         complete = active & (hover_complete|fly_complete) & ~self.ready_to_land
         self.step_completed = complete.float()
         self.update_features(after)
-        self.step_path_cost = (self.path_error.norm(dim=-1)/(1+self.path_error.norm(dim=-1))) * dt * active
+        cross_error = self.path_error.norm(dim=-1)
+        # User-facing reference speed is an explicit task preference. Hover
+        # capture requires zero speed; fly-through keeps positive tangent speed.
+        desired_speed = torch.where((kind==HOVER)&stable,torch.zeros_like(radius),self.speeds[self.ids,self.index])
+        velocity_error = (velocity-self.tangent*desired_speed[:,None]).norm(dim=-1)
+        self.step_path_cost = .5*(cross_error/(1+cross_error)+velocity_error/(1+velocity_error))*dt*active*~self.ready_to_land
         self.index = self.index + complete.long()
         self.hold_elapsed[complete] = 0
         ids = complete.nonzero(as_tuple=False).squeeze(-1)

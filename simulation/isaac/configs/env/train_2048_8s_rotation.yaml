@@ -246,4 +246,4 @@ dynamics:
     - 0
     - 0
     - 0.05
-  gyro_integration: coupled_midpoint
+  gyro_integration: coupled_cayley

@@ -79,10 +79,10 @@ class BaseEnvConfig:
         self.decimation: int = env.get("decimation", 4)
         self.task_name: str = task_name
         gyro_mode = self.config.get('dynamics', {}).get('gyro_integration', 'rotor_midpoint')
-        if gyro_mode not in ('rotor_midpoint', 'coupled_midpoint'):
+        if gyro_mode not in ('rotor_midpoint', 'coupled_midpoint', 'coupled_cayley'):
             raise ValueError(f'Unknown gyro integration mode: {gyro_mode}')
-        if gyro_mode == 'coupled_midpoint' and physics.get('enable_external_forces_every_iteration', True):
-            raise ValueError('coupled_midpoint requires physics.enable_external_forces_every_iteration: false')
+        if gyro_mode in ('coupled_midpoint','coupled_cayley') and physics.get('enable_external_forces_every_iteration', True):
+            raise ValueError('Coupled angular integration requires physics.enable_external_forces_every_iteration: false')
         if self.config.get('task',{}).get('navigation',{}).get('enabled') and not env.get('observe_battery'):
             raise ValueError('Waypoint policy observation contract requires observe_battery: true')
 

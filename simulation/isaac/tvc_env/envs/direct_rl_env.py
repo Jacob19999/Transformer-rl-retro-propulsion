@@ -192,6 +192,7 @@ class TVCDirectRLEnv(TVCEnvBase):
             )
             self._apply_action()
             self._sim_scene.step()
+            self._correct_freeflight_orientation()
             self._rotation.update(rates_before, self._body_iface.get_angular_velocity_body_frd(),
                                   self._config.physics_dt, rotation_active)
             landing_force, unsafe_contact = self._sensor_iface.read_contact_summary(
@@ -361,6 +362,8 @@ class TVCDirectRLEnv(TVCEnvBase):
         # EDF reaction force and torque on the body in body-FRD.
         # Exhaust exits along +Z_frd (down), so body thrust is along -Z_frd (up).
         body_ang_frd = self._body_iface.get_angular_velocity_body_frd()
+        self._integration_q_before = q.clone()
+        self._integration_w_before = body_ang_frd.clone()
         spin_axis = self._edf_model.thrust_axis.to(device=new_omega.device, dtype=new_omega.dtype)
         edf_output = self._edf_model.compute_output(
             new_omega,
@@ -368,7 +371,7 @@ class TVCDirectRLEnv(TVCEnvBase):
             body_ang_frd,
             dt,
             spin_axis=spin_axis,
-            body_inertia=(None if dynamics_cfg.get('gyro_integration') == 'coupled_midpoint'
+            body_inertia=(None if dynamics_cfg.get('gyro_integration') in ('coupled_midpoint','coupled_cayley')
                           else self._locked_body_inertia),
         )
         raw_thrust = edf_output.thrust_force
@@ -432,7 +435,7 @@ class TVCDirectRLEnv(TVCEnvBase):
 
         fin_torque_body = torch.linalg.cross(cops, fin_dispatch.forces_body).sum(dim=1)
         integration_correction = torch.zeros_like(gyro_torque)
-        if dynamics_cfg.get('gyro_integration', 'rotor_midpoint') == 'coupled_midpoint':
+        if dynamics_cfg.get('gyro_integration', 'rotor_midpoint') in ('coupled_midpoint','coupled_cayley'):
             from tvc_env.dynamics.rotor_reaction import compute_coupled_midpoint_torques
             # Include known non-gyro moments in the free-flight predictor.
             # PhysX still resolves actual link forces, hinges and contact;
@@ -448,7 +451,8 @@ class TVCDirectRLEnv(TVCEnvBase):
                            if dynamics_cfg.get('enable_edf_gyro_torque', True) else 0.0)
             rotor_h = spin_axis[None] * (.5*(omega_state+new_omega)*self._edf_model.rotor_inertia*rotor_scale)[:,None]
             gyro_torque, integration_correction = compute_coupled_midpoint_torques(
-                body_ang_frd, self._locked_body_inertia, rotor_h, external_torque, dt)
+                body_ang_frd, self._locked_body_inertia, rotor_h, external_torque, dt,
+                correct_physx_projection=dynamics_cfg.get('gyro_integration')=='coupled_cayley')
             edf_torque_body = static_torque + dynamic_torque + body_damping_torque + gyro_torque + integration_correction
         self._last_dynamics_debug = {
             "fin_force_body_frd_N": fin_dispatch.forces_body.sum(dim=1).detach(),
@@ -489,6 +493,40 @@ class TVCDirectRLEnv(TVCEnvBase):
             edf_torque_body,
             wind_force_body,
         )
+
+    def _correct_freeflight_orientation(self):
+        """Complete the coupled Lie-midpoint step outside external contacts.
+
+        PhysX retains translation, joint dynamics and all contact impulses.
+        Its end-rate angular drift is first order and inconsistent with the
+        midpoint virtual rotor; replace that drift with the paired Cayley
+        orientation, retaining the actual post-solver body rates. Preserve
+        COM position and linear momentum, including off-center COM cases.
+        Any measured external contact leaves the entire PhysX pose untouched.
+        This is a numerical integration bridge, not an attitude correction
+        toward a target. Test18 high-rate conservation and contact regressions
+        guard this split; four 1g moving vanes remain a small splitting error.
+        """
+        if self._config.config.get('dynamics',{}).get('gyro_integration') != 'coupled_cayley':
+            return
+        from tvc_env.dynamics.rotor_reaction import cayley_body_orientation
+        from tvc_env.common.frames import frd_to_isaac
+        from tvc_env.common.quaternions import rotate_vector
+        contact_force, unsafe = self._sensor_iface.read_contact_summary(1e-8)
+        free = (contact_force <= 1e-8) & ~unsafe
+        ids = free.nonzero(as_tuple=False).squeeze(-1)
+        if not len(ids):
+            return
+        rates = self._body_iface.get_angular_velocity_body_frd()
+        q = cayley_body_orientation(self._integration_q_before,self._integration_w_before,
+                                   rates,self._config.physics_dt)
+        body_id = self._art_map.body_index
+        com_world = self._drone.data.body_com_pos_w[:,body_id].clone()
+        com_local = self._drone.data.body_com_pos_b[:,body_id]
+        origin = com_world-rotate_vector(q,com_local)
+        velocity = self._body_iface.get_root_linear_velocity_world()
+        angular = rotate_vector(q,frd_to_isaac(rates))
+        self._body_iface.set_root_state(origin[ids],q[ids],velocity[ids],angular[ids],env_ids=ids)
 
     # ---- Observation / Reward / Done ----
 

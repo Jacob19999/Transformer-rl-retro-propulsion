@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { createMissionPlanner, samplePlannerSpline } from './planner.js';
 
 const $ = id => document.getElementById(id);
 const deg = 180 / Math.PI;
@@ -27,15 +28,21 @@ async function api(path, body) {
 }
 
 for (const [key, title, labels, initial, min, max] of [
-  ['position', 'POSITION / m', ['X', 'Y', 'Z'], [-.28, .82, 18], [-10,-10,.34], [10,10,29]],
-  ['velocity', 'VELOCITY / m/s', ['VX','VY','VZ'], [0,0,-1], [-5,-5,-5], [5,5,5]],
-  ['attitude_deg', 'ATTITUDE / degrees', ['ROLL','PITCH','YAW'], [0,0,0], [-30,-30,-180], [30,30,180]],
-  ['angular_rate_deg_s', 'BODY RATE / degrees/s · FRD', ['P','Q','R'], [0,0,0], [-180,-180,-180], [180,180,180]],
+  ['position', 'POSITION / m', ['X', 'Y', 'Z'], [-.28, .82, 18], [-100,-100,.34], [100,100,100]],
+  ['velocity', 'VELOCITY / m/s', ['VX','VY','VZ'], [0,0,-1], [-20,-20,-20], [20,20,20]],
+  ['attitude_deg', 'ATTITUDE / degrees', ['ROLL','PITCH','YAW'], [0,0,0], [-180,-180,-180], [180,180,180]],
+  ['angular_rate_deg_s', 'BODY RATE / degrees/s · FRD', ['P','Q','R'], [0,0,0], [-720,-720,-720], [720,720,720]],
 ]) {
   const div = document.createElement('div');
   div.innerHTML = `<div class="vector-label">${title}</div><div class="triple">${labels.map((label,i)=>`<label>${label}<input aria-label="${title} ${label}" id="${key}_${i}" type="number" step="any" min="${min[i]}" max="${max[i]}" value="${initial[i]}" required></label>`).join('')}</div>`;
   $('vectors').append(div);
 }
+const initialKeys=['position','velocity','attitude_deg','angular_rate_deg_s'];
+const readPlannerInitial=()=>Object.fromEntries(initialKeys.map(key=>[key,[0,1,2].map(i=>Number($(`${key}_${i}`).value))]));
+const planner=createMissionPlanner($('missionPlanner'),{readInitial:readPlannerInitial,
+  writeInitial:initial=>initialKeys.forEach(key=>initial[key].forEach((v,i)=>{$(`${key}_${i}`).value=Math.round(v*100)/100;})),
+  onChange:()=>updatePlannedRoute()});
+$('vectors').addEventListener('input',()=>{planner.draw();updatePlannedRoute();});
 $('finRows').innerHTML = finNames.map((n,i)=>`<tr><td>${n}</td><td id="fc${i}">—</td><td id="fa${i}">—</td></tr>`).join('');
 $('finRateRows').innerHTML = finNames.map((n,i)=>`<tr><td>${n}</td><td id="fcr${i}">—</td><td id="far${i}">—</td></tr>`).join('');
 $('gyro').innerHTML = ['P / ROLL','Q / PITCH','R / YAW'].map((n,i)=>`<div><span>${n}</span><b id="g${i}">—</b></div>`).join('');
@@ -53,7 +60,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.45;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#14212d');
-scene.fog = new THREE.Fog('#14212d', 28, 100);
+scene.fog = new THREE.Fog('#14212d', 180, 600);
 scene.add(new THREE.HemisphereLight(0xc9e7ff, 0x354b4e, 2.8));
 const sun = new THREE.DirectionalLight(0xe6f4ff, 3.2); sun.position.set(4,-6,12); scene.add(sun);
 const fill = new THREE.DirectionalLight(0x6db9bd, 2); fill.position.set(-3,4,3); scene.add(fill);
@@ -65,6 +72,8 @@ for (const radius of [.5, 1.15]) { const ring = new THREE.Mesh(new THREE.RingGeo
 for (const angle of [0,Math.PI/2]) { const line = new THREE.Mesh(new THREE.PlaneGeometry(.55,.018),new THREE.MeshBasicMaterial({color:0xc6d8d9})); line.rotation.z=angle;line.position.z=.008;scene.add(line); }
 const groundObjects = scene.children.filter(object=>object.isMesh||object===grid);
 const trajectory = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({color:0x498785,transparent:true,opacity:.6})); scene.add(trajectory);
+const plannedRoute=new THREE.Line(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:0x85aaff,transparent:true,opacity:.65}));scene.add(plannedRoute);
+function updatePlannedRoute(){plannedRoute.geometry.dispose();plannedRoute.geometry=new THREE.BufferGeometry().setFromPoints(samplePlannerSpline(readPlannerInitial().position,planner.getWaypoints()).map(v=>new THREE.Vector3(...v)));}
 const thrustVector = new THREE.ArrowHelper(new THREE.Vector3(0,0,1),new THREE.Vector3(),.4,0x7ef5d2,.05,.025);scene.add(thrustVector);
 const cameras = Array.from({length:4},()=> {const c = new THREE.PerspectiveCamera(40,1,.008,300);c.up.set(0,0,1);return c;});
 cameras[3] = new THREE.OrthographicCamera(-.18,.18,.10,-.10,.001,5);
@@ -108,7 +117,7 @@ function renderViews(width=$('views').clientWidth,height=$('views').clientHeight
   const split=Math.floor(width*.66),right=width-split,third=height/3;
   const rects=[[0,0,split-1,height],[split+1,2*third,right-1,third-1],[split+1,third,right-1,third-1],[split+1,0,right-1,third-1]];
   renderer.setScissorTest(true);
-  rects.forEach(([x,y,w,h],i)=>{renderer.setViewport(x,y,w,h);renderer.setScissor(x,y,w,h);cameras[i].aspect=w/h;if(i===3){cameras[i].left=-.1*w/h;cameras[i].right=.1*w/h;}cameras[i].updateProjectionMatrix();links.Body.visible=i!==3;trajectory.visible=i<3;thrustVector.visible=i===0;groundObjects.forEach(object=>{object.visible=i!==3;});renderer.render(scene,cameras[i]);});
+  rects.forEach(([x,y,w,h],i)=>{renderer.setViewport(x,y,w,h);renderer.setScissor(x,y,w,h);cameras[i].aspect=w/h;if(i===3){cameras[i].left=-.1*w/h;cameras[i].right=.1*w/h;}cameras[i].updateProjectionMatrix();links.Body.visible=i!==3;trajectory.visible=i<3;plannedRoute.visible=i<3;thrustVector.visible=i===0;groundObjects.forEach(object=>{object.visible=i!==3;});renderer.render(scene,cameras[i]);});
   links.Body.visible=true;groundObjects.forEach(object=>{object.visible=true;});renderer.setScissorTest(false);
   finLabels.width=width;finLabels.height=height;
   drawBottomLabels(finLabels.getContext('2d'),width,height,sample);
@@ -219,6 +228,7 @@ function fillMissionForm(request){
   for(const key of ['capacity_ah','c_rating','max_current_a'])$(key).value=request.battery[key];
   $('initial_soc').value=request.battery.initial_soc*100;$('cell_resistance_ohm').value=request.battery.cell_resistance_ohm*1000;
   text('packLabel',request.hardware_profile==='planned_8s'?'8S / ESTIMATED':'6S / ESTIMATED');
+  planner.setWaypoints(request.waypoints??[]);
 }
 function missionRequest(){
   const result={};for(const key of ['name','controller','hardware_profile'])result[key]=$(key).value;
@@ -226,6 +236,7 @@ function missionRequest(){
   for(const key of ['seed','duration_s'])result[key]=Number($(key).value);
   for(const key of ['position','velocity','attitude_deg','angular_rate_deg_s'])result[key]=[0,1,2].map(i=>Number($(`${key}_${i}`).value));
   result.initial_motor_fraction=Number($('initial_motor_fraction').value)/100;
+  result.waypoints=planner.getWaypoints();
   result.battery={enabled:$('battery_enabled').checked};for(const key of ['capacity_ah','c_rating','max_current_a'])result.battery[key]=Number($(key).value);
   result.battery.initial_soc=Number($('initial_soc').value)/100;result.battery.cell_resistance_ohm=Number($('cell_resistance_ohm').value)/1000;return result;
 }

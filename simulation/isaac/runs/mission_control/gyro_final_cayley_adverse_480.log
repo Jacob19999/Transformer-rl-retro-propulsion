@@ -1,0 +1,40 @@
+=== Isaac Sim Validation Test: test_18_gyro_conservation ===
+Bootstrapping Isaac Sim...
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: C:\Transformer-rl-retro-propulsion\IsaacLab\apps\isaaclab.python.headless.kit
+Loading user config located at: 'c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/user.config.json'
+[Info] [carb] Logging to file: c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/logs/Kit/Isaac-Sim/5.1/kit_20260915_151622.log
+2026-09-15T20:16:23Z [425ms] [Warning] [omni.usd_config.extension] Enable omni.materialx.libs extension to use MaterialX
+2026-09-15T20:16:24Z [1,307ms] [Warning] [carb] Acquiring non optional plugin interface which is not listed as dependency: [omni::physx::IPhysxBenchmarks v1.0] (plugin: <default plugin>), by client: omni.physics.physx.plugin. Add it to CARB_PLUGIN_IMPL_DEPS() macro of a client.
+2026-09-15T20:16:24Z [1,324ms] [Warning] [omni.isaac.dynamic_control] omni.isaac.dynamic_control is deprecated as of Isaac Sim 4.5. No action is needed from end-users.
+
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 616.92        | Graphics API: D3D12
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA GeForce RTX 5070          | Yes: 0 |     | 11943   MB | 10de      | 5b220100.. |
+|     |                                  |        |     |            | 2f04      | 0          |
+|     |                                  |        |     |            | 1         |            |
+|=============================================================================================|
+| OS: Windows 11 Pro, Version: 10.0 (25H2), Build: 26200, Kernel: 10.0.26100.9457
+| Processor: AMD Ryzen 9 9900X 12-Core Processor            
+| Cores: 12 | Logical Cores: 24
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 32360 | Free Memory: 16231
+| Total Page/Swap (MB): 52840 | Free Page/Swap: 30752
+|---------------------------------------------------------------------------------------------|
+Isaac Sim ready.
+
+[36m===================================================================================================================[0m
+[36m[1m[INFO][IsaacLab]: Logging to file: C:\Users\tngzj\AppData\Local\Temp\isaaclab\logs\isaaclab_2026-09-15_15-16-29.log[0m
+[36m===================================================================================================================[0m
+
+[33m15:16:29 [simulation_context.py] WARNING: The `enable_external_forces_every_iteration` parameter in the PhysxCfg is set to False. If you are experiencing noisy velocities, consider enabling this flag. You may need to slightly increase the number of velocity iterations (setting it to 1 or 2 rather than 0), together with this flag, to improve the accuracy of velocity updates.[0m
+{"physics_dt": 0.0020833333333333333, "duration_s": 2.0, "stress": true, "spin_rad_s": 40.0, "method": "production_cayley", "rotor_fraction": 0.9, "first_rates": [[6.057537078857422, 6.494839191436768, 6.800084406677342e-07], [6.374770164489746, 6.1837849617004395, 39.999977111816406], [5.725462436676025, 6.7894158363342285, -39.999969482421875], [6.081858158111572, 6.472067356109619, 2.999999761581421]], "every_iteration": false, "roll_rad_s": 6.28, "pitch_rad_s": 6.28, "rotational_energy_ratio": [0.9993457198143005, 0.9993861317634583, 0.999889075756073, 0.9987162947654724], "transverse_rate_squared_ratio": [0.9993456602096558, 1.0018888711929321, 1.0050643682479858, 0.9986680150032043], "world_momentum_relative_error": [0.00012230333231855184, 0.000408126856200397, 0.002602691762149334, 0.0009353221976198256], "world_momentum_absolute_error_Nms": [0.00011587415065150708, 0.0006922174943611026, 0.0011597472475841641, 0.0009360976982861757], "world_momentum_component_scaled_error": [9.045714978128672e-05, 0.00039512323564849794, 0.000661992933601141, 0.000728469924069941], "initial_rates": [[6.28000020980835, 6.28000020980835, -0.0], [6.28000020980835, 6.28000020980835, 40.0], [6.28000020980835, 6.28000020980835, -40.0], [6.28000020980835, 6.28000020980835, 3.0]], "final_rates": [[-8.367769241333008, 2.9674291610717773, -0.00018289685249328613], [2.927072525024414, -8.393928527832031, 39.98154830932617], [7.755760192871094, 4.373150825500488, -39.985023498535156], [6.179802417755127, -6.370383262634277, 2.999664306640625]]}
+
+PASS: test_18_gyro_conservation
+Closing Isaac Sim...
+Isaac Sim fast shutdown requested.
