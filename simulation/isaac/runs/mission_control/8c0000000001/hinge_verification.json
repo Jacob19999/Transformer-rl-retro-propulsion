@@ -1,0 +1,31 @@
+{
+  "mission": "8c0000000001",
+  "samples": 188,
+  "passed": true,
+  "fins": [
+    {
+      "fin": "FWD",
+      "max_angle_deg": 1.5527469246586667,
+      "max_pose_error_deg": 2.279497696897859e-05,
+      "max_span_motion_m": 3.804481561215453e-10
+    },
+    {
+      "fin": "RIGHT",
+      "max_angle_deg": 5.197943859335307,
+      "max_pose_error_deg": 2.840052306903033e-05,
+      "max_span_motion_m": 1.5465995581166244e-09
+    },
+    {
+      "fin": "AFT",
+      "max_angle_deg": 2.993783544120836,
+      "max_pose_error_deg": 2.9752152750678282e-05,
+      "max_span_motion_m": 4.529782623990829e-10
+    },
+    {
+      "fin": "LEFT",
+      "max_angle_deg": 2.567579953355452,
+      "max_pose_error_deg": 2.8931066879239947e-05,
+      "max_span_motion_m": 1.1556272143852894e-09
+    }
+  ]
+}

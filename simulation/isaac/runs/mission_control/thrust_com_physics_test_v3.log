@@ -1,0 +1,15 @@
+=== Isaac Sim Validation Test: test_16_thrust_com ===
+Bootstrapping Isaac Sim...
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: C:\Transformer-rl-retro-propulsion\IsaacLab\apps\isaaclab.python.headless.kit
+Isaac Sim ready.
+
+[36m===================================================================================================================[0m
+[36m[1m[INFO][IsaacLab]: Logging to file: C:\Users\tngzj\AppData\Local\Temp\isaaclab\logs\isaaclab_2026-09-15_02-46-20.log[0m
+[36m===================================================================================================================[0m
+
+PASS thrust/COM torque: expected +/- 0.040000 rad/s after one step; actual [[3.2155566032088245e-07, 2.7031245508624124e-07, -2.9872285201015814e-13], [3.238594388221827e-07, -0.03989742323756218, -6.585139544768026e-08], [3.235507790577685e-07, 0.03989797830581665, 6.579409017604121e-08], [0.03989802673459053, 2.7168147198608494e-07, -5.8350249076966065e-08]]
+
+PASS: test_16_thrust_com
+Closing Isaac Sim...
+Isaac Sim fast shutdown requested.

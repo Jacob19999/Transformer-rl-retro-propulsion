@@ -1,0 +1,24 @@
+# Optional 6S LiPo equivalent-circuit model, requested for mission control.
+# All electrical/thermal values are estimates, NOT bench-calibrated pack data.
+# Existing PPO checkpoints were trained without voltage coupling. Mission
+# control enables this model explicitly and records the complete configuration.
+battery:
+  enabled: true
+  cells: 6
+  capacity_ah: 5.0
+  initial_soc: 1.0
+  cell_resistance_ohm: 0.003
+  polarization_resistance_ohm: 0.006  # whole pack
+  polarization_time_s: 15.0
+  max_current_a: 150.0
+  cutoff_cell_v: 3.0
+  reference_voltage_v: 22.2         # matches EDF omega_max's nominal 6S reference
+  motor_efficiency: 0.88
+  shaft_power_at_max_w: 2300.0     # ~T*v_jet/2 at 39.2 N, 116 m/s; estimate
+  auxiliary_power_w: 10.0
+  ambient_c: 25.0
+  thermal_capacity_j_k: 800.0
+  cooling_w_k: 2.0
+  # Piecewise-linear rested OCV per cell, generic LiPo discharge curve.
+  soc_knots: [0.0, 0.05, 0.10, 0.20, 0.50, 0.80, 0.90, 1.0]
+  cell_ocv_knots: [3.30, 3.50, 3.60, 3.70, 3.80, 3.97, 4.08, 4.20]

@@ -1,0 +1,92 @@
+# 2026-09-14: user confirms radial hinge spans after wrong-axis camera report.
+# Old 8S/old-axis transfer: 3.014M steps, 12.5% deterministic success; initial
+# 6S actor hovered at z=0.53m. This is a new physical task, not an old validation.
+# Battery observation gives PPO the state needed to react to voltage sag.
+env:
+  num_envs: 512
+  env_spacing: 4.0
+  dispatch_mode: per_link_force
+  gizmos_enabled: false
+  decimation: 4
+  physics_dt: 0.00833
+  replicate_physics: true
+  observe_battery: true
+edf:
+  max_thrust: 48.0
+  omega_max: 4649.56
+  exhaust_speed_nominal: 128.0
+  k_T: null
+servo:
+  transit_time_60deg: 0.15
+  max_angular_velocity: 6.981317
+  stall_torque: 1.0787315
+battery:
+  enabled: true
+  cells: 8
+  capacity_ah: 5.0
+  c_rating: 45.0
+  initial_soc: 1.0
+  cell_resistance_ohm: 0.003
+  polarization_resistance_ohm: 0.006
+  polarization_time_s: 15.0
+  max_current_a: 120.0
+  cutoff_cell_v: 3.0
+  reference_voltage_v: 29.6
+  motor_efficiency: 0.88
+  shaft_power_at_max_w: 3072.0
+  auxiliary_power_w: 10.0
+  ambient_c: 25.0
+  thermal_capacity_j_k: 800.0
+  cooling_w_k: 2.0
+  soc_knots: [0.0, 0.05, 0.1, 0.2, 0.5, 0.8, 0.9, 1.0]
+  cell_ocv_knots: [3.3, 3.5, 3.6, 3.7, 3.8, 3.97, 4.08, 4.2]
+task:
+  reward:
+    # No survival payment for hovering indefinitely near the pad.
+    alive_bonus: 0.0
+    # Retain landing/impact/accuracy gates; efficiency is secondary to success.
+    # Example 30 s at 2500 W and 10 m/s² propulsive acceleration:
+    # energy cost = -0.5*(2500*30/3600) = -10.42;
+    # delta-v cost = -0.02*(10*30) = -6.0. These cannot outweigh +475
+    # ideal soft/on-pad terminal or -200 crash. No global reward rescaling.
+    delta_v_cost: 0.0
+    battery_energy_cost: -0.5
+    propulsive_delta_v_cost: -0.02
+  spawn:
+    curriculum:
+      enabled: true
+      mode: staged
+      success_window_size: 1024
+      stages:
+        - position_range: [[-0.1,-0.1,0.7],[0.1,0.1,1.2]]
+          velocity_range: [[-0.05,-0.05,-0.1],[0.05,0.05,0.0]]
+          attitude_range: [[-0.01,-0.01,-0.05],[0.01,0.01,0.05]]
+          initial_motor_omega_fraction: 0.84
+          min_steps: 150000
+          max_steps: 0
+          advance_success_fraction: 0.7
+          min_terminations: 512
+        - position_range: [[-0.5,-0.5,2.0],[0.5,0.5,4.0]]
+          velocity_range: [[-0.2,-0.2,-0.5],[0.2,0.2,0.0]]
+          attitude_range: [[-0.03,-0.03,-0.1],[0.03,0.03,0.1]]
+          initial_motor_omega_fraction: 0.84
+          min_steps: 250000
+          max_steps: 0
+          advance_success_fraction: 0.7
+          min_terminations: 512
+        - position_range: [[-1.0,-1.0,6.0],[1.0,1.0,10.0]]
+          velocity_range: [[-0.4,-0.4,-1.0],[0.4,0.4,0.0]]
+          attitude_range: [[-0.05,-0.05,-0.15],[0.05,0.05,0.15]]
+          initial_motor_omega_fraction: 0.84
+          min_steps: 400000
+          max_steps: 0
+          advance_success_fraction: 0.7
+          min_terminations: 512
+        - position_range: [[-2.0,-2.0,16.0],[2.0,2.0,20.0]]
+          velocity_range: [[-1.0,-1.0,-2.0],[1.0,1.0,0.0]]
+          attitude_range: [[-0.1,-0.1,-0.2],[0.1,0.1,0.2]]
+          initial_motor_omega_fraction: 0.0
+          min_steps: 1000000
+          max_steps: 0
+          advance_success_fraction: 1.0
+          min_terminations: 512

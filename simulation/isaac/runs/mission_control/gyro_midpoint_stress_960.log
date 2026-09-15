@@ -1,0 +1,15 @@
+=== Isaac Sim Validation Test: test_18_gyro_conservation ===
+Bootstrapping Isaac Sim...
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: C:\Transformer-rl-retro-propulsion\IsaacLab\apps\isaaclab.python.headless.kit
+Isaac Sim ready.
+
+[36m===================================================================================================================[0m
+[36m[1m[INFO][IsaacLab]: Logging to file: C:\Users\tngzj\AppData\Local\Temp\isaaclab\logs\isaaclab_2026-09-15_03-06-42.log[0m
+[36m===================================================================================================================[0m
+
+{"physics_dt": 0.0010416666666666667, "duration_s": 2.0, "stress": true, "rotational_energy_ratio": [0.9986433386802673, 0.996691882610321, 1.0033172369003296, 0.9992091059684753], "transverse_rate_squared_ratio": [0.9986400008201599, 0.9568905234336853, 1.0561712980270386, 0.9210476875305176], "world_momentum_relative_error": [5.9350797528168187e-05, 9.812627831706777e-05, 9.717279317555949e-05, 8.86791676748544e-05], "initial_rates": [[0.20000000298023224, 0.10000000149011612, -0.0], [0.20000000298023224, 0.10000000149011612, 3.0], [0.20000000298023224, 0.10000000149011612, -3.0], [0.20000000298023224, 0.10000000149011612, 12.0]], "final_rates": [[-0.176540806889534, 0.1369866579771042, -0.0006495399866253138], [0.09558380395174026, -0.1967441588640213, 2.995864152908325], [0.2253408282995224, -0.045056428760290146, -3.0038721561431885], [0.1720893383026123, 0.12820939719676971, 11.995660781860352]]}
+
+PASS: test_18_gyro_conservation
+Closing Isaac Sim...
+Isaac Sim fast shutdown requested.

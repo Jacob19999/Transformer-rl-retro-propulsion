@@ -1,0 +1,41 @@
+=== Isaac Sim Validation Test: test_19_waypoint_recovery ===
+Bootstrapping Isaac Sim...
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: C:\Transformer-rl-retro-propulsion\IsaacLab\apps\isaaclab.python.headless.kit
+Loading user config located at: 'c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/user.config.json'
+[Info] [carb] Logging to file: c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/logs/Kit/Isaac-Sim/5.1/kit_20260915_150450.log
+2026-09-15T20:04:51Z [393ms] [Warning] [omni.usd_config.extension] Enable omni.materialx.libs extension to use MaterialX
+2026-09-15T20:04:52Z [1,240ms] [Warning] [carb] Acquiring non optional plugin interface which is not listed as dependency: [omni::physx::IPhysxBenchmarks v1.0] (plugin: <default plugin>), by client: omni.physics.physx.plugin. Add it to CARB_PLUGIN_IMPL_DEPS() macro of a client.
+2026-09-15T20:04:52Z [1,255ms] [Warning] [omni.isaac.dynamic_control] omni.isaac.dynamic_control is deprecated as of Isaac Sim 4.5. No action is needed from end-users.
+
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 616.92        | Graphics API: D3D12
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA GeForce RTX 5070          | Yes: 0 |     | 11943   MB | 10de      | 5b220100.. |
+|     |                                  |        |     |            | 2f04      | 0          |
+|     |                                  |        |     |            | 1         |            |
+|=============================================================================================|
+| OS: Windows 11 Pro, Version: 10.0 (25H2), Build: 26200, Kernel: 10.0.26100.9457
+| Processor: AMD Ryzen 9 9900X 12-Core Processor            
+| Cores: 12 | Logical Cores: 24
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 32360 | Free Memory: 15473
+| Total Page/Swap (MB): 52840 | Free Page/Swap: 29732
+|---------------------------------------------------------------------------------------------|
+Isaac Sim ready.
+
+[36m===================================================================================================================[0m
+[36m[1m[INFO][IsaacLab]: Logging to file: C:\Users\tngzj\AppData\Local\Temp\isaaclab\logs\isaaclab_2026-09-15_15-04-56.log[0m
+[36m===================================================================================================================[0m
+
+[33m15:04:56 [simulation_context.py] WARNING: The `enable_external_forces_every_iteration` parameter in the PhysxCfg is set to False. If you are experiencing noisy velocities, consider enabling this flag. You may need to slightly increase the number of velocity iterations (setting it to 1 or 2 rather than 0), together with this flag, to improve the accuracy of velocity updates.[0m
+PASS 43D actor transfer; inverted/high-roll-rate state survives first real step; rotation recorded
+PASS real soft contact before hover waypoint is a failed mission with no landing payout
+
+PASS: test_19_waypoint_recovery
+Closing Isaac Sim...
+Isaac Sim fast shutdown requested.

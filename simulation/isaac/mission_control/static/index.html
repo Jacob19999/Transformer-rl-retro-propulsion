@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>EDF / Mission Control</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/style.css"></head>
+<body><link rel="stylesheet" href="/static/fin-labels.css">
+<header><a class="brand" href="/">EDF<span> / </span>CONTROL</a><span class="program">RETROPROPULSION / FLIGHT DYNAMICS</span><div class="connection"><i></i><span id="connection">CONNECTING</span></div><button id="hardwareButton">HARDWARE ↗</button></header>
+<main>
+<section class="mission-head"><div><div class="eyebrow">GROUND SYSTEMS / LOCAL SIMULATION</div><h1 id="missionTitle">Landing sequence</h1></div><div class="mission-clock"><span id="mode">STANDBY</span><strong id="clock">T+ 00:00.00</strong></div><div id="flightStatus" class="status">READY</div></section>
+<div id="notice" role="status">8S planned hardware · part identities and calibration pending · Loading recorded mission details</div>
+<div id="trainingStatus" class="training-status" role="status" hidden></div>
+<div class="workspace">
+<aside class="setup panel"><div class="panel-title">01 / FLIGHT SETUP</div><form id="missionForm">
+<label>MISSION NAME<input id="name" maxlength="80" value="8S landing test" required></label>
+<label>CONTROLLER<select id="controller"><option value="ppo">PPO 26M · stochastic</option><option value="ppo_deterministic">PPO 34M · deterministic</option><option value="pid">PID · landing guidance</option></select></label>
+<label>HARDWARE PROFILE<select id="hardware_profile"><option value="planned_8s">Planned 8S / 48 N estimate</option><option value="legacy_6s">Legacy 6S / 39.2 N estimate</option></select></label>
+<div class="section-label">INITIAL STATE <span>WORLD / Z UP</span></div>
+<div id="vectors"></div>
+<div class="pair"><label>SEED<input id="seed" type="number" min="0" max="2147483647" step="1" value="2026" required></label><label>DURATION / s<input id="duration_s" type="number" min="1" max="60" value="30" required></label></div>
+<label>INITIAL ROTOR / %<input id="initial_motor_fraction" type="number" min="0" max="100" step="1" value="0" required></label>
+<div class="section-label">DISTURBANCES <span>COMBINE ANY</span></div>
+<label class="check"><input type="checkbox" name="disturbance" value="wind"> Wind + gusts</label>
+<label class="check"><input type="checkbox" name="disturbance" value="sensor_noise"> Sensor noise</label>
+<label class="check"><input type="checkbox" name="disturbance" value="com_shift"> Center of mass offset</label>
+<div class="section-label">LIPO PACK <span id="packLabel">8S / ESTIMATED</span></div>
+<label class="check"><input id="battery_enabled" type="checkbox" checked> Couple voltage / power to EDF</label>
+<div class="pair"><label>CAPACITY / Ah<input id="capacity_ah" type="number" min="0.5" max="20" step="0.1" value="5" required></label><label>C RATING<input id="c_rating" type="number" min="1" max="150" value="45" required></label></div>
+<div class="pair"><label>CHARGE / %<input id="initial_soc" type="number" min="0" max="100" value="100" required></label><label>R / CELL / mΩ<input id="cell_resistance_ohm" type="number" min="0.1" max="50" step="0.1" value="3" required></label></div>
+<label>CURRENT LIMIT / A<input id="max_current_a" type="number" min="5" max="120" value="120" required></label>
+<div class="hint">Capacity changes electrical endurance. Assembly mass remains 3.104 kg; pack mass is pending.</div>
+<button id="run" class="primary" type="submit">RUN ISAAC SIMULATION <span>↗</span></button><button id="stop" type="button" disabled>STOP RUN</button>
+</form><label class="history-label">MISSION ARCHIVE<select id="history"><option value="">Select a recorded mission</option></select></label></aside>
+<section class="flight-column">
+<div class="viewer panel"><div class="viewer-bar"><span>02 / CAMERA ARRAY</span><span id="sourceBadge">PHYSX POSES · WEBGL RENDER</span></div><div id="views"><canvas id="scene" aria-label="Four synchronized camera views of the Isaac drone"></canvas><div class="camera-tag main-tag">CAM 01 <b>ORBIT / DRAG TO ROTATE</b></div><div class="camera-tag ground-tag">CAM 02 <b>GROUND TRACK</b></div><div class="camera-tag top-tag">CAM 03 <b>OVERHEAD</b></div><div class="camera-tag fin-tag">CAM 04 <b>TVC CUTAWAY</b></div><div class="view-hud"><div>ALTITUDE<strong id="hudAlt">—<small>m</small></strong></div><div>VERTICAL SPEED<strong id="hudVz">—<small>m/s</small></strong></div><div>PAD ERROR<strong id="hudPad">—<small>m</small></strong></div></div><span id="renderNote">CAD GEOMETRY / METRES · FIN VIEW HIDES BODY</span></div>
+<div class="transport"><button id="play" aria-label="Play replay">▶</button><input id="timeline" aria-label="Replay time" type="range" min="0" max="1" step="0.001" value="0"><span id="elapsed">0.00 / 0.00 s</span><select id="speed" aria-label="Playback speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select><button id="live">LIVE</button></div></div>
+<div class="plots panel"><div class="panel-title">03 / FLIGHT HISTORY <span>RECORDED SAMPLES</span></div><canvas id="plots" aria-label="Altitude, thrust and body rate time histories"></canvas></div>
+<div class="replay-actions"><div id="runMessage" role="status">Set initial conditions, then run a real Isaac mission.</div><a id="videoDownload" hidden>VIDEO ↓</a><a id="jsonDownload" hidden>TELEMETRY JSON ↓</a><button id="export" disabled>EXPORT VIDEO ↓</button></div>
+<div class="panel event-panel"><div class="panel-title">MISSION EVENTS</div><div id="events">Awaiting simulation.</div></div>
+</section>
+<aside class="telemetry panel"><div class="panel-title">04 / VEHICLE TELEMETRY</div><div class="metric hero-metric"><span>APPLIED THRUST</span><div><strong id="thrust">—</strong><small>N</small></div><div class="bar"><i id="thrustBar"></i></div></div><div class="pair metrics"><div><span>THROTTLE</span><strong id="throttle">—</strong><small>%</small></div><div><span>ROTOR SPEED</span><strong id="rpm">—</strong><small>rpm</small></div></div>
+<div class="section-label">FIN DEFLECTION <span>DEGREES</span></div><table class="fin-table"><thead><tr><th>FIN</th><th>CMD</th><th>ACTUAL</th></tr></thead><tbody id="finRows"></tbody></table>
+<div class="section-label">FIN MOTION RATE <span>°/s</span></div><table class="fin-table"><thead><tr><th>FIN</th><th>TARGET</th><th>ACTUAL</th></tr></thead><tbody id="finRateRows"></tbody></table>
+<div class="section-label">GYRO / BODY FRD <span>°/s</span></div><div id="gyro" class="triple axis-values"></div><div class="hint" id="rateNote">PPO commands fin angles and throttle directly. No body-rate setpoint is generated. Target rates above describe servo target motion.</div>
+<div class="section-label">FLIGHT ROTATION <span>ROLL / PITCH / YAW</span></div>
+<div class="hint" id="rotationNote">Provisional soft limits: 90 / 90 / 180 °/s.</div>
+<table class="fin-table"><thead><tr><th>METRIC</th><th>ROLL</th><th>PITCH</th><th>YAW</th></tr></thead><tbody id="rotationRows"></tbody></table>
+<canvas id="rotationPlots" style="width:100%;height:165px" aria-label="Roll pitch and yaw body rates with dashed soft limits throughout the landing"></canvas>
+<div class="section-label">LIPO POWER <span id="batteryState">—</span></div><div class="battery-gauge"><strong id="soc">—</strong><small>% SOC</small><div class="bar"><i id="socBar"></i></div></div><div id="batteryMetrics" class="battery-metrics"></div>
+<div class="section-label">TOUCHDOWN <span id="contactState">AIRBORNE</span></div><div class="pair metrics"><div><span>IMPACT</span><strong id="impact">—</strong><small>m/s</small></div><div><span>CONTACT LOAD</span><strong id="contactLoad">—</strong><small>N</small></div></div><div class="hint">Landing success: impact ≤ 0.25 m/s and pad error ≤ 0.50 m, with physical contact dwell.</div></aside>
+</div><footer><span>EDF RESEARCH / MISSION CONTROL</span><span id="footerProfile">8S PLANNED · 3.104 kg · 120 Hz PHYSICS</span><span>LOCAL HOST / NO HARDWARE ACTUATION</span></footer></main>
+<dialog id="hardwareDialog"><div class="dialog-head"><div><div class="eyebrow">CONFIGURATION / PROVENANCE</div><h2>Vehicle & hardware</h2></div><button id="closeHardware" aria-label="Close hardware details">✕</button></div><p id="hardwareStatus"></p><div id="hardwareParts"></div><p class="hint">Source files: Paper/Reference/parts.md; CAD/EDF Drone v1/Parts List/Master Parts List.xlsx; simulation/isaac/configs. Scene appearance is a WebGL rendering of actual Isaac states; it is not an Isaac RTX camera feed.</p></dialog>
+<script type="module" src="/static/app.js"></script></body></html>

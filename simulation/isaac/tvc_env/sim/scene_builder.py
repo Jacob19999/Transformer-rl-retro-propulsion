@@ -54,6 +54,8 @@ class SceneConfig:
     gpu_found_lost_pairs_capacity: int | None = None
     contact_offset: float | None = None
     rest_offset: float | None = None
+    enable_gyroscopic_forces: bool | None = None
+    max_angular_velocity_deg_s: float = 100.0
 
     # Asset paths — absolute, resolved from this file's location
     drone_usd_path: str = _DRONE_USD
@@ -91,6 +93,8 @@ class SceneConfig:
             gpu_found_lost_pairs_capacity=physics.get("gpu_found_lost_pairs_capacity"),
             contact_offset=physics.get("contact_offset"),
             rest_offset=physics.get("rest_offset"),
+            enable_gyroscopic_forces=physics.get('enable_gyroscopic_forces'),
+            max_angular_velocity_deg_s=physics.get('max_angular_velocity_deg_s', 100.0),
         )
 
 
@@ -338,7 +342,8 @@ def _create_scene_cfg(config: SceneConfig):
                     linear_damping=0.0,
                     angular_damping=0.0,
                     max_linear_velocity=100.0,
-                    max_angular_velocity=100.0,
+                    max_angular_velocity=config.max_angular_velocity_deg_s,
+                    enable_gyroscopic_forces=config.enable_gyroscopic_forces,
                     max_depenetration_velocity=1.0,
                 ),
                 articulation_props=sim_utils.ArticulationRootPropertiesCfg(

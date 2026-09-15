@@ -1,0 +1,58 @@
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: C:\Transformer-rl-retro-propulsion\IsaacLab\apps\isaaclab.python.headless.kit
+
+[36m===================================================================================================================[0m
+[36m[1m[INFO][IsaacLab]: Logging to file: C:\Users\tngzj\AppData\Local\Temp\isaaclab\logs\isaaclab_2026-09-14_19-17-23.log[0m
+[36m===================================================================================================================[0m
+
+Evaluated 512/512 independent episodes
+{
+  "checkpoint": "C:\\Transformer-rl-retro-propulsion\\simulation\\isaac\\runs\\ppo_8s_momentum_2048\\ppo_landing_seed0_20260914_191453\\ppo_step_2097152.pt",
+  "trained_steps": 2097152,
+  "seed": 8317,
+  "action_mode": "stochastic",
+  "curriculum_stage": 1,
+  "episodes": 512,
+  "success_count": 2,
+  "success_fraction": 0.00390625,
+  "landed_fraction": 0.00390625,
+  "crashed_fraction": 0.99609375,
+  "timeout_fraction": 0.0,
+  "failure_counts": {
+    "contact_or_tilt_failure": 510,
+    "success": 2
+  },
+  "success_max_pad_distance": 0.5,
+  "success_max_touchdown_speed": 0.25,
+  "touchdown_speed_landed": {
+    "mean": 0.19192633032798767,
+    "max": 0.21168701350688934
+  },
+  "pad_distance_landed": {
+    "mean": 0.1977510154247284,
+    "max": 0.29290714859962463
+  },
+  "successful_landing_efficiency": {
+    "energy_wh": {
+      "mean": 1.4287599921226501,
+      "min": 1.4205800294876099,
+      "max": 1.4369399547576904
+    },
+    "propulsive_delta_v_m_s": {
+      "mean": 19.31063175201416,
+      "min": 19.241785049438477,
+      "max": 19.379478454589844
+    },
+    "duration_s": {
+      "mean": 2.0166666666666666,
+      "min": 2.0,
+      "max": 2.033333333333333
+    },
+    "low_altitude_hover_time_s": {
+      "mean": 0.11666666716337204,
+      "min": 0.0,
+      "max": 0.23333333432674408
+    }
+  },
+  "passed": false
+}

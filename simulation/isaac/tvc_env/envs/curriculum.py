@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -139,6 +140,33 @@ def apply_spawn_position_range(task_config: dict[str, Any], position_range: list
     spawn["position_range"] = _as_range(position_range, name="position_range")
 
 
+def apply_spawn_stage(task_config: dict[str, Any], final_spawn: dict[str, Any], stage: dict[str, Any] | None) -> None:
+    """Set explicit reset difficulty; None restores the full evaluation task.
+
+    Always restore absent fields from the immutable task definition so a warm
+    rotor or reduced velocity range cannot leak out of an earlier stage.
+    """
+    spawn = task_config.setdefault("task", {}).setdefault("spawn", {})
+    for key in ("position_range", "velocity_range", "attitude_range", "angular_velocity_range",
+                "initial_motor_omega_fraction", "waypoint_count_range", "waypoint_spread_m"):
+        source = stage if stage is not None and key in stage else final_spawn
+        if key in source:
+            value = source[key]
+            if key == 'waypoint_count_range':
+                if len(value)!=2 or not 0 <= value[0] <= value[1] <= 12 or any(int(x)!=x for x in value):
+                    raise ValueError('waypoint_count_range must be integer bounds within 0..12')
+            elif key == 'waypoint_spread_m':
+                if not 0 <= float(value) <= 100:
+                    raise ValueError('waypoint_spread_m must be within 0..100')
+            elif key.endswith("_range"):
+                value = _as_range(value, name=key)
+            elif not 0.0 <= float(value) <= 1.0:
+                raise ValueError("initial_motor_omega_fraction must be in [0, 1]")
+            spawn[key] = deepcopy(value)
+        else:
+            spawn.pop(key, None)
+
+
 @dataclass
 class StagedCurriculumTracker:
     """Feedback-driven stage advancement for ``mode=staged`` curricula.
@@ -217,6 +245,36 @@ class StagedCurriculumTracker:
         if not self._terminations:
             return 0.0
         return sum(1 for s in self._successes if s) / len(self._terminations)
+
+    def record_outcomes(self, num_env_steps: int, outcomes: list[bool]) -> None:
+        """Record terminal outcomes in observed order, without sorting by success.
+
+        September review: aggregated rollout counts inserted all successes
+        before all failures; clipping that sequence to 1024 events biased the
+        curriculum window, particularly for short near-ground episodes.
+        """
+        if num_env_steps < 0:
+            raise ValueError('num_env_steps must be non-negative')
+        self.steps_in_stage += int(num_env_steps)
+        self._successes.extend(bool(x) for x in outcomes)
+        self._terminations.extend(True for _ in outcomes)
+
+    def state_dict(self) -> dict[str, Any]:
+        return dict(stage_index=self.stage_index, steps_in_stage=self.steps_in_stage,
+                    successes=list(self._successes), stages=deepcopy(self.stages),
+                    success_window_size=self.success_window_size)
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        if state['stages'] != self.stages or state['success_window_size'] != self.success_window_size:
+            raise ValueError('Checkpoint curriculum differs from the configured curriculum')
+        index = int(state['stage_index'])
+        if not 0 <= index < self.num_stages:
+            raise ValueError('Invalid checkpoint stage index')
+        self.stage_index = index
+        self.steps_in_stage = int(state['steps_in_stage'])
+        self._successes.clear()
+        self._terminations.clear()
+        self.record_outcomes(0, state['successes'])
 
     def termination_count(self) -> int:
         return len(self._terminations)

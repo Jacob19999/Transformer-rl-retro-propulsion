@@ -69,4 +69,11 @@ class VehicleState:
     motor_omega: Tensor         # rad/s, current rotor speed (num_envs,)
     contact_state: Tensor       # ContactState enum value, int (num_envs,)
     height: Tensor              # m, altitude above ground (num_envs,)
-    touchdown_speed: Tensor | None = None  # m/s, first-contact downward speed (num_envs,)
+    touchdown_speed: Tensor | None = None  # m/s, maximum arrival speed across contact/bounce events (num_envs,)
+    battery_energy_step_wh: Tensor | None = None  # integrated electrical work during this control interval
+    propulsive_delta_v_step: Tensor | None = None  # integral |F_propulsion|/mass dt, m/s
+    excess_rotation_cost_step_s: Tensor | None = None  # bounded soft rate exceedance integrated at physics dt
+    mission_ready_to_land: Tensor | None = None
+    mission_progress_step: Tensor | None = None
+    waypoint_completion_step: Tensor | None = None
+    path_tracking_cost_step: Tensor | None = None

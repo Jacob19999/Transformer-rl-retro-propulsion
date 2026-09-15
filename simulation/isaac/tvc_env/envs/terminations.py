@@ -85,6 +85,22 @@ def check_episode_timeout(
     return step_count >= max_steps
 
 
+def check_failure_terminations(
+    quaternion_wxyz: Tensor,
+    position: Tensor,
+    target_position: Tensor,
+    contact_state: Tensor,
+    task_config: dict,
+) -> Tensor:
+    """Shared failure mask for terminal detection and terminal reward."""
+    term = task_config.get('task', task_config).get('termination', {})
+    failed = check_tilt_termination(quaternion_wxyz, term.get('max_tilt', 1.57))
+    failed |= check_altitude_termination(position, target_position, term.get('max_altitude_error', 10.0))
+    if term.get('crash', True):
+        failed |= check_crash_termination(contact_state)
+    return failed
+
+
 def check_all_terminations(
     quaternion_wxyz: Tensor,
     position: Tensor,
@@ -114,21 +130,12 @@ def check_all_terminations(
     Returns:
         Bool tensor (num_envs,) — True where episode should terminate.
     """
-    term = task_config.get("task", task_config).get("termination", {})
-
-    dones = torch.zeros(position.shape[0], dtype=torch.bool, device=position.device)
-
-    if term.get("crash", True):
-        dones = dones | check_crash_termination(contact_state)
+    dones = check_failure_terminations(
+        quaternion_wxyz, position, target_position, contact_state, task_config
+    )
 
     success = task_config.get("task", task_config).get("success", {})
     if str(success.get("state", "")).upper() == "LANDED":
         dones = dones | check_landed_termination(contact_state)
-
-    max_tilt = term.get("max_tilt", 1.57)
-    dones = dones | check_tilt_termination(quaternion_wxyz, max_tilt)
-
-    max_alt_err = term.get("max_altitude_error", 10.0)
-    dones = dones | check_altitude_termination(position, target_position, max_alt_err)
 
     return dones

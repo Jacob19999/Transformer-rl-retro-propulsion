@@ -1,0 +1,11 @@
+{
+  "source": "C:\\Transformer-rl-retro-propulsion\\simulation\\isaac\\runs\\ppo_8s_momentum_2048\\ppo_landing_seed0_20260914_191453\\ppo_stage_2_mastered.pt",
+  "source_sha256": "142e4ddfd4b3711f7cca0ce6d9b26cba02da73e1de84ae9a38fbbf3222fcb943",
+  "parent_steps": 84410368,
+  "critic": "fresh",
+  "optimizer": "fresh",
+  "fin_permutation": null,
+  "observation_dim": 28,
+  "initialized_throttle_duty": null,
+  "purpose": "Explicit physics transfer; results require new independent validation"
+}

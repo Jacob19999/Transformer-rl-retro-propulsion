@@ -1,0 +1,59 @@
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: C:\Transformer-rl-retro-propulsion\IsaacLab\apps\isaaclab.python.headless.kit
+
+[36m===================================================================================================================[0m
+[36m[1m[INFO][IsaacLab]: Logging to file: C:\Users\tngzj\AppData\Local\Temp\isaaclab\logs\isaaclab_2026-09-14_12-17-01.log[0m
+[36m===================================================================================================================[0m
+
+Loading user config located at: 'c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/user.config.json'
+[Info] [carb] Logging to file: c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/logs/Kit/Isaac-Sim/5.1/kit_20260914_121656.log
+2026-09-14T17:16:56Z [383ms] [Warning] [omni.usd_config.extension] Enable omni.materialx.libs extension to use MaterialX
+2026-09-14T17:16:57Z [1,152ms] [Warning] [carb] Acquiring non optional plugin interface which is not listed as dependency: [omni::physx::IPhysxBenchmarks v1.0] (plugin: <default plugin>), by client: omni.physics.physx.plugin. Add it to CARB_PLUGIN_IMPL_DEPS() macro of a client.
+2026-09-14T17:16:57Z [1,166ms] [Warning] [omni.isaac.dynamic_control] omni.isaac.dynamic_control is deprecated as of Isaac Sim 4.5. No action is needed from end-users.
+
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 616.92        | Graphics API: D3D12
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA GeForce RTX 5070          | Yes: 0 |     | 11943   MB | 10de      | 64a7ee24.. |
+|     |                                  |        |     |            | 2f04      | 0          |
+|     |                                  |        |     |            | 1         |            |
+|=============================================================================================|
+| OS: Windows 11 Pro, Version: 10.0 (25H2), Build: 26200, Kernel: 10.0.26100.9444
+| Processor: AMD Ryzen 9 9900X 12-Core Processor            
+| Cores: 12 | Logical Cores: 24
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 32360 | Free Memory: 12680
+| Total Page/Swap (MB): 49768 | Free Page/Swap: 10950
+|---------------------------------------------------------------------------------------------|
+Traceback (most recent call last):
+  File "C:\Transformer-rl-retro-propulsion\simulation\isaac\apps\run_mission.py", line 242, in main
+    update(state='cancelled' if cancelled else 'complete', phase=outcome, frames=frames,
+  File "C:\Transformer-rl-retro-propulsion\simulation\isaac\apps\run_mission.py", line 36, in update
+    atomic_json(output / 'status.json', status)
+  File "C:\Transformer-rl-retro-propulsion\simulation\isaac\apps\run_mission.py", line 21, in atomic_json
+    temporary.replace(path)
+  File "C:\Users\tngzj\AppData\Local\Programs\Python\Python311\Lib\pathlib.py", line 1188, in replace
+    os.replace(self, target)
+PermissionError: [WinError 5] Access is denied: 'C:\\Transformer-rl-retro-propulsion\\simulation\\isaac\\runs\\mission_control\\c3307f302e2b\\status.tmp' -> 'C:\\Transformer-rl-retro-propulsion\\simulation\\isaac\\runs\\mission_control\\c3307f302e2b\\status.json'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Transformer-rl-retro-propulsion\simulation\isaac\apps\run_mission.py", line 258, in <module>
+    force_process_exit(main())
+                       ^^^^^^
+  File "C:\Transformer-rl-retro-propulsion\simulation\isaac\apps\run_mission.py", line 246, in main
+    update(state='failed', phase='Simulation failed', error=str(exc))
+  File "C:\Transformer-rl-retro-propulsion\simulation\isaac\apps\run_mission.py", line 36, in update
+    atomic_json(output / 'status.json', status)
+  File "C:\Transformer-rl-retro-propulsion\simulation\isaac\apps\run_mission.py", line 21, in atomic_json
+    temporary.replace(path)
+  File "C:\Users\tngzj\AppData\Local\Programs\Python\Python311\Lib\pathlib.py", line 1188, in replace
+    os.replace(self, target)
+PermissionError: [WinError 5] Access is denied: 'C:\\Transformer-rl-retro-propulsion\\simulation\\isaac\\runs\\mission_control\\c3307f302e2b\\status.tmp' -> 'C:\\Transformer-rl-retro-propulsion\\simulation\\isaac\\runs\\mission_control\\c3307f302e2b\\status.json'
+2026-09-14T17:17:59Z [63,833ms] [Warning] [omni.physx.plugin] USD stage detach not called, holding a loose ptr to a stage!
+2026-09-14T17:18:00Z [64,356ms] [Warning] [carb] Recursive unloadAllPlugins() detected!

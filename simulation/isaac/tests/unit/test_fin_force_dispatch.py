@@ -58,3 +58,21 @@ def test_positive_roll_command_produces_positive_x_body_torque():
     torque = _body_torque(result)
 
     assert torque[0, 0].item() > 0.0
+
+
+def test_vane_reaction_opposes_downstream_chord_deflection():
+    dispatch = _load_dispatch()
+    result = dispatch.compute_body_frame_forces(torch.full((1, 4), 0.1), torch.ones(1))
+    # d(chord)/d(angle) = hinge x chord = metadata normal. The downstream
+    # jet turns toward that normal; momentum reaction on the vane is negative.
+    assert torch.all((result.forces_body * dispatch.normal_dirs).sum(-1) < 0.0)
+
+
+def test_radial_hinges_generate_yaw_and_have_three_axis_authority():
+    dispatch = _load_dispatch()
+    result = dispatch.compute_body_frame_forces(torch.full((1,4), .1), torch.ones(1))
+    torque = _body_torque(result)
+    assert torque[0,2] > 0
+    torch.testing.assert_close(torque[0,:2], torch.zeros(2), atol=1e-7, rtol=0)
+    columns = dispatch.compute_body_frame_forces(torch.eye(4)*.01, torch.ones(4))
+    assert torch.linalg.matrix_rank(_body_torque(columns)) == 3

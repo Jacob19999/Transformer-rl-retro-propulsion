@@ -1,0 +1,15 @@
+{
+  "source": "C:\\Transformer-rl-retro-propulsion\\simulation\\isaac\\runs\\ppo_8s_battery_transfer\\ppo_landing_seed0_20260913_232257\\ppo_final.pt",
+  "source_sha256": "2059dd7864bb9756a351335f2587794ed2e1197d39081947cb7a74f07ff98ad1",
+  "parent_steps": 3014656,
+  "critic": "fresh",
+  "optimizer": "fresh",
+  "fin_permutation": [
+    3,
+    0,
+    1,
+    2
+  ],
+  "observation_dim": 28,
+  "purpose": "Explicit physics transfer; results require new independent validation"
+}

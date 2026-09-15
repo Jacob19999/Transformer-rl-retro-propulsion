@@ -36,8 +36,8 @@ def test_isaac_positive_pitch_is_negated_before_attitude_error():
     action = controller.compute_action(_base_obs(quat))
 
     # With Isaac pitch negated to FRD, desired_pitch - pitch_frd is positive,
-    # so the +X pitch fin command is positive.
-    assert action[0, 0].item() > 0.0
+    # so the right (+Y) vane rotates negative for positive FRD pitch torque.
+    assert action[0, 1].item() < 0.0
 
 
 def test_isaac_positive_yaw_is_negated_before_attitude_error():

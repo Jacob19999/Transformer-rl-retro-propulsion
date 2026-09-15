@@ -1,0 +1,2 @@
+#finLabels { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+.training-status { border:1px solid #27473f; background:#0c1c1a; color:#a2c6ba; padding:12px 15px; margin:0 0 18px; font:11px/1.7 Consolas,monospace; } .training-status[hidden] { display:none; }

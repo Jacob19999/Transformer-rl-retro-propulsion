@@ -4,7 +4,8 @@ Per-fin jet-vane force computation pipeline.
 The EDF flow axis is body +Z_frd. For each fin, metadata defines the hinge
 axis and the zero-deflection normal as ``hinge_axis x flow_axis``. The aero
 model supplies scalar normal force and drag magnitudes; this dispatcher orients
-the side force in body-FRD and exposes drag as bounded EDF thrust loss.
+the side force in body-FRD. The environment adds bounded downstream drag
+at each moving COP and applies raw thrust at the EDF.
 """
 
 from __future__ import annotations
@@ -65,14 +66,16 @@ class FinForceDispatch:
     ) -> FinDispatchResult:
         """Compute per-fin side forces in body-FRD at COP positions.
 
-        The normal force magnitude is odd in fin angle and is applied along
-        the zero-deflection radial normal. This avoids artificial axial force
-        injection from symmetric fin commands while preserving control torque
-        signs through the force magnitude.
+        The normal force scalar is odd in fin angle; its reaction on the vane
+        points opposite the zero-deflection tangential normal. This lift/drag
+        approximation resolves lift perpendicular to flow and drag along flow.
         """
         aero_result = self.aero_model.compute_forces(fin_angles, rotor_speed_fraction)
         normals = self.normal_dirs.to(device=fin_angles.device, dtype=fin_angles.dtype)
-        forces_body = aero_result.normal_force.unsqueeze(-1) * normals.unsqueeze(0)
+        # Positive joint rotation turns the downstream chord toward +normal.
+        # The jet gains momentum in that direction; its reaction ON THE VANE
+        # is opposite. The old sign accelerated the body with the deflected jet.
+        forces_body = -aero_result.normal_force.unsqueeze(-1) * normals.unsqueeze(0)
 
         return FinDispatchResult(
             forces_body=forces_body,

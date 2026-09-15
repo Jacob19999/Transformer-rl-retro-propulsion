@@ -85,3 +85,72 @@ def compute_all_rotor_torques(
     dynamic = compute_dynamic_spool_torque(omega, omega_prev, rotor_inertia, spin_axis, dt)
     gyro = compute_gyroscopic_precession(omega, body_angular_vel, rotor_inertia, spin_axis)
     return static, dynamic, gyro
+
+
+def compute_midpoint_gyroscopic_torque(omega: Tensor, body_angular_vel: Tensor,
+        rotor_inertia: float, spin_axis: Tensor, body_inertia: Tensor, dt: float) -> Tensor:
+    """Cayley/midpoint integration of the rotor's skew gyroscopic operator.
+
+    Continuous torque remains H x w, at full physical magnitude. Forward
+    Euler adds energy because its torque is perpendicular to OLD velocity,
+    not midpoint velocity. Real Isaac test 18 (2026-09-15) measured 10.20x
+    rotational energy after two unforced seconds at 240 Hz. Do not mask that
+    numerical instability with damping or a reduced gyro scale.
+
+    Solve (I - dt*[H]x/2) w_mid = I*w_old, then apply [H]x*w_mid. This
+    conserves .5*w'I*w for the isolated gyro substep, even at high rotor RPM.
+    PhysX separately integrates the locked-body rigid Euler term. Splitting
+    error with other torques must still be checked by timestep refinement.
+    """
+    h = _coerce_spin_axis(spin_axis, body_angular_vel)[None] * (rotor_inertia*omega)[:,None]
+    cross = body_angular_vel.new_zeros((omega.shape[0],3,3))
+    cross[:,0,1]=-h[:,2]; cross[:,0,2]=h[:,1]
+    cross[:,1,0]=h[:,2]; cross[:,1,2]=-h[:,0]
+    cross[:,2,0]=-h[:,1]; cross[:,2,1]=h[:,0]
+    inertia=body_inertia.to(body_angular_vel)
+    momentum=torch.matmul(inertia,body_angular_vel.unsqueeze(-1))
+    midpoint=torch.linalg.solve(inertia-.5*dt*cross,momentum).squeeze(-1)
+    return torch.linalg.cross(h,midpoint)
+
+
+def compute_coupled_midpoint_torques(body_angular_vel: Tensor, body_inertia: Tensor,
+        rotor_momentum: Tensor, external_torque: Tensor, dt: float) -> tuple[Tensor, Tensor]:
+    """Midpoint body-Euler + virtual-rotor operator for one external impulse.
+
+    Solve I(w_mid-w_old) = dt/2 * (tau_ext - w_mid x (I w_mid + H)).
+    PhysX already supplies -w_old x Iw_old. Return rotor gyro and the
+    difference between midpoint and explicit locked-body Euler terms.
+    This difference is an integration correction, NOT physical damping.
+
+    Requires TGS enable_external_forces_every_iteration=False: repeating the
+    old-world-frame impulse while rotating the body breaks this discrete
+    update. Sept 15 Isaac test 18: native explicit body dynamics amplified
+    transverse rate squared 114x at |r|=40 rad/s with the rotor stopped;
+    rotor-only midpoint amplified it 1301x with a counter-rotating rotor.
+    A combined midpoint with one external impulse reduced amplification to
+    1.006x at 480Hz. Full articulation/timestep conservation tests remain
+    required because the preconditioner omits the four small moving vanes.
+    NVIDIA documents explicit articulation Coriolis integration:
+    https://nvidia-omniverse.github.io/PhysX/physx/5.5.0/docs/Articulations.html
+    """
+    def cross_matrix(v):
+        matrix = v.new_zeros((*v.shape[:-1], 3, 3))
+        matrix[...,0,1] = -v[...,2]; matrix[...,0,2] = v[...,1]
+        matrix[...,1,0] = v[...,2]; matrix[...,1,2] = -v[...,0]
+        matrix[...,2,0] = -v[...,1]; matrix[...,2,1] = v[...,0]
+        return matrix
+
+    inertia = body_inertia.to(body_angular_vel)
+    old = body_angular_vel
+    midpoint = old.clone()
+    for _ in range(4):
+        iw = (inertia @ midpoint.unsqueeze(-1)).squeeze(-1)
+        f = external_torque - torch.linalg.cross(midpoint, iw+rotor_momentum)
+        residual = (inertia @ (midpoint-old).unsqueeze(-1)).squeeze(-1) - .5*dt*f
+        derivative = cross_matrix(iw+rotor_momentum) - cross_matrix(midpoint) @ inertia
+        midpoint = midpoint - torch.linalg.solve(inertia-.5*dt*derivative, residual.unsqueeze(-1)).squeeze(-1)
+    iw = (inertia @ midpoint.unsqueeze(-1)).squeeze(-1)
+    old_iw = (inertia @ old.unsqueeze(-1)).squeeze(-1)
+    gyro = torch.linalg.cross(rotor_momentum, midpoint)
+    correction = -torch.linalg.cross(midpoint, iw) + torch.linalg.cross(old, old_iw)
+    return gyro, correction

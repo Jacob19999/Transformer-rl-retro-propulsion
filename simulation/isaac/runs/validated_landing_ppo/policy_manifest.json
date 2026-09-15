@@ -1,0 +1,55 @@
+{
+  "checkpoint": "runs/ppo_exploration_anneal/ppo_landing_seed0_20260911_184222/ppo_step_26034176.pt",
+  "checkpoint_sha256": "ac786a14bf2383faea4e620549950a811ac98a89c1c955339f1206882630e924",
+  "action_mode": "stochastic",
+  "policy": "feed-forward PPO; learned Gaussian followed by tanh",
+  "task": "full cold-rotor landing at 16-20 m",
+  "success_gates": {
+    "state": "LANDED",
+    "max_pad_distance_m": 0.5,
+    "max_touchdown_speed_m_s": 0.25
+  },
+  "nominal_holdout": {
+    "episodes": 3072,
+    "successes": 3002,
+    "success_fraction": 0.9772135416666666,
+    "crashes": 18,
+    "crashed_fraction": 0.005859375,
+    "timeouts": 0,
+    "mean_landed_impact_m_s": 0.15681999280302253,
+    "mean_landed_pad_distance_m": 0.21739120730540465
+  },
+  "evaluation_directories": [
+    "runs/ppo_holdouts/full26m_seed789_stochastic",
+    "runs/ppo_holdouts/full26m_seed2026_stochastic"
+  ],
+  "limitations": [
+    "Simulation validation, not hardware transfer validation",
+    "tanh(mean) is a different policy and does not share these success rates",
+    "No sequence-aware GTrXL optimizer was trained"
+  ],
+  "disturbance_checks": [
+    {
+      "path": "runs/ppo_holdouts/full26m_seed4321_sensor_noise",
+      "episodes": 512,
+      "success_fraction": 0.978515625,
+      "crashed_fraction": 0.001953125,
+      "passed": true
+    },
+    {
+      "path": "runs/ppo_holdouts/full26m_seed8765_wind",
+      "episodes": 512,
+      "success_fraction": 0.98046875,
+      "crashed_fraction": 0.001953125,
+      "passed": true
+    },
+    {
+      "path": "runs/ppo_holdouts/full26m_seed9753_com_shift",
+      "episodes": 512,
+      "success_fraction": 0.9375,
+      "crashed_fraction": 0.005859375,
+      "passed": true
+    }
+  ],
+  "replay_check": "runs/ppo_diagnostics/full26m_seed2026_stochastic"
+}

@@ -1,0 +1,20 @@
+# User selected the planned 8S configuration on 2026-09-13; purchased SKUs pending.
+# Source: Paper/Reference/parts.md; master parts workbook only specifies structure.
+# Candidate manufacturer: https://www.fmshobby.com/products/edf-system-90mm-12-blade-8s-power-system-with-4075-kv1500-motor-pro-metal
+# Model identity is a candidate, not confirmation of fitted hardware.
+edf:
+  max_thrust: 48.0                 # N, planning estimate (4.9 kgf); NOT bench-calibrated
+  omega_max: 4649.56               # rad/s, derived no-load bound: 1500 KV * 29.6 V * 2pi/60
+  exhaust_speed_nominal: 128.0     # m/s, ideal estimate sqrt(2T / rho / swept area)
+  k_T: null                       # recompute for this profile, never reuse 6S coefficient
+servo:
+  # Manufacturer specification is 0.15s/60deg at 6V, versus old 0.14s assumption.
+  # https://towerpro.com.tw/product/mg996R/
+  transit_time_60deg: 0.15
+  max_angular_velocity: 6.981317
+  stall_torque: 1.0787315          # N m, 11 kgf cm at regulated 6V
+battery:
+  cells: 8
+  reference_voltage_v: 29.6
+  shaft_power_at_max_w: 3072.0    # estimated T * jet speed / 2, pending EDF electrical test
+  max_current_a: 120.0            # conservative continuous ESC limit; 150A peak is not continuous

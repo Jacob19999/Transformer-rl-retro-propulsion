@@ -33,9 +33,9 @@ def parse_args():
     parser.add_argument("--kp-alt", type=float, default=0.22)
     parser.add_argument("--ki-alt", type=float, default=0.01)
     parser.add_argument("--kd-alt", type=float, default=0.10)
-    parser.add_argument("--kp-att", type=float, default=0.30)
+    parser.add_argument("--kp-att", type=float, default=0.20)
     parser.add_argument("--ki-att", type=float, default=0.00)
-    parser.add_argument("--kd-att", type=float, default=0.20)
+    parser.add_argument("--kd-att", type=float, default=0.05)
     parser.add_argument("--kp-yaw", type=float, default=0.20)
     parser.add_argument("--ki-yaw", type=float, default=0.00)
     parser.add_argument("--kd-yaw", type=float, default=0.20)
@@ -49,10 +49,10 @@ def parse_args():
     parser.add_argument("--lateral-recovery-attenuation", type=float, default=0.70)
     parser.add_argument("--min-lateral-scale", type=float, default=0.0)
     parser.add_argument("--max-rate-cmd-rp", type=float, default=None)
-    parser.add_argument("--gyro-comp-rp", type=float, default=0.0)
+    parser.add_argument("--gyro-comp-rp", type=float, default=0.06)
     parser.add_argument("--min-fin-cmd-xy", type=float, default=0.018)
     parser.add_argument("--xy-active-error", type=float, default=0.20)
-    parser.add_argument("--throttle-hover", type=float, default=0.90)
+    parser.add_argument("--throttle-hover", type=float, default=None, help="Default: derive equilibrium from the loaded mass and neutral vane drag")
     parser.add_argument("--max-fin-angle", type=float, default=0.115)
     parser.add_argument(
         "--summary-decimals",
@@ -152,13 +152,13 @@ def parse_args():
     parser.add_argument(
         "--landing-touchdown-speed-limit",
         type=float,
-        default=1.5,
-        help="Pass criterion: max downward speed (m/s) at touchdown.",
+        default=None,
+        help="Pass criterion: maximum arrival speed across contact/bounce events; defaults to task.success.max_touchdown_speed.",
     )
     parser.add_argument(
         "--landing-pad-distance-limit",
         type=float,
-        default=0.5,
+        default=None,
         help="Pass criterion: max horizontal distance (m) from pad center at touchdown.",
     )
     parser.add_argument(
@@ -168,6 +168,16 @@ def parse_args():
         metavar=("X", "Y", "Z"),
         help="Diagnostic reset position in world meters; also zeroes velocity/attitude unless overridden later.",
     )
+    # Full-physics holdout (logs/physics_review_pid_landing_holdout.json):
+    # 13/16 successful, 15/16 landed, no crashes, all impacts .161–.202 m/s.
+    # Keep hover defaults separate; explicit CLI gain overrides still win.
+    selected, _ = parser.parse_known_args()
+    if selected.task == "landing":
+        parser.set_defaults(kp_alt=.1, ki_alt=.005, kd_alt=.25,
+                            kp_att=.5, kd_att=.1, gyro_comp_rp=.03,
+                            k_vel_xy=.3, min_fin_cmd_xy=0.0,
+                            landing_descent_rate=1.5, landing_flare_alt=2.5,
+                            landing_flare_descent_rate=.18)
     return parser.parse_args()
 
 
@@ -324,7 +334,7 @@ def main():
             dynamics_overrides["edf_gyro_torque_scale"] = args.edf_gyro_torque_scale
         if args.body_angular_damping is not None:
             dynamics_overrides["body_angular_damping"] = args.body_angular_damping
-        overrides: dict[str, Any] = {"dynamics": dynamics_overrides}
+        overrides: dict[str, Any] = {"dynamics": dynamics_overrides, "env": {"reset_on_crash": False}}
         if args.fixed_hover_spawn or args.spawn_position is not None:
             position = args.spawn_position if args.spawn_position is not None else [0.0, 0.0, 5.0]
             overrides["task"] = {
@@ -344,6 +354,13 @@ def main():
 
         print("Isaac Sim ready. Building TVC environment...", flush=True)
         env = TVCDirectRLEnv(config)
+        dt = config.physics_dt * config.decimation
+        success_config = config.config.get("task", {}).get("success", {})
+        if args.landing_touchdown_speed_limit is None:
+            args.landing_touchdown_speed_limit = float(success_config.get("max_touchdown_speed", 0.25))
+        if args.landing_pad_distance_limit is None:
+            args.landing_pad_distance_limit = float(success_config.get("max_pad_distance", 0.5))
+        hover_throttle = env.nominal_hover_throttle() if args.throttle_hover is None else args.throttle_hover
         pid = PIDController(
             num_envs=1,
             device=env.device,
@@ -369,7 +386,8 @@ def main():
             gyro_comp_rp=args.gyro_comp_rp,
             min_fin_cmd_xy=args.min_fin_cmd_xy,
             xy_active_error=args.xy_active_error,
-            throttle_hover=args.throttle_hover,
+            throttle_hover=hover_throttle,
+            dt=dt,
             max_fin_angle=args.max_fin_angle,
         )
 
@@ -377,7 +395,6 @@ def main():
         obs = obs_dict["policy"]
         pid.reset()
 
-        dt = 1.0 / 30.0
         guidance: LandingGuidance | None = None
         if args.task == "landing":
             guidance = LandingGuidance(
@@ -387,6 +404,7 @@ def main():
                 descent_rate=args.landing_descent_rate,
                 flare_alt=args.landing_flare_alt,
                 flare_descent_rate=args.landing_flare_descent_rate,
+                throttle_hover=hover_throttle,
                 dt=dt,
             )
             guidance.reset(obs=obs)
@@ -496,7 +514,7 @@ def main():
                     and contact_int == int(ContactState.LANDED)
                 ):
                     landed_step = step
-                    touchdown_speed = float(state.linear_vel_frd[0, 2].clamp(min=0.0).item())
+                    touchdown_speed = float(state.touchdown_speed[0].item())
                     touchdown_pad_distance = pad_dist
                 if contact_int == int(ContactState.CRASHED):
                     crashed = True
@@ -565,6 +583,8 @@ def main():
                     _print_state_block(payload, n_steps=n_steps, dt=dt, decimals=args.log_decimals)
 
             done = bool((terminated | truncated)[0].item())
+            if guidance is not None and done:
+                break
             if guidance is not None:
                 # Single-shot landing run: stop after the first crash, or once
                 # the vehicle has settled on the pad for a short dwell window.
@@ -637,8 +657,8 @@ def main():
             print(f"Delta-v proxy (sum of (T/T_max)^2 * dt): {delta_v_proxy:.{d}f} s")
 
             landed_ok = landed_step is not None
-            speed_ok = landed_ok and (touchdown_speed is not None) and touchdown_speed < args.landing_touchdown_speed_limit
-            pad_ok = landed_ok and (touchdown_pad_distance is not None) and touchdown_pad_distance < args.landing_pad_distance_limit
+            speed_ok = landed_ok and (touchdown_speed is not None) and touchdown_speed <= args.landing_touchdown_speed_limit
+            pad_ok = landed_ok and (touchdown_pad_distance is not None) and touchdown_pad_distance <= args.landing_pad_distance_limit
             crash_ok = not crashed
             tilt_ok = max_tilt < 0.262
 
@@ -646,11 +666,11 @@ def main():
             print(f"  landed within duration:  {'PASS' if landed_ok else 'FAIL'}")
             print(f"  not crashed:  {'PASS' if crash_ok else 'FAIL'}")
             print(
-                f"  touchdown speed < {args.landing_touchdown_speed_limit:.2f} m/s:  "
+                f"  touchdown speed <= {args.landing_touchdown_speed_limit:.2f} m/s:  "
                 f"{'PASS' if speed_ok else 'FAIL'}"
             )
             print(
-                f"  pad distance < {args.landing_pad_distance_limit:.2f} m:  "
+                f"  pad distance <= {args.landing_pad_distance_limit:.2f} m:  "
                 f"{'PASS' if pad_ok else 'FAIL'}"
             )
             print(f"  max tilt < 15 deg:  {'PASS' if tilt_ok else 'FAIL'}")

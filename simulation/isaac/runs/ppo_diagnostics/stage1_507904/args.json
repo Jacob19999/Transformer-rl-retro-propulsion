@@ -1,0 +1,14 @@
+{
+  "checkpoint": "runs/ppo_convergence/ppo_landing_seed0_20260911_110123/ppo_step_507904.pt",
+  "task": "landing",
+  "env_config": "configs/env/single_env_debug.yaml",
+  "disturbance": "configs/disturbances/nominal.yaml",
+  "episodes": 3,
+  "max_episode_seconds": 30.0,
+  "seed": 123,
+  "curriculum_stage": 1,
+  "trace_every": 10,
+  "headless": true,
+  "max_wall_time": 300.0,
+  "output_dir": "runs/ppo_diagnostics/stage1_507904"
+}

@@ -173,6 +173,14 @@ class BodyInterface:
         offsets_isaac = frd_position_to_isaac(offsets_frd).to(device="cpu", dtype=coms.dtype)
         coms[env_ids_cpu, body_id, :3] += offsets_isaac
         self._art.root_physx_view.set_coms(coms, env_ids_cpu)
+        # The direct PhysX property setter does not invalidate Isaac Lab 2.3.2
+        # lazy COM/derived velocity caches. Refresh them before forces in the
+        # same reset step; otherwise r x F uses the previous episode's COM.
+        for name in ('_body_com_pose_b','_body_com_pose_w','_root_com_pose_w',
+                     '_body_link_vel_w','_root_link_vel_w','_body_state_w',
+                     '_body_link_state_w','_body_com_state_w','_root_state_w',
+                     '_root_link_state_w','_root_com_state_w'):
+            getattr(self._art.data, name).timestamp = -1.0
 
     def reset_buffers(self, env_ids: Tensor | None = None) -> None:
         """Reset articulation actuator caches and external-wrench state."""

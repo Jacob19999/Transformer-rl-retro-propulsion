@@ -29,6 +29,28 @@ def _target_position(env_state, config: dict, default: list[float]) -> Tensor:
     return target
 
 
+def _mission_ready(env_state):
+    ready = getattr(env_state,'mission_ready_to_land',None)
+    return ready if ready is not None else torch.ones_like(env_state.contact_state,dtype=torch.bool)
+
+
+def compute_mission_progress(env_state, config):
+    """Gamma*Phi(next)-Phi(previous), including zero Phi at absorbing states."""
+    return env_state.mission_progress_step
+
+
+def compute_waypoint_completion(env_state, config):
+    return env_state.waypoint_completion_step
+
+
+def compute_path_tracking_cost(env_state, config):
+    return env_state.path_tracking_cost_step
+
+
+def compute_premature_landing_penalty(env_state, config):
+    return ((env_state.contact_state==ContactState.LANDED) & ~_mission_ready(env_state)).float()
+
+
 # ---- Shared reward terms ----
 
 def compute_alive_bonus(env_state, config: dict) -> Tensor:
@@ -85,6 +107,14 @@ def compute_control_effort_reward(env_state, config: dict) -> Tensor:
     return env_state.fin_angles.abs().mean(dim=-1)
 
 
+def compute_excess_rotation_cost(env_state, config: dict) -> Tensor:
+    """Physics-substep integral of bounded excess over the FRD soft limits."""
+    cost = getattr(env_state, 'excess_rotation_cost_step_s', None)
+    if cost is None:
+        raise ValueError('excess_rotation_cost requires physics-substep rotation tracking')
+    return cost
+
+
 def compute_control_rate_reward(env_state, config: dict) -> Tensor:
     """Negative reward for fin deflection rate (control aggressiveness).
 
@@ -121,7 +151,7 @@ def compute_drift_penalty(env_state, config: dict) -> Tensor:
         Tensor (num_envs,) — horizontal speed magnitude.
     """
     # Horizontal velocity in FRD: x=forward, y=right
-    horiz_vel = env_state.linear_vel_frd[:, :2]  # (num_envs, 2)
+    horiz_vel = env_state.linear_vel_world[:, :2]  # horizontal means ground plane
     return horiz_vel.norm(dim=-1)
 
 
@@ -138,13 +168,17 @@ def compute_contact_penalty(env_state, config: dict) -> Tensor:
 # ---- Landing-specific terms ----
 
 def compute_crash_penalty(env_state, config: dict) -> Tensor:
-    """One-time penalty for crashing.
+    """One-time penalty for physical crashes and safety-limit failures.
 
-    Returns:
-        Tensor (num_envs,) — 1.0 if CRASHED, else 0.0.
+    September convergence diagnosis, stage1_507904/trajectory.jsonl: all
+    three episodes ended above 30 m at ~8.8 s with AIRBORNE contact state.
+    Contact-only penalties made runaway ascent a cheap terminal escape.
+    Use exactly the detector's failure mask, excluding ordinary timeouts.
     """
-    is_crashed = env_state.contact_state == ContactState.CRASHED
-    return is_crashed.float()
+    from tvc_env.envs.terminations import check_failure_terminations
+    target = _target_position(env_state, config, [0, 0, 5])
+    return check_failure_terminations(env_state.quaternion_wxyz, env_state.position,
+                                     target, env_state.contact_state, config).float()
 
 
 def compute_touchdown_softness_reward(env_state, config: dict) -> Tensor:
@@ -155,15 +189,15 @@ def compute_touchdown_softness_reward(env_state, config: dict) -> Tensor:
     """
     is_landed = env_state.contact_state == ContactState.LANDED
     # LANDED is emitted after a dwell period, so current velocity is already
-    # near zero. Use the first-contact speed captured by the environment.
+    # near zero. Use the worst arrival speed captured across contact/bounces.
     touchdown_speed = getattr(env_state, "touchdown_speed", None)
     downward_speed = (
         touchdown_speed
         if touchdown_speed is not None
-        else env_state.linear_vel_frd[:, 2].clamp(min=0.0)
+        else (-env_state.linear_vel_world[:, 2]).clamp(min=0.0)
     )
     softness = torch.exp(-downward_speed)  # Exponential decay with speed
-    return softness * is_landed.float()
+    return softness * (is_landed & _mission_ready(env_state)).float()
 
 
 def compute_landing_success_reward(env_state, config: dict) -> Tensor:
@@ -187,13 +221,13 @@ def compute_landing_success_reward(env_state, config: dict) -> Tensor:
     target = _target_position(env_state, config, [0, 0, 0])
     horiz_dist = (env_state.position[:, :2] - target[:, :2]).norm(dim=-1)
     on_pad = horiz_dist <= max_pad_distance
-    success = is_landed & on_pad
+    success = is_landed & on_pad & _mission_ready(env_state)
     if max_touchdown_speed is not None:
         touchdown_speed = getattr(env_state, "touchdown_speed", None)
         downward_speed = (
             touchdown_speed
             if touchdown_speed is not None
-            else env_state.linear_vel_frd[:, 2].clamp(min=0.0)
+            else (-env_state.linear_vel_world[:, 2]).clamp(min=0.0)
         )
         soft_enough = downward_speed <= float(max_touchdown_speed)
         success = success & soft_enough
@@ -216,7 +250,7 @@ def compute_pad_accuracy_reward(env_state, config: dict) -> Tensor:
     # ~0.4 of weight — too weak to compete with fin-noise penalties early in
     # training, leaving the policy in a "land softly anywhere" local optimum.
     accuracy = torch.exp(-horiz_dist)
-    return accuracy * is_landed.float()
+    return accuracy * (is_landed & _mission_ready(env_state)).float()
 
 
 def compute_off_pad_landing_penalty(env_state, config: dict) -> Tensor:
@@ -228,6 +262,23 @@ def compute_off_pad_landing_penalty(env_state, config: dict) -> Tensor:
     horiz_dist = (env_state.position[:, :2] - target[:, :2]).norm(dim=-1)
     off_pad = horiz_dist > max_pad_distance
     return (is_landed & off_pad).float()
+
+
+def compute_hard_landing_penalty(env_state, config: dict) -> Tensor:
+    """Prevent fast, unsuccessful contacts from harvesting pad-accuracy rewards.
+
+    Review v3: at 131k steps mean reward rose to +8.71 while rolling success
+    fell to 6.84%. A hard on-pad LANDED event still paid up to +225 without
+    its success bonus. The YAML penalty must exceed that partial payout.
+    """
+    task = config.get("task", config)
+    limit = task.get("success", {}).get("max_touchdown_speed")
+    if limit is None:
+        return torch.zeros_like(env_state.contact_state, dtype=torch.float32)
+    speed = getattr(env_state, "touchdown_speed", None)
+    if speed is None:
+        speed = (-env_state.linear_vel_world[:, 2]).clamp(min=0.0)
+    return ((env_state.contact_state == ContactState.LANDED) & (speed > float(limit))).float()
 
 
 def compute_horizontal_closure_reward(env_state, config: dict) -> Tensor:
@@ -266,7 +317,8 @@ def compute_vertical_speed_shaping(env_state, config: dict) -> Tensor:
     objective and consistent with CLAUDE.md rule 2 on per-step magnitude
     balance.
     """
-    downward_speed = env_state.linear_vel_frd[:, 2]  # z=down in FRD
+    # Ground-relative descent must not become cheaper simply by tilting.
+    downward_speed = -env_state.linear_vel_world[:, 2]
     target_descent = 0.5  # m/s — fastest descent that incurs no penalty
     return (downward_speed - target_descent).clamp(min=0.0)
 
@@ -290,3 +342,34 @@ def compute_delta_v_cost(env_state, config: dict) -> Tensor:
     omega_max = max(float(omega_max), 1.0)
     omega = env_state.motor_omega.clamp(min=0.0)
     return (omega / omega_max).clamp(max=1.0).pow(2)
+
+
+def compute_landing_descent_tracking(env_state, config: dict) -> Tensor:
+    """Ground-relative speed cost for a bounded stopping-distance envelope.
+
+    This is explicit, non-potential reward shaping, not an action controller.
+    The first corrected-physics run lost its few early soft contacts and
+    stayed at stage 0 for 2M steps. One-sided overspeed costs offered no
+    descent signal to a hovering/climbing policy.
+    """
+    profile = config.get('task', config).get('descent_reward', {})
+    target = _target_position(env_state, config, [0, 0, 0])
+    clearance = (env_state.position[:, 2] - target[:, 2] - float(profile.get('touchdown_root_height', .3125))).clamp(min=0)
+    touchdown_speed = float(profile.get('touchdown_speed', .15))
+    braking_acceleration = float(profile.get('braking_acceleration', .8))
+    speed = torch.sqrt(touchdown_speed ** 2 + 2 * braking_acceleration * clearance)
+    speed = speed.clamp(max=float(profile.get('max_descent_speed', 1.0)))
+    actual = -env_state.linear_vel_world[:, 2]
+    return (actual - speed).abs().clamp(max=3.0)
+
+
+def compute_battery_energy_cost(env_state, config: dict) -> Tensor:
+    """Measured simulated pack work in Wh, integrated at physics frequency."""
+    value = getattr(env_state, 'battery_energy_step_wh', None)
+    return value if value is not None else torch.zeros_like(env_state.motor_omega)
+
+
+def compute_propulsive_delta_v_cost(env_state, config: dict) -> Tensor:
+    """Integrated magnitude of propulsive acceleration in m/s (not rocket delta-v)."""
+    value = getattr(env_state, 'propulsive_delta_v_step', None)
+    return value if value is not None else torch.zeros_like(env_state.motor_omega)

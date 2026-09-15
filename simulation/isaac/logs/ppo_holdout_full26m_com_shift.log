@@ -1,0 +1,64 @@
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: C:\Transformer-rl-retro-propulsion\IsaacLab\apps\isaaclab.python.headless.kit
+Loading user config located at: 'c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/user.config.json'
+[Info] [carb] Logging to file: c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/logs/Kit/Isaac-Sim/5.1/kit_20260913_210837.log
+2026-09-14T02:08:38Z [353ms] [Warning] [omni.usd_config.extension] Enable omni.materialx.libs extension to use MaterialX
+2026-09-14T02:08:39Z [1,178ms] [Warning] [carb] Acquiring non optional plugin interface which is not listed as dependency: [omni::physx::IPhysxBenchmarks v1.0] (plugin: <default plugin>), by client: omni.physics.physx.plugin. Add it to CARB_PLUGIN_IMPL_DEPS() macro of a client.
+2026-09-14T02:08:39Z [1,194ms] [Warning] [omni.isaac.dynamic_control] omni.isaac.dynamic_control is deprecated as of Isaac Sim 4.5. No action is needed from end-users.
+
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 616.92        | Graphics API: D3D12
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA GeForce RTX 5070          | Yes: 0 |     | 11943   MB | 10de      | 64a7ee24.. |
+|     |                                  |        |     |            | 2f04      | 0          |
+|     |                                  |        |     |            | 1         |            |
+|=============================================================================================|
+| OS: Windows 11 Pro, Version: 10.0 (25H2), Build: 26200, Kernel: 10.0.26100.9444
+| Processor: AMD Ryzen 9 9900X 12-Core Processor            
+| Cores: 12 | Logical Cores: 24
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 32360 | Free Memory: 10773
+| Total Page/Swap (MB): 49768 | Free Page/Swap: 8050
+|---------------------------------------------------------------------------------------------|
+2026-09-14T02:08:44Z [6,288ms] [Warning] [omni.kvdb.plugin] Disabling key-value database because another kit process is locking it
+
+[36m===================================================================================================================[0m
+[36m[1m[INFO][IsaacLab]: Logging to file: C:\Users\tngzj\AppData\Local\Temp\isaaclab\logs\isaaclab_2026-09-13_21-08-44.log[0m
+[36m===================================================================================================================[0m
+
+Evaluated 512/512 independent episodes
+{
+  "checkpoint": "C:\\Transformer-rl-retro-propulsion\\simulation\\isaac\\runs\\ppo_exploration_anneal\\ppo_landing_seed0_20260911_184222\\ppo_step_26034176.pt",
+  "trained_steps": 26034176,
+  "seed": 9753,
+  "action_mode": "stochastic",
+  "curriculum_stage": null,
+  "episodes": 512,
+  "success_count": 480,
+  "success_fraction": 0.9375,
+  "landed_fraction": 0.994140625,
+  "crashed_fraction": 0.005859375,
+  "timeout_fraction": 0.0,
+  "failure_counts": {
+    "contact_or_tilt_failure": 3,
+    "hard_landing": 1,
+    "hard_off_pad": 3,
+    "off_pad": 25,
+    "success": 480
+  },
+  "success_max_pad_distance": 0.5,
+  "success_max_touchdown_speed": 0.25,
+  "touchdown_speed_landed": {
+    "mean": 0.15927492464894397,
+    "max": 1.0860509872436523
+  },
+  "pad_distance_landed": {
+    "mean": 0.27578989343629867,
+    "max": 1.3322070837020874
+  },
+  "passed": true
+}

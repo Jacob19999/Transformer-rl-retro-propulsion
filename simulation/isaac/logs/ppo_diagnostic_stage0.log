@@ -1,0 +1,89 @@
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: C:\Transformer-rl-retro-propulsion\IsaacLab\apps\isaaclab.python.headless.kit
+Loading user config located at: 'c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/user.config.json'
+[Info] [carb] Logging to file: c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/logs/Kit/Isaac-Sim/5.1/kit_20260911_111043.log
+2026-09-11T16:10:43Z [366ms] [Warning] [omni.usd_config.extension] Enable omni.materialx.libs extension to use MaterialX
+2026-09-11T16:10:45Z [1,557ms] [Warning] [carb] Acquiring non optional plugin interface which is not listed as dependency: [omni::physx::IPhysxBenchmarks v1.0] (plugin: <default plugin>), by client: omni.physics.physx.plugin. Add it to CARB_PLUGIN_IMPL_DEPS() macro of a client.
+2026-09-11T16:10:45Z [1,573ms] [Warning] [omni.isaac.dynamic_control] omni.isaac.dynamic_control is deprecated as of Isaac Sim 4.5. No action is needed from end-users.
+
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 616.64        | Graphics API: D3D12
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA GeForce RTX 5070          | Yes: 0 |     | 11943   MB | 10de      | c4230100.. |
+|     |                                  |        |     |            | 2f04      | 0          |
+|     |                                  |        |     |            | 1         |            |
+|=============================================================================================|
+| OS: Windows 11 Pro, Version: 10.0 (25H2), Build: 26200, Kernel: 10.0.26100.9444
+| Processor: AMD Ryzen 9 9900X 12-Core Processor            
+| Cores: 12 | Logical Cores: 24
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 32360 | Free Memory: 12311
+| Total Page/Swap (MB): 49768 | Free Page/Swap: 17144
+|---------------------------------------------------------------------------------------------|
+2026-09-11T16:10:49Z [6,355ms] [Warning] [omni.kvdb.plugin] Disabling key-value database because another kit process is locking it
+
+[36m===================================================================================================================[0m
+[36m[1m[INFO][IsaacLab]: Logging to file: C:\Users\tngzj\AppData\Local\Temp\isaaclab\logs\isaaclab_2026-09-11_11-10-50.log[0m
+[36m===================================================================================================================[0m
+
+Loaded checkpoint ppo_stage_0_mastered.pt (trained for 425984 steps); running 4 episodes in single env, headless=True.
+ep=  1/4 outcome=LANDED  spawn_xy=(+0.03,+0.03) d0=0.04 td_xy=(+0.02,+0.04) pad_d= 0.05 td_speed= 0.13 td_thr=0.88 dur= 1.03s wall= 2.1s
+ep=  2/4 outcome=LANDED  spawn_xy=(-0.05,+0.02) d0=0.05 td_xy=(-0.06,-0.09) pad_d= 0.11 td_speed= 0.15 td_thr=0.88 dur= 2.03s wall= 3.2s
+ep=  3/4 outcome=LANDED  spawn_xy=(-0.03,+0.02) d0=0.03 td_xy=(-0.05,+0.01) pad_d= 0.05 td_speed= 0.14 td_thr=0.88 dur= 1.63s wall= 2.6s
+ep=  4/4 outcome=LANDED  spawn_xy=(+0.02,-0.00) d0=0.02 td_xy=(+0.01,-0.02) pad_d= 0.02 td_speed= 0.12 td_thr=0.89 dur= 1.00s wall= 1.8s
+========================================================================
+{
+  "checkpoint": "C:\\Transformer-rl-retro-propulsion\\simulation\\isaac\\runs\\ppo_convergence\\ppo_landing_seed0_20260911_110123\\ppo_stage_0_mastered.pt",
+  "trained_steps": 425984,
+  "curriculum_stage": 0,
+  "episodes": 4,
+  "landed_fraction": 1.0,
+  "crashed_fraction": 0.0,
+  "timeout_fraction": 0.0,
+  "on_pad_fraction": 1.0,
+  "success_fraction": 1.0,
+  "success_max_pad_distance": 0.5,
+  "success_max_touchdown_speed": 0.25,
+  "touchdown_speed_landed": {
+    "mean": 0.1363,
+    "min": 0.1219,
+    "max": 0.1487
+  },
+  "pad_distance_landed": {
+    "mean": 0.0567,
+    "min": 0.0195,
+    "max": 0.1087
+  },
+  "spawn_xy_distance": {
+    "mean": 0.0364,
+    "min": 0.0173,
+    "max": 0.0509
+  },
+  "closure_ratio_landed": {
+    "mean": -0.4643,
+    "min": -1.1356,
+    "max": -0.0656,
+    "n": 4
+  },
+  "by_spawn_distance": {
+    "d0_0.0_0.5": {
+      "n": 4,
+      "mean_pad_distance": 0.0567,
+      "max_pad_distance": 0.1087,
+      "mean_closure_ratio": -0.4643,
+      "on_pad_fraction": 1.0
+    }
+  },
+  "duration_s": {
+    "mean": 1.4247,
+    "min": 1.0,
+    "max": 2.033
+  }
+}
+Wrote results to C:\Transformer-rl-retro-propulsion\simulation\isaac\runs\ppo_diagnostics\stage0_mastered
+Closing TVC environment...
+Closing Isaac Sim...

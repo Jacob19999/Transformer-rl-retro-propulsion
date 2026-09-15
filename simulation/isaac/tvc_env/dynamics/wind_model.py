@@ -67,12 +67,14 @@ class WindModel:
         wind = dist.get("wind", {})
         gust = dist.get("gust", {})
         drag = dist.get("body_drag", {})
+        enabled = dist.get("enabled", True)
 
         return cls(
-            steady_vector=wind.get("steady_vector", [0.0, 0.0, 0.0]),
+            steady_vector=wind.get("steady_vector", [0.0, 0.0, 0.0])
+                if enabled and wind.get("enabled", True) else [0.0, 0.0, 0.0],
             cd=drag.get("cd", 1.0),
             reference_area=drag.get("reference_area", 0.02),
-            gust_enabled=gust.get("enabled", False),
+            gust_enabled=enabled and gust.get("enabled", False),
             gust_magnitude=gust.get("magnitude", 5.0),
             gust_duration=gust.get("duration", 0.5),
             gust_interval_min=gust.get("interval", [5.0, 15.0])[0],

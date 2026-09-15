@@ -76,6 +76,13 @@ class TVCDirectRLEnv(TVCEnvBase):
         with open(sim_root / "configs/params/servo_mg996r.yaml", "r", encoding="utf-8") as f:
             servo_config = yaml.safe_load(f)
 
+        # Mission hardware profiles must reach both force models and PhysX
+        # actuator limits. Previously only the fixed parameter files were read.
+        from tvc_env.envs.task_registry import deep_merge
+        edf_config = deep_merge(edf_config, {"edf": self._config.config.get("edf", {})})
+        servo_config = deep_merge(servo_config, {"servo": self._config.config.get("servo", {})})
+        self._resolved_hardware = dict(vehicle=vehicle_config, edf=edf_config['edf'], servo=servo_config['servo'])
+
         scene_config = SceneConfig.from_yaml(self._config.config)
         servo_params = servo_config.get("servo", servo_config)
         scene_config.fin_drive_stiffness = float(servo_params.get("drive_stiffness", 80.0))
@@ -99,6 +106,14 @@ class TVCDirectRLEnv(TVCEnvBase):
         self._unsafe_contact_step = torch.zeros(
             self._config.num_envs, dtype=torch.bool, device=device
         )
+        self._battery_energy_step_wh = torch.zeros_like(self._touchdown_speed)
+        self._propulsive_delta_v_step = torch.zeros_like(self._touchdown_speed)
+        from tvc_env.envs.rotation_metrics import RotationTracker, DEFAULT_LIMITS_DEG_S
+        self._rotation = RotationTracker(self._config.num_envs, device,
+            self._config.config.get('task', {}).get('rotation', {}).get('soft_limits_deg_s', DEFAULT_LIMITS_DEG_S))
+        self._vehicle_mass = self._drone.root_physx_view.get_masses().sum(dim=-1).to(device)
+        if self._config.config.get('env', {}).get('observe_battery', False) and self._battery_model is None:
+            raise ValueError('Battery observations require the coupled battery model')
 
         edf_params = edf_config.get("edf", edf_config)
         self._omega_max = edf_params.get("omega_max") or self._omega_max
@@ -111,6 +126,10 @@ class TVCDirectRLEnv(TVCEnvBase):
         self._target_position = env_origins + self._target_position_local.to(device).unsqueeze(0)
         self._config.config["_target_position_world"] = self._target_position
         self._config.config["_omega_max_world"] = float(self._omega_max)
+        self._navigation = None
+        if self._config.config.get('task',{}).get('navigation',{}).get('enabled'):
+            from tvc_env.envs.waypoints import WaypointMission
+            self._navigation = WaypointMission(self._config.num_envs,device,self._config.config,env_origins,self._target_position)
 
     # ---- Gymnasium interface ----
 
@@ -118,6 +137,30 @@ class TVCDirectRLEnv(TVCEnvBase):
     def device(self):
         """The device on which the simulation is running."""
         return self._drone.device
+
+    def nominal_hover_throttle(self) -> float:
+        """Level equilibrium including all link masses and neutral vane drag."""
+        import math
+        mass = float(self._drone.root_physx_view.get_masses()[0].sum())
+        gravity = abs(float(self._config.config.get("physics", {}).get("gravity", [0, 0, -9.81])[2]))
+        dynamics = self._config.config.get("dynamics", {})
+        drag = 0.0
+        if dynamics.get("enable_fin_forces", True) and dynamics.get("enable_thrust_loss", True):
+            neutral = self._fin_dispatch.compute_body_frame_forces(
+                torch.zeros(1, 4, device=self.device), torch.ones(1, device=self.device)
+            )
+            drag = min(float(neutral.thrust_loss[0]), self._max_fin_thrust_loss_fraction * self._edf_model.max_thrust)
+            if self._coupled_jet is not None:
+                jet = self._coupled_jet.compute(torch.zeros(1, 4, device=self.device),
+                    torch.ones(1, device=self.device), torch.full((1,), self._edf_model.omega_max, device=self.device),
+                    torch.full((1,), self._edf_model.max_thrust, device=self.device),
+                    self._fin_dispatch.cop_positions[None], torch.zeros(1, 4, 3, device=self.device),
+                    torch.zeros(1, 3, device=self.device))
+                drag = float(jet.forces[..., 2].sum())
+        net_thrust = float(self._edf_model.compute_thrust(torch.tensor(self._edf_model.omega_max))) - drag
+        if net_thrust <= mass * gravity:
+            raise ValueError(f"Insufficient level thrust: {net_thrust:.3f} N available for {mass * gravity:.3f} N weight")
+        return math.sqrt(mass * gravity / net_thrust)
 
     def step(self, action: Tensor) -> tuple[dict, Tensor, Tensor, Tensor, dict]:
         """Execute one RL step: pre-physics → decimated substeps → obs/reward/done.
@@ -134,13 +177,23 @@ class TVCDirectRLEnv(TVCEnvBase):
         self._landing_contact_force_step.zero_()
         self._unsafe_contact_step.zero_()
 
+        self._battery_energy_step_wh.zero_()
+        self._propulsive_delta_v_step.zero_()
+        self._rotation.begin_step()
+        navigation_before = self._body_iface.get_root_position().clone() if self._navigation else None
+        navigation_active = self._contact_sm.state < int(ContactState.LANDED)
+
         for _ in range(self._config.decimation):
+            rates_before = self._body_iface.get_angular_velocity_body_frd()
+            rotation_active = self._contact_sm.state < int(ContactState.LANDED)
             downward_speed = (-self._body_iface.get_root_linear_velocity_world()[:, 2]).clamp(min=0.0)
             self._max_downward_speed_step = torch.maximum(
                 self._max_downward_speed_step, downward_speed
             )
             self._apply_action()
             self._sim_scene.step()
+            self._rotation.update(rates_before, self._body_iface.get_angular_velocity_body_frd(),
+                                  self._config.physics_dt, rotation_active)
             landing_force, unsafe_contact = self._sensor_iface.read_contact_summary(
                 self._contact_sm.min_contact_force
             )
@@ -154,8 +207,15 @@ class TVCDirectRLEnv(TVCEnvBase):
             # sustained contact. Advance the state machine on each PhysX report.
             self._update_contact_state(landing_force, unsafe_contact, downward_speed)
         self._step_count += 1
+        if self._navigation:
+            self._navigation.advance(navigation_before, self._body_iface.get_root_position(),
+                self._body_iface.get_root_linear_velocity_world(), self._config.physics_dt*self._config.decimation,
+                navigation_active)
         state_pre_reset = self._build_vehicle_state()
         terminated, time_out = self._get_dones(state_pre_reset)
+        if self._navigation:
+            self._navigation.finish_reward(state_pre_reset.position,terminated)
+            state_pre_reset.mission_progress_step = self._navigation.step_progress
         reward = self._get_rewards(state_pre_reset)
 
         # Snapshot pre-reset vehicle state so eval/telemetry can attribute
@@ -168,11 +228,22 @@ class TVCDirectRLEnv(TVCEnvBase):
         info = {
             "contact_state_pre_reset": state_pre_reset.contact_state.clone(),
             "linear_vel_frd_pre_reset": state_pre_reset.linear_vel_frd.clone(),
+            "angular_vel_frd_pre_reset": state_pre_reset.angular_vel_frd.clone(),
+            "linear_vel_world_pre_reset": state_pre_reset.linear_vel_world.clone(),
             "position_pre_reset": state_pre_reset.position.clone(),
             "touchdown_speed_pre_reset": self._touchdown_speed.clone(),
             "motor_omega_pre_reset": state_pre_reset.motor_omega.clone(),
             "observation_pre_reset": self._get_observations(state_pre_reset)["policy"],
+            "battery_energy_step_wh": self._battery_energy_step_wh.clone(),
+            "propulsive_delta_v_step": self._propulsive_delta_v_step.clone(),
+            "rotation_pre_reset": self._rotation.snapshot(),
+            "mission_ready_to_land_pre_reset": (self._navigation.ready_to_land.clone() if self._navigation
+                                                else torch.ones_like(terminated)),
+            "waypoints_completed_pre_reset": (self._navigation.index.clone() if self._navigation
+                                              else torch.zeros_like(terminated,dtype=torch.long)),
         }
+        if self._battery_model is not None:
+            info['battery_pre_reset'] = {k: v.clone() for k, v in self._battery_model.telemetry().items()}
 
         # Auto-reset terminated/timed-out envs
         reset_ids = (terminated | time_out).nonzero(as_tuple=False).squeeze(-1)
@@ -182,6 +253,9 @@ class TVCDirectRLEnv(TVCEnvBase):
             self._contact_sensor.reset(reset_ids)
             self._touchdown_speed[reset_ids] = 0.0
             self._step_count[reset_ids] = 0
+            self._rotation.reset(reset_ids)
+            if self._navigation:
+                self._navigation.reset(reset_ids,self._body_iface.get_root_position())
 
         obs = self._get_observations()
         truncated = time_out & ~terminated
@@ -205,6 +279,11 @@ class TVCDirectRLEnv(TVCEnvBase):
         self._unsafe_contact_step.zero_()
         self._step_count.zero_()
         self._pending_actions = None
+        self._battery_energy_step_wh.zero_()
+        self._propulsive_delta_v_step.zero_()
+        self._rotation.reset()
+        if self._navigation:
+            self._navigation.reset(indices,self._body_iface.get_root_position())
         return self._get_observations(), {}
 
     def close(self) -> None:
@@ -252,7 +331,10 @@ class TVCDirectRLEnv(TVCEnvBase):
 
         # Update EDF spool state
         omega_state = self._reset_manager.omega_state
-        new_omega = self._edf_model.update(omega_state, throttle, dt)
+        if self._battery_model is None:
+            new_omega = self._edf_model.update(omega_state, throttle, dt)
+        else:
+            new_omega = self._battery_model.update_motor(self._edf_model, omega_state, throttle, dt)
         self._reset_manager._omega_prev = omega_state.clone()
         self._reset_manager._omega_state = new_omega
 
@@ -260,6 +342,13 @@ class TVCDirectRLEnv(TVCEnvBase):
         measured_fin_angles = self._body_iface.get_fin_joint_positions()
         rotor_fraction = (new_omega / max(float(self._edf_model.omega_max), 1.0)).clamp(0.0, 1.0)
         fin_dispatch = self._fin_dispatch.compute_body_frame_forces(measured_fin_angles, rotor_fraction)
+        from tvc_env.common.frames import isaac_position_to_frd
+        from tvc_env.common.quaternions import inverse, rotate_vector
+        q = self._body_iface.get_root_quaternion_wxyz()
+        pos = self._body_iface.get_root_position()
+        cop_world = self._link_force_iface.get_fin_cop_positions_world(q, pos)
+        cops = isaac_position_to_frd(rotate_vector(
+            inverse(q)[:, None].expand(-1, 4, -1), cop_world - pos[:, None]))
         dynamics_cfg = self._config.config.get("dynamics", {})
         enable_fin_forces = dynamics_cfg.get("enable_fin_forces", True)
         enable_thrust_loss = dynamics_cfg.get("enable_thrust_loss", True)
@@ -279,19 +368,36 @@ class TVCDirectRLEnv(TVCEnvBase):
             body_ang_frd,
             dt,
             spin_axis=spin_axis,
+            body_inertia=(None if dynamics_cfg.get('gyro_integration') == 'coupled_midpoint'
+                          else self._locked_body_inertia),
         )
         raw_thrust = edf_output.thrust_force
-        max_loss = torch.full_like(
-            raw_thrust,
-            self._max_fin_thrust_loss_fraction * self._edf_model.max_thrust,
-        )
+        jet = None
+        if self._coupled_jet is not None:
+            jet = self._coupled_jet.compute(measured_fin_angles, rotor_fraction, new_omega,
+                raw_thrust, cops, self._link_force_iface.get_cop_velocity_relative_body_frd(cop_world, q), body_ang_frd)
+            fin_dispatch.forces_body = jet.forces if enable_fin_forces else torch.zeros_like(jet.forces)
+            fin_dispatch.thrust_loss = fin_dispatch.forces_body[..., 2].sum(-1)
+            edf_output.static_reaction_torque = jet.reaction_torque
+        max_loss = self._max_fin_thrust_loss_fraction * raw_thrust
         thrust_loss = torch.minimum(fin_dispatch.thrust_loss.clamp(min=0.0), max_loss)
         thrust_loss = torch.minimum(thrust_loss, raw_thrust)
         if not enable_thrust_loss:
             thrust_loss = torch.zeros_like(thrust_loss)
         thrust = raw_thrust - thrust_loss
+        # Drag acts downstream ON each vane. Applying it only as a scalar
+        # subtraction at the EDF removed differential-drag moments and hinge
+        # loads. Bound the per-vane contributions together and apply them once.
+        drag_scale = thrust_loss / fin_dispatch.thrust_loss.clamp(min=1e-12)
+        if jet is None:
+            fin_dispatch.forces_body[:, :, 2] = fin_dispatch.tangential_force * drag_scale[:, None]
+        else:
+            # Finite streamtube model already bounds momentum and dissipates
+            # energy. Do not replace its axial component with legacy drag.
+            thrust_loss = fin_dispatch.forces_body[..., 2].sum(-1)
+            thrust = raw_thrust - thrust_loss
         edf_force_body = torch.zeros(thrust.shape[0], 3, device=thrust.device)
-        edf_force_body[:, 2] = -thrust
+        edf_force_body[:, 2] = -raw_thrust
         static_torque = edf_output.static_reaction_torque
         dynamic_torque = edf_output.dynamic_spool_torque
         gyro_torque = edf_output.gyro_precession_torque
@@ -302,12 +408,16 @@ class TVCDirectRLEnv(TVCEnvBase):
         if not dynamics_cfg.get("enable_edf_gyro_torque", True):
             gyro_torque = torch.zeros_like(gyro_torque)
         gyro_torque = gyro_torque * float(dynamics_cfg.get("edf_gyro_torque_scale", 1.0))
-        # Body aero/structural damping closes the underdamped roll/pitch mode
-        # left by fin-servo lag and EDF gyro coupling during hover recovery.
+        # Legacy linear damping is retained only for archived task reproduction.
         body_angular_damping = float(
             dynamics_cfg.get("body_angular_damping", self._body_angular_damping)
         )
         body_damping_torque = -body_angular_damping * body_ang_frd
+        if jet is not None:
+            from tvc_env.dynamics.coupled_jet import cylinder_rotational_drag
+            body_damping_torque = cylinder_rotational_drag(body_ang_frd,
+                self._body_geometry.get('length', .35), self._body_geometry.get('diameter', .12),
+                self._body_geometry.get('cd_body', 1.))
         edf_torque_body = static_torque + dynamic_torque + gyro_torque + body_damping_torque
 
         q = self._body_iface.get_root_quaternion_wxyz()
@@ -320,8 +430,26 @@ class TVCDirectRLEnv(TVCEnvBase):
             wind_force_body = self._wind_model.compute_drag_force(lin_vel_w, q)
             self._wind_model.update_gust(dt)
 
-        cops = fin_dispatch.cop_positions.unsqueeze(0).expand_as(fin_dispatch.forces_body)
         fin_torque_body = torch.linalg.cross(cops, fin_dispatch.forces_body).sum(dim=1)
+        integration_correction = torch.zeros_like(gyro_torque)
+        if dynamics_cfg.get('gyro_integration', 'rotor_midpoint') == 'coupled_midpoint':
+            from tvc_env.dynamics.rotor_reaction import compute_coupled_midpoint_torques
+            # Include known non-gyro moments in the free-flight predictor.
+            # PhysX still resolves actual link forces, hinges and contact;
+            # this does not overwrite state or synthesize a control action.
+            body_com_world = self._drone.data.body_com_pos_w[:, self._art_map.body_index]
+            com_frd = isaac_position_to_frd(rotate_vector(inverse(q), body_com_world-pos))
+            all_force = edf_force_body + fin_dispatch.forces_body.sum(dim=1)
+            if wind_force_body is not None:
+                all_force = all_force + wind_force_body
+            external_torque = (static_torque + dynamic_torque + body_damping_torque
+                               + fin_torque_body - torch.linalg.cross(com_frd, all_force))
+            rotor_scale = (self._edf_model.gyro_torque_scale * float(dynamics_cfg.get('edf_gyro_torque_scale', 1.0))
+                           if dynamics_cfg.get('enable_edf_gyro_torque', True) else 0.0)
+            rotor_h = spin_axis[None] * (.5*(omega_state+new_omega)*self._edf_model.rotor_inertia*rotor_scale)[:,None]
+            gyro_torque, integration_correction = compute_coupled_midpoint_torques(
+                body_ang_frd, self._locked_body_inertia, rotor_h, external_torque, dt)
+            edf_torque_body = static_torque + dynamic_torque + body_damping_torque + gyro_torque + integration_correction
         self._last_dynamics_debug = {
             "fin_force_body_frd_N": fin_dispatch.forces_body.sum(dim=1).detach(),
             "fin_torque_body_frd_Nm": fin_torque_body.detach(),
@@ -331,6 +459,7 @@ class TVCDirectRLEnv(TVCEnvBase):
             "edf_static_torque_body_frd_Nm": static_torque.detach(),
             "edf_dynamic_torque_body_frd_Nm": dynamic_torque.detach(),
             "edf_gyro_torque_body_frd_Nm": gyro_torque.detach(),
+            "angular_integration_correction_body_frd_Nm": integration_correction.detach(),
             "body_damping_torque_body_frd_Nm": body_damping_torque.detach(),
             "edf_total_torque_body_frd_Nm": edf_torque_body.detach(),
             "wind_force_body_frd_N": (
@@ -339,10 +468,21 @@ class TVCDirectRLEnv(TVCEnvBase):
                 else torch.zeros_like(edf_force_body).detach()
             ),
         }
+        if jet is not None:
+            self._last_dynamics_debug.update(
+                jet_mass_flow_kg_s=jet.mass_flow_per_fin.sum(-1).detach(),
+                jet_swirl_power_w=jet.swirl_power.detach(),
+                vane_dissipated_power_w=jet.dissipated_power.detach(),
+                jet_incoming_velocity_body_frd_m_s=jet.incoming_velocity.detach())
+
+        propulsive_force = edf_force_body + fin_dispatch.forces_body.sum(dim=1)
+        self._propulsive_delta_v_step += propulsive_force.norm(dim=-1) / self._vehicle_mass * dt
+        if self._battery_model is not None:
+            self._battery_energy_step_wh += self._battery_model.power_w * dt / 3600
 
         self._wrench_dispatch.dispatch(
             fin_dispatch.forces_body,
-            fin_dispatch.cop_positions,
+            cops,
             q,
             pos,
             edf_force_body,
@@ -358,8 +498,12 @@ class TVCDirectRLEnv(TVCEnvBase):
 
         if state is None:
             state = self._build_vehicle_state()
-        obs = assemble_observation(state, self._target_position, self._omega_max)
+        obs = assemble_observation(state, self._navigation.goal if self._navigation else self._target_position, self._omega_max)
         obs = apply_sensor_noise(obs, self._config.config)
+        if self._config.config.get('env', {}).get('observe_battery', False):
+            obs = torch.cat([obs, self._battery_model.observation()], dim=-1)
+        if self._navigation:
+            obs = torch.cat([obs,self._navigation.observation(state.quaternion_wxyz)],dim=-1)
 
         return {"policy": obs}
 
@@ -410,7 +554,14 @@ class TVCDirectRLEnv(TVCEnvBase):
 
         previous_state = self._contact_sm.state
         first_contact = in_contact & (previous_state == ContactState.AIRBORNE)
-        self._touchdown_speed[first_contact] = downward_speed[first_contact]
+        # Landing sweep v2 reported several zero-speed landings despite a
+        # descent. Contact-force flicker/bounces returned the detector to
+        # AIRBORNE, overwriting the initial impact with a later settled speed.
+        # Preserve the worst arrival across all contacts in this episode so
+        # a bounce cannot turn a hard landing into a soft success.
+        self._touchdown_speed[first_contact] = torch.maximum(
+            self._touchdown_speed[first_contact], downward_speed[first_contact]
+        )
         impact_speed = torch.where(
             first_contact,
             downward_speed,
@@ -455,6 +606,13 @@ class TVCDirectRLEnv(TVCEnvBase):
             contact_state=contact,
             height=height,
             touchdown_speed=self._touchdown_speed,
+            battery_energy_step_wh=self._battery_energy_step_wh,
+            propulsive_delta_v_step=self._propulsive_delta_v_step,
+            excess_rotation_cost_step_s=self._rotation.step_cost_s,
+            mission_ready_to_land=self._navigation.ready_to_land if self._navigation else None,
+            mission_progress_step=self._navigation.step_progress if self._navigation else None,
+            waypoint_completion_step=self._navigation.step_completed if self._navigation else None,
+            path_tracking_cost_step=self._navigation.step_path_cost if self._navigation else None,
         )
 
     # ---- Gymnasium spaces ----
@@ -486,6 +644,7 @@ class TVCDirectRLEnv(TVCEnvBase):
         return gym.spaces.Box(
             low=-float("inf"),
             high=float("inf"),
-            shape=(24,),
+            shape=((28 if self._config.config.get('env', {}).get('observe_battery', False) else 24)
+                   + (15 if self._navigation else 0),),
             dtype=np.float32,
         )

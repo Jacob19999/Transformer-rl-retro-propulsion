@@ -1,0 +1,40 @@
+{
+  "name": "Radial hinges \u00b7 fresh PID verification",
+  "controller": "pid",
+  "seed": 2026,
+  "duration_s": 60.0,
+  "hardware_profile": "planned_8s",
+  "position": [
+    2.0,
+    5.0,
+    15.0
+  ],
+  "velocity": [
+    1.0,
+    -1.0,
+    -5.0
+  ],
+  "attitude_deg": [
+    -4.0,
+    5.0,
+    -5.0
+  ],
+  "angular_rate_deg_s": [
+    1.0,
+    -1.0,
+    -1.0
+  ],
+  "initial_motor_fraction": 0.0,
+  "disturbance": [
+    "sensor_noise",
+    "wind"
+  ],
+  "battery": {
+    "enabled": true,
+    "capacity_ah": 5.0,
+    "c_rating": 45.0,
+    "initial_soc": 1.0,
+    "cell_resistance_ohm": 0.003,
+    "max_current_a": 120.0
+  }
+}

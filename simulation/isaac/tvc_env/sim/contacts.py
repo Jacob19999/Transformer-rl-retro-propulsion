@@ -107,7 +107,9 @@ class ContactStateMachine:
         self._state[dwell_met] = ContactState.LANDED
 
         # Transition: ANY non-LANDED → CRASHED on crash detection
-        not_landed = self._state != ContactState.LANDED
+        # Regression: a crash on the final dwell frame used to become LANDED
+        # first, suppressing the crash and incorrectly paying success reward.
+        not_landed = prev_state != ContactState.LANDED
         crashed_now = not_landed & is_crashed_bool
         self._state[crashed_now] = ContactState.CRASHED
 

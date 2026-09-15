@@ -1,0 +1,61 @@
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: C:\Transformer-rl-retro-propulsion\IsaacLab\apps\isaaclab.python.headless.kit
+
+[36m===================================================================================================================[0m
+[36m[1m[INFO][IsaacLab]: Logging to file: C:\Users\tngzj\AppData\Local\Temp\isaaclab\logs\isaaclab_2026-09-15_03-07-27.log[0m
+[36m===================================================================================================================[0m
+
+Evaluated 512/512 independent episodes
+{
+  "checkpoint": "C:\\Transformer-rl-retro-propulsion\\simulation\\isaac\\runs\\ppo_8s_gyro_midpoint\\ppo_landing_seed0_20260915_030057\\ppo_step_6029312.pt",
+  "trained_steps": 6029312,
+  "seed": 9417,
+  "action_mode": "stochastic",
+  "curriculum_stage": 0,
+  "episodes": 512,
+  "success_count": 323,
+  "success_fraction": 0.630859375,
+  "landed_fraction": 0.84375,
+  "crashed_fraction": 0.15625,
+  "timeout_fraction": 0.0,
+  "failure_counts": {
+    "contact_or_tilt_failure": 80,
+    "hard_landing": 10,
+    "hard_off_pad": 3,
+    "off_pad": 96,
+    "success": 323
+  },
+  "success_max_pad_distance": 0.5,
+  "success_max_touchdown_speed": 0.25,
+  "touchdown_speed_landed": {
+    "mean": 0.16953803214279037,
+    "max": 0.3164794445037842
+  },
+  "pad_distance_landed": {
+    "mean": 0.37951799044902956,
+    "max": 1.1641488075256348
+  },
+  "successful_landing_efficiency": {
+    "energy_wh": {
+      "mean": 2.842499999439015,
+      "min": 2.474360704421997,
+      "max": 3.4826912879943848
+    },
+    "propulsive_delta_v_m_s": {
+      "mean": 40.842396195827995,
+      "min": 35.69389724731445,
+      "max": 49.61993408203125
+    },
+    "duration_s": {
+      "mean": 4.166253869969044,
+      "min": 3.5666666666666664,
+      "max": 5.1
+    },
+    "low_altitude_hover_time_s": {
+      "mean": 0.042518062026877156,
+      "min": 0.0,
+      "max": 0.6333334445953369
+    }
+  },
+  "passed": false
+}

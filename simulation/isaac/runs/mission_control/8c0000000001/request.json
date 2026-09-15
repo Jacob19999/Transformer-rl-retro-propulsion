@@ -1,0 +1,1 @@
+{"name": "PPO warm 8 m landing - cold-start training incomplete", "controller": "ppo", "position": [0.0, 0.0, 8.0], "velocity": [0.0, 0.0, -0.5], "initial_motor_fraction": 0.84, "seed": 9471}

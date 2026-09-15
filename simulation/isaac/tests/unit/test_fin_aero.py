@@ -109,6 +109,16 @@ class TestTangentialForce:
 
 
 class TestVectorization:
+    def test_nested_vehicle_configuration_is_used(self):
+        model = FinAeroModel.from_config({'vehicle': {'fins': {'area': .003, 'C_N_alpha': 2.1}}}, {})
+        assert model.fin_area == .003
+        assert model.C_N_alpha == 2.1
+
+    def test_diagnostic_vector_points_opposite_jet_turn_and_along_flow(self, aero_model):
+        result = aero_model.compute_forces(torch.full((1, 4), .1), torch.ones(1))
+        assert torch.all(result.force_vector[..., 0] < 0)
+        assert torch.all(result.force_vector[..., 2] > 0)
+
     def test_batch_dimension(self, aero_model):
         """Should handle batch of 128 environments with 4 fins each."""
         num_envs = 128

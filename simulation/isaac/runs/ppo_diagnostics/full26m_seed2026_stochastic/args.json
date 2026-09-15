@@ -1,0 +1,15 @@
+{
+  "checkpoint": "runs/ppo_exploration_anneal/ppo_landing_seed0_20260911_184222/ppo_step_26034176.pt",
+  "task": "landing",
+  "env_config": "configs/env/single_env_debug.yaml",
+  "disturbance": "configs/disturbances/nominal.yaml",
+  "episodes": 6,
+  "max_episode_seconds": 30.0,
+  "seed": 2026,
+  "action_mode": "stochastic",
+  "curriculum_stage": null,
+  "trace_every": 3,
+  "headless": true,
+  "max_wall_time": 900.0,
+  "output_dir": "runs/ppo_diagnostics/full26m_seed2026_stochastic"
+}

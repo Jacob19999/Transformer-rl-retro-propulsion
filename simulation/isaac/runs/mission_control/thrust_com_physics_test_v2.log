@@ -1,0 +1,31 @@
+=== Isaac Sim Validation Test: test_16_thrust_com ===
+Bootstrapping Isaac Sim...
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: C:\Transformer-rl-retro-propulsion\IsaacLab\apps\isaaclab.python.headless.kit
+Isaac Sim ready.
+
+ERROR: tensor([[ 3.2156e-07,  2.7031e-07, -2.9872e-13],
+        [ 3.2186e-07,  5.1751e-05,  2.7995e-12],
+        [ 3.2155e-07, -5.1211e-05, -3.3165e-12],
+        [-5.1159e-05,  2.7000e-07,  5.2429e-12]], device='cuda:0')
+Traceback (most recent call last):
+  File "C:\Transformer-rl-retro-propulsion\simulation\isaac\apps\run_single_test.py", line 120, in main
+    success = run_test(args.test, physics_config=args.physics)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Transformer-rl-retro-propulsion\simulation\isaac\apps\run_single_test.py", line 87, in run_test
+    result = test_module.run()
+             ^^^^^^^^^^^^^^^^^
+  File "C:\Transformer-rl-retro-propulsion\simulation\isaac\tests\sim\test_16_thrust_com.py", line 26, in run
+    assert abs(float(rates[1,1])+expected)<.003,rates
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: tensor([[ 3.2156e-07,  2.7031e-07, -2.9872e-13],
+        [ 3.2186e-07,  5.1751e-05,  2.7995e-12],
+        [ 3.2155e-07, -5.1211e-05, -3.3165e-12],
+        [-5.1159e-05,  2.7000e-07,  5.2429e-12]], device='cuda:0')
+
+[36m===================================================================================================================[0m
+[36m[1m[INFO][IsaacLab]: Logging to file: C:\Users\tngzj\AppData\Local\Temp\isaaclab\logs\isaaclab_2026-09-14_19-24-26.log[0m
+[36m===================================================================================================================[0m
+
+Closing Isaac Sim...
+Isaac Sim fast shutdown requested.

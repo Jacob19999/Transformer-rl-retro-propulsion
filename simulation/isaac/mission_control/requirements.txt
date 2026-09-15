@@ -1,0 +1,7 @@
+# Use the project's Isaac Python environment, not a standalone Python install.
+fastapi
+uvicorn
+trimesh
+fast-simplification==0.2.0
+httpx
+psutil

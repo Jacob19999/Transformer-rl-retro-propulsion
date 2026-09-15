@@ -1,0 +1,71 @@
+{
+  "checkpoint": "C:\\Transformer-rl-retro-propulsion\\simulation\\isaac\\runs\\ppo_exploration_anneal\\ppo_landing_seed0_20260911_184222\\ppo_step_26034176.pt",
+  "trained_steps": 26034176,
+  "action_mode": "stochastic",
+  "seed": 2026,
+  "curriculum_stage": null,
+  "episodes": 6,
+  "landed_fraction": 1.0,
+  "crashed_fraction": 0.0,
+  "timeout_fraction": 0.0,
+  "on_pad_fraction": 1.0,
+  "success_fraction": 1.0,
+  "success_max_pad_distance": 0.5,
+  "success_max_touchdown_speed": 0.25,
+  "touchdown_speed_landed": {
+    "mean": 0.1129,
+    "min": 0.0903,
+    "max": 0.1329
+  },
+  "pad_distance_landed": {
+    "mean": 0.1798,
+    "min": 0.0752,
+    "max": 0.2602
+  },
+  "spawn_xy_distance": {
+    "mean": 1.4576,
+    "min": 0.8658,
+    "max": 2.1293
+  },
+  "closure_ratio_landed": {
+    "mean": 0.8573,
+    "min": 0.6995,
+    "max": 0.9525,
+    "n": 6
+  },
+  "by_spawn_distance": {
+    "d0_0.5_1.0": {
+      "n": 1,
+      "mean_pad_distance": 0.2602,
+      "max_pad_distance": 0.2602,
+      "mean_closure_ratio": 0.6995,
+      "on_pad_fraction": 1.0
+    },
+    "d0_1.0_1.5": {
+      "n": 2,
+      "mean_pad_distance": 0.204,
+      "max_pad_distance": 0.2349,
+      "mean_closure_ratio": 0.8354,
+      "on_pad_fraction": 1.0
+    },
+    "d0_1.5_2.0": {
+      "n": 2,
+      "mean_pad_distance": 0.1289,
+      "max_pad_distance": 0.1826,
+      "mean_closure_ratio": 0.9226,
+      "on_pad_fraction": 1.0
+    },
+    "d0_2.0_3.0": {
+      "n": 1,
+      "mean_pad_distance": 0.1529,
+      "max_pad_distance": 0.1529,
+      "mean_closure_ratio": 0.9282,
+      "on_pad_fraction": 1.0
+    }
+  },
+  "duration_s": {
+    "mean": 8.0023,
+    "min": 7.697,
+    "max": 8.33
+  }
+}

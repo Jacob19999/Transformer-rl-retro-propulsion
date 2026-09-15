@@ -1,0 +1,9 @@
+# Larger batch of independent copies of the same physics/task, for PPO throughput.
+env:
+  num_envs: 512
+  env_spacing: 4.0
+  dispatch_mode: per_link_force
+  gizmos_enabled: false
+  decimation: 4
+  physics_dt: 0.00833
+  replicate_physics: true

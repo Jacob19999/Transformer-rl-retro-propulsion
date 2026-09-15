@@ -28,6 +28,15 @@ from tvc_env.envs.rewards import (
     compute_horizontal_closure_reward,
     compute_vertical_speed_shaping,
     compute_delta_v_cost,
+    compute_landing_descent_tracking,
+    compute_hard_landing_penalty,
+    compute_battery_energy_cost,
+    compute_propulsive_delta_v_cost,
+    compute_excess_rotation_cost,
+    compute_mission_progress,
+    compute_waypoint_completion,
+    compute_path_tracking_cost,
+    compute_premature_landing_penalty,
 )
 
 # Registry: term name → reward function
@@ -38,6 +47,11 @@ _REGISTRY: dict[str, Callable] = {
     "horizontal_position_error": compute_horizontal_position_error_reward,
     "attitude_error": compute_attitude_error_reward,
     "angular_velocity": compute_angular_velocity_reward,
+    "excess_rotation_cost": compute_excess_rotation_cost,
+    "mission_progress": compute_mission_progress,
+    "waypoint_completion": compute_waypoint_completion,
+    "path_tracking_cost": compute_path_tracking_cost,
+    "premature_landing_penalty": compute_premature_landing_penalty,
     "control_effort": compute_control_effort_reward,
     "control_rate": compute_control_rate_reward,
 
@@ -55,6 +69,10 @@ _REGISTRY: dict[str, Callable] = {
     "horizontal_closure": compute_horizontal_closure_reward,
     "vertical_speed_shaping": compute_vertical_speed_shaping,
     "delta_v_cost": compute_delta_v_cost,
+    "landing_descent_tracking": compute_landing_descent_tracking,
+    "hard_landing_penalty": compute_hard_landing_penalty,
+    "battery_energy_cost": compute_battery_energy_cost,
+    "propulsive_delta_v_cost": compute_propulsive_delta_v_cost,
 }
 
 

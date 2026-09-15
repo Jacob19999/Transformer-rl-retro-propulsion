@@ -12,3 +12,5 @@ physics:
   num_position_iterations: 4
   num_velocity_iterations: 1
   enable_external_forces_every_iteration: true
+  contact_offset: 0.001    # same touchdown geometry as PID/single-env validation
+  rest_offset: 0.0

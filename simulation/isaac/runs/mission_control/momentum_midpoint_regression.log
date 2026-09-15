@@ -1,0 +1,18 @@
+=== Isaac Sim Validation Test: test_15_coupled_jet ===
+Bootstrapping Isaac Sim...
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: C:\Transformer-rl-retro-propulsion\IsaacLab\apps\isaaclab.python.headless.kit
+Isaac Sim ready.
+
+[36m===================================================================================================================[0m
+[36m[1m[INFO][IsaacLab]: Logging to file: C:\Users\tngzj\AppData\Local\Temp\isaaclab\logs\isaaclab_2026-09-15_03-01-14.log[0m
+[36m===================================================================================================================[0m
+
+PASS real 8S battery/jet/gyro integration and finite observations
+{"edf_dynamic_torque_body_frd_Nm": [[-0.0, -0.0, -0.5185897946357727], [-0.0, -0.0, -0.5185897946357727], [-0.0, -0.0, -0.5185897946357727], [-0.0, -0.0, -0.5185897946357727]], "edf_gyro_torque_body_frd_Nm": [[1.4317830391519237e-05, 2.0594960005837493e-05, -0.0], [1.440318828827003e-05, 2.061212762782816e-05, -0.0], [1.4410461517400108e-05, 2.0509054593276232e-05, -0.0], [1.4537239621859044e-05, 2.0560222765197977e-05, -0.0]], "body_damping_torque_body_frd_Nm": [[-3.418419654331942e-14, 2.5306366296115948e-14, 0.0], [-3.4294768224253994e-14, 2.5515727429688793e-14, 0.0], [-3.401039215880641e-14, 2.5441429087687435e-14, 0.0], [-3.4246883757679814e-14, 2.5776315421845684e-14, 0.0]], "jet_mass_flow_kg_s": [0.2884168326854706, 0.2884168326854706, 0.2884168326854706, 0.2884168326854706], "jet_swirl_power_w": [1.6472105979919434, 1.6472185850143433, 1.647217035293579, 1.6472139358520508], "vane_dissipated_power_w": [274.5697937011719, 274.5697937011719, 274.5697937011719, 274.5697937011719]}
+PASS measured moving-fin COP airflow
+PASS real touchdown at 0.122625 m/s, 0.125s dwell
+
+PASS: test_15_coupled_jet
+Closing Isaac Sim...
+Isaac Sim fast shutdown requested.

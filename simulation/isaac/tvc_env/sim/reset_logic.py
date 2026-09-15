@@ -54,6 +54,14 @@ def sample_spawn_state(
     quaternions = from_euler(euler_angles[:, 0], euler_angles[:, 1], euler_angles[:, 2])
 
     angular_vels = torch.zeros(n, 3, device=device)
+    if 'angular_velocity_range' in spawn:
+        # User requested adverse-rate recovery (Sept 15). These are body FRD
+        # rad/s, rotated into the world frame required by the PhysX writer.
+        from tvc_env.common.frames import frd_to_isaac
+        from tvc_env.common.quaternions import rotate_vector
+        low, high = torch.tensor(spawn['angular_velocity_range'],device=device,dtype=torch.float32)
+        body_rates = low + torch.rand(n,3,device=device)*(high-low)
+        angular_vels = rotate_vector(quaternions,frd_to_isaac(body_rates))
 
     return positions, quaternions, linear_vels, angular_vels
 
@@ -71,6 +79,7 @@ class ResetManager:
         env_origins: Tensor | None = None,
         com_offset_model=None,
         wind_model=None,
+        battery_model=None,
     ):
         self._body = body_interface
         self._servo = servo_model
@@ -80,6 +89,7 @@ class ResetManager:
         self._env_origins = env_origins
         self._com_offset_model = com_offset_model
         self._wind_model = wind_model
+        self._battery_model = battery_model
         self._num_envs = 0
 
         # Persistent actuator states
@@ -141,6 +151,8 @@ class ResetManager:
         self._contacts.reset(env_ids)
         if self._wind_model is not None:
             self._wind_model.reset(env_ids)
+        if self._battery_model is not None:
+            self._battery_model.reset(env_ids)
 
         # Isaac Lab requires reset() after state writers so actuator caches and
         # wrench composers cannot carry state across the episode boundary.

@@ -31,29 +31,50 @@ task:
       # difficulty it has not yet mastered. ``advance_success_fraction`` is
       # the fraction of recent terminal events that must be successful
       # landings (LANDED + on-pad + soft-enough per success criteria below).
+      # Physics review: July's eval had 100% crashes, zero successes. Start
+      # with short, slow, pre-spooled approaches to sample real soft contacts;
+      # increase height and velocity before the full cold-rotor task. These
+      # reset priors are explicit curriculum, with no guidance/action wrapper.
       stages:
-        - position_range: [[-0.5, -0.5, 16.0], [0.5, 0.5, 20.0]]
-          min_steps: 200000
-          # 8M-step run ppo_landing_seed0_20260428_172431 reached the final
-          # stage with stage_success_fraction=0.0 because max_steps forced
-          # graduation. Hold until the measured mastery threshold instead.
+        # Review v2: zero sustained stage-0 successes by 835,584 steps;
+        # bounce accounting also revealed false soft-touchdown labels. Begin
+        # with real foot-clearance approaches before the existing 0.7–1.2 m
+        # stage. Every stage still uses the same contact/speed/pad gates.
+        - position_range: [[-0.05, -0.05, 0.34], [0.05, 0.05, 0.50]]
+          velocity_range: [[-0.02, -0.02, -0.05], [0.02, 0.02, 0.0]]
+          attitude_range: [[-0.005, -0.005, -0.05], [0.005, 0.005, 0.05]]
+          initial_motor_omega_fraction: 0.934
+          min_steps: 100000
           max_steps: 0
           advance_success_fraction: 0.60
           min_terminations: 256
-        - position_range: [[-1.0, -1.0, 16.0], [1.0, 1.0, 20.0]]
+        - position_range: [[-0.1, -0.1, 0.7], [0.1, 0.1, 1.2]]
+          velocity_range: [[-0.05, -0.05, -0.1], [0.05, 0.05, 0.0]]
+          attitude_range: [[-0.01, -0.01, -0.05], [0.01, 0.01, 0.05]]
+          initial_motor_omega_fraction: 0.934
+          min_steps: 100000
+          max_steps: 0
+          advance_success_fraction: 0.60
+          min_terminations: 256
+        - position_range: [[-0.5, -0.5, 2.0], [0.5, 0.5, 4.0]]
+          velocity_range: [[-0.2, -0.2, -0.5], [0.2, 0.2, 0.0]]
+          attitude_range: [[-0.03, -0.03, -0.1], [0.03, 0.03, 0.1]]
+          initial_motor_omega_fraction: 0.934
+          min_steps: 150000
+          max_steps: 0
+          advance_success_fraction: 0.50
+          min_terminations: 256
+        - position_range: [[-1.0, -1.0, 6.0], [1.0, 1.0, 10.0]]
+          velocity_range: [[-0.4, -0.4, -1.0], [0.4, 0.4, 0.0]]
+          initial_motor_omega_fraction: 0.934
           min_steps: 200000
           max_steps: 0
-          advance_success_fraction: 0.45
-          min_terminations: 256
-        - position_range: [[-1.5, -1.5, 16.0], [1.5, 1.5, 20.0]]
-          min_steps: 250000
-          max_steps: 0
-          advance_success_fraction: 0.35
+          advance_success_fraction: 0.40
           min_terminations: 256
         - position_range: [[-2.0, -2.0, 16.0], [2.0, 2.0, 20.0]]
           min_steps: 500000
-          max_steps: 0                # 0 = no cap; final stage holds for the rest of training
-          advance_success_fraction: 1.0  # ignored at final stage
+          max_steps: 0
+          advance_success_fraction: 1.0
           min_terminations: 256
 
   contact:
@@ -61,33 +82,42 @@ task:
     min_contact_force: 1.0             # N
 
   reward:
-    # Per-step shaping (small magnitudes — these must NOT dominate the integrated
-    # episode return relative to terminal events, otherwise PPO will optimize for
-    # per-step cost minimization (e.g. zero throttle) and never sample a landing.
-    alive_bonus: 0.1                    # gentle bias against suicide-to-escape-cost; ~+90/episode if alive 30s
-    position_error: -0.05               # weak 3D pull toward pad — also acts as dense altitude-closure shaping
-    horizontal_position_error: -0.30    # stronger lateral pull (independent of altitude)
-    horizontal_closure: 0.50            # dense credit for reducing pad range before touchdown; ~+30 for 1 m/s closure over 2 s
-    attitude_error: -0.20               # gentle level-attitude pressure
-    angular_velocity: -0.10
-    control_effort: -0.02
-    control_rate: -0.01
-    # vertical_speed_shaping is now ONE-SIDED: cost = max(v_down - 0.5, 0).
-    # Slow descent / hover / climb cost zero; only fast descent is penalized.
-    # Phase-1 diagnosis: previous two-sided |v_down - 0.5| was the largest
-    # single per-step term (-78.8 of -129.6 integrated over a 75-step
-    # descent at 9 m/s) and incentivized rushing to terminate over
-    # correcting laterally. Weight unchanged at -0.30; the magnitude shift
-    # comes from the function rewrite in rewards.py.
-    vertical_speed_shaping: -0.30
-    delta_v_cost: -0.20                 # per-step thrust ratio (T/T_max)^2; small fuel penalty (delta-v proxy)
-    # Terminal events (large magnitudes — these must dominate the integrated return
-    # so the agent prefers landing-and-stopping over hovering-out-the-clock).
-    crash_penalty: -200.0               # one-time on CRASHED
-    off_pad_landing_penalty: -150.0     # one-time on LANDED outside 0.5 m; fix4/bodyerr learned soft off-pad touchdowns
-    touchdown_softness: 25.0            # one-time on LANDED, scaled by exp(-impact_speed)
-    pad_accuracy: 200.0                 # one-time on LANDED, scaled by exp(-horiz_dist) — bumped from 75 + steepened from exp(-2d) so lateral guidance has gradient at d > 1 m
-    landing_success: 250.0              # one-time only when LANDED inside success.max_pad_distance AND under success.max_touchdown_speed
+    # July failed-run diagnostic: zero landings and mean rewards ~-5 to -6.
+    # Old position cost alone at 18 m: -.05 * 18 * 900 = -810, larger
+    # than a -200 crash. A 30 s hover could be worse than early suicide.
+    # Revised example envelope (18 m, 2 m XY, .15 rad tilt, 1 rad/s,
+    # .9 rotor fraction, .1 rad fins, 1 rad/s fin rates) costs -77.67 per
+    # 900 steps; a 1 m/s descent adds -4.5. Terminals dominate this budget.
+    alive_bonus: 0.01
+    position_error: -0.003
+    horizontal_position_error: -0.01
+    horizontal_closure: 0.05
+    attitude_error: -0.10
+    angular_velocity: -0.03
+    control_effort: -0.002
+    control_rate: -0.001
+    vertical_speed_shaping: -0.01
+    # physics_review/ppo_landing_seed0_20260910_162004: stage success fell
+    # to zero by 2M steps. Add bounded descent tracking and stronger attitude
+    # feedback. The same 30 s hover example now costs -151.47 (including
+    # descent tracking), still below the -200 crash and +475 soft on-pad event.
+    landing_descent_tracking: -0.05
+    delta_v_cost: -0.01
+    crash_penalty: -200.0
+    off_pad_landing_penalty: -150.0
+    # Review v3 at 131k: reward +8.71/step but only 6.84% rolling success.
+    # Fast on-pad contacts harvested up to +225 partial terminal reward.
+    # This exceeds that payout, making every hard terminal landing negative.
+    hard_landing_penalty: -250.0
+    touchdown_softness: 25.0
+    pad_accuracy: 200.0
+    landing_success: 250.0
+
+  descent_reward:
+    touchdown_root_height: 0.3125   # m; neutral Body origin minus lowest USD collision point
+    touchdown_speed: 0.15          # m/s, below the unchanged 0.25 m/s success gate
+    max_descent_speed: 1.0         # m/s, explicit reward reference only
+    braking_acceleration: 0.8     # m/s^2, below ~1.44 m/s^2 nominal surplus lift
 
   success:
     state: LANDED

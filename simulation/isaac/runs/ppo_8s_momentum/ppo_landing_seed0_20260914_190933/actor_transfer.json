@@ -1,0 +1,10 @@
+{
+  "source": "C:\\Transformer-rl-retro-propulsion\\simulation\\isaac\\runs\\ppo_8s_radial_critic\\ppo_landing_seed0_20260914_093426\\ppo_final.pt",
+  "source_sha256": "8e82a15c54b42b8d6a82928f425ebd63d537aa2f28b33612a498cc24ae61baf8",
+  "parent_steps": 30015488,
+  "critic": "fresh",
+  "optimizer": "fresh",
+  "fin_permutation": null,
+  "observation_dim": 28,
+  "purpose": "Explicit physics transfer; results require new independent validation"
+}

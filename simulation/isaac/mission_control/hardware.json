@@ -1,0 +1,13 @@
+{
+  "updated": "2026-09-13",
+  "status": "Planned 8S configuration selected by user; fitted hardware pending confirmation",
+  "parts": [
+    {"part":"EDF", "name":"FMS 90 mm / 12 blade / 4075 KV1500", "spec":"8S, candidate SKU FMSEDF010", "basis":"Manufacturer confirms candidate identity. Installed SKU pending; 48 N thrust is the project planning estimate, not a measured curve.", "source":"https://www.fmshobby.com/products/edf-system-90mm-12-blade-8s-power-system-with-4075-kv1500-motor-pro-metal"},
+    {"part":"ESC", "name":"Hobbywing FLYFUN 120A V5", "spec":"3–8S • 120 A continuous • 150 A peak", "basis":"Planned candidate. Simulation uses a conservative 120 A ceiling, not a reproduction of ESC firmware or thermal protection.", "source":"https://www.hobbywing.com/en/uploads/file/20221015/12f49cbe05185401b0773cfe8f019dce.pdf"},
+    {"part":"Actuators", "name":"4 × TowerPro MG996R", "spec":"55 g each • 1.079 N m stall • 0.15 s/60° at 6 V", "basis":"User-selected in planning BOM; manufacturer specification. ±15° linkage travel is from current simulation. Lag, deadband angle and loaded response require measurement.", "source":"https://towerpro.com.tw/product/mg996R/"},
+    {"part":"Battery", "name":"8S LiPo — pack SKU pending", "spec":"29.6 V nominal / 33.6 V full • default 5 Ah / 45C", "basis":"Capacity and C-rating are editable scenario assumptions, consistent with FMS's 8S power-system application recommendation. Resistance, RC and thermal coefficients are estimates. Mass stays at the existing assembly mass when capacity changes.", "source":"https://www.fmshobby.com/products/fms-edf-jet-90mm-super-scorpion-v2-pnp"},
+    {"part":"Structure", "name":"Project EDF Drone v2 CAD", "spec":"Carbon tubes: 10×8, 12×10, 16×14 mm; M3.5×25 screws", "basis":"Master Parts List.xlsx contains these structural entries only. Rendered geometry is decimated directly from drone_v2_physics.usd; fin collision geometry is simplified.", "source":""},
+    {"part":"Mass / inertia", "name":"Existing Isaac assembly", "spec":"3.104 kg total; body inertia 0.05 / 0.05 / 0.02 kg m²", "basis":"Values read from current configuration/USD, not a new hardware weighing or inertia measurement. Component masses are already lumped into the assembly; no battery mass is added twice.", "source":""},
+    {"part":"Avionics", "name":"Pixhawk 6C / Mauch HS-200-HV planned", "spec":"Regulated 6 V servo supply assumed", "basis":"No hardware-in-loop connection. Gyro truth is shown separately from the controller observation. Auxiliary electrical draw is a lumped 10 W estimate; BEC/servo stall-current dynamics are not modeled.", "source":""}
+  ]
+}

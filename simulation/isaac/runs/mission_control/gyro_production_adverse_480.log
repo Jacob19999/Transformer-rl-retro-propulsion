@@ -1,0 +1,51 @@
+=== Isaac Sim Validation Test: test_18_gyro_conservation ===
+Bootstrapping Isaac Sim...
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: C:\Transformer-rl-retro-propulsion\IsaacLab\apps\isaaclab.python.headless.kit
+Loading user config located at: 'c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/user.config.json'
+[Info] [carb] Logging to file: c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/logs/Kit/Isaac-Sim/5.1/kit_20260915_150340.log
+2026-09-15T20:03:41Z [405ms] [Warning] [omni.usd_config.extension] Enable omni.materialx.libs extension to use MaterialX
+2026-09-15T20:03:41Z [1,233ms] [Warning] [carb] Acquiring non optional plugin interface which is not listed as dependency: [omni::physx::IPhysxBenchmarks v1.0] (plugin: <default plugin>), by client: omni.physics.physx.plugin. Add it to CARB_PLUGIN_IMPL_DEPS() macro of a client.
+2026-09-15T20:03:41Z [1,249ms] [Warning] [omni.isaac.dynamic_control] omni.isaac.dynamic_control is deprecated as of Isaac Sim 4.5. No action is needed from end-users.
+
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 616.92        | Graphics API: D3D12
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA GeForce RTX 5070          | Yes: 0 |     | 11943   MB | 10de      | 5b220100.. |
+|     |                                  |        |     |            | 2f04      | 0          |
+|     |                                  |        |     |            | 1         |            |
+|=============================================================================================|
+| OS: Windows 11 Pro, Version: 10.0 (25H2), Build: 26200, Kernel: 10.0.26100.9457
+| Processor: AMD Ryzen 9 9900X 12-Core Processor            
+| Cores: 12 | Logical Cores: 24
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 32360 | Free Memory: 15575
+| Total Page/Swap (MB): 52840 | Free Page/Swap: 30184
+|---------------------------------------------------------------------------------------------|
+Isaac Sim ready.
+
+[36m===================================================================================================================[0m
+[36m[1m[INFO][IsaacLab]: Logging to file: C:\Users\tngzj\AppData\Local\Temp\isaaclab\logs\isaaclab_2026-09-15_15-03-46.log[0m
+[36m===================================================================================================================[0m
+
+[33m15:03:46 [simulation_context.py] WARNING: The `enable_external_forces_every_iteration` parameter in the PhysxCfg is set to False. If you are experiencing noisy velocities, consider enabling this flag. You may need to slightly increase the number of velocity iterations (setting it to 1 or 2 rather than 0), together with this flag, to improve the accuracy of velocity updates.[0m
+{"physics_dt": 0.0020833333333333333, "duration_s": 2.0, "stress": true, "spin_rad_s": 40.0, "method": "production_coupled", "rotor_fraction": 0.9, "first_rates": [[6.057537078857422, 6.494839668273926, 6.772083906980697e-07], [6.37551212310791, 6.184505462646484, 40.004638671875], [5.721441268920898, 6.784647464752197, -39.971839904785156], [6.082594871520996, 6.472851753234863, 3.000363826751709]], "every_iteration": false, "roll_rad_s": 6.28, "pitch_rad_s": 6.28, "rotational_energy_ratio": [0.9986333847045898, 1.223800539970398, 0.3839905858039856, 1.277235507965088], "transverse_rate_squared_ratio": [0.9986332654953003, 1.2272593975067139, 0.38542625308036804, 1.2771457433700562], "world_momentum_relative_error": [0.0012491537490859628, 0.05578719452023506, 0.035570599138736725, 0.0377517007291317], "world_momentum_absolute_error_Nms": [0.0011834888719022274, 0.09461977332830429, 0.015850091353058815, 0.037783000618219376], "world_momentum_component_scaled_error": [0.0009238905040547252, 0.05400971695780754, 0.009047357365489006, 0.029402676969766617], "initial_rates": [[6.28000020980835, 6.28000020980835, -0.0], [6.28000020980835, 6.28000020980835, 40.0], [6.28000020980835, 6.28000020980835, -40.0], [6.28000020980835, 6.28000020980835, 3.0]], "final_rates": [[-8.364468574523926, 2.9672670364379883, 3.287196159362793e-05], [-7.5486674308776855, 6.310302734375, 44.24250030517578], [-3.5931198596954346, 4.182186126708984, -24.781078338623047], [5.1916303634643555, -8.589770317077637, 3.393052101135254]]}
+
+ERROR: {'physics_dt': 0.0020833333333333333, 'duration_s': 2.0, 'stress': True, 'spin_rad_s': 40.0, 'method': 'production_coupled', 'rotor_fraction': 0.9, 'first_rates': [[6.057537078857422, 6.494839668273926, 6.772083906980697e-07], [6.37551212310791, 6.184505462646484, 40.004638671875], [5.721441268920898, 6.784647464752197, -39.971839904785156], [6.082594871520996, 6.472851753234863, 3.000363826751709]], 'every_iteration': False, 'roll_rad_s': 6.28, 'pitch_rad_s': 6.28, 'rotational_energy_ratio': [0.9986333847045898, 1.223800539970398, 0.3839905858039856, 1.277235507965088], 'transverse_rate_squared_ratio': [0.9986332654953003, 1.2272593975067139, 0.38542625308036804, 1.2771457433700562], 'world_momentum_relative_error': [0.0012491537490859628, 0.05578719452023506, 0.035570599138736725, 0.0377517007291317], 'world_momentum_absolute_error_Nms': [0.0011834888719022274, 0.09461977332830429, 0.015850091353058815, 0.037783000618219376], 'world_momentum_component_scaled_error': [0.0009238905040547252, 0.05400971695780754, 0.009047357365489006, 0.029402676969766617], 'initial_rates': [[6.28000020980835, 6.28000020980835, -0.0], [6.28000020980835, 6.28000020980835, 40.0], [6.28000020980835, 6.28000020980835, -40.0], [6.28000020980835, 6.28000020980835, 3.0]], 'final_rates': [[-8.364468574523926, 2.9672670364379883, 3.287196159362793e-05], [-7.5486674308776855, 6.310302734375, 44.24250030517578], [-3.5931198596954346, 4.182186126708984, -24.781078338623047], [5.1916303634643555, -8.589770317077637, 3.393052101135254]]}
+Traceback (most recent call last):
+  File "C:\Transformer-rl-retro-propulsion\simulation\isaac\apps\run_single_test.py", line 120, in main
+    success = run_test(args.test, physics_config=args.physics)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Transformer-rl-retro-propulsion\simulation\isaac\apps\run_single_test.py", line 87, in run_test
+    result = test_module.run()
+             ^^^^^^^^^^^^^^^^^
+  File "C:\Transformer-rl-retro-propulsion\simulation\isaac\tests\sim\test_18_gyro_conservation.py", line 115, in run
+    assert torch.all((after/before-1).abs()<.03),report
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'physics_dt': 0.0020833333333333333, 'duration_s': 2.0, 'stress': True, 'spin_rad_s': 40.0, 'method': 'production_coupled', 'rotor_fraction': 0.9, 'first_rates': [[6.057537078857422, 6.494839668273926, 6.772083906980697e-07], [6.37551212310791, 6.184505462646484, 40.004638671875], [5.721441268920898, 6.784647464752197, -39.971839904785156], [6.082594871520996, 6.472851753234863, 3.000363826751709]], 'every_iteration': False, 'roll_rad_s': 6.28, 'pitch_rad_s': 6.28, 'rotational_energy_ratio': [0.9986333847045898, 1.223800539970398, 0.3839905858039856, 1.277235507965088], 'transverse_rate_squared_ratio': [0.9986332654953003, 1.2272593975067139, 0.38542625308036804, 1.2771457433700562], 'world_momentum_relative_error': [0.0012491537490859628, 0.05578719452023506, 0.035570599138736725, 0.0377517007291317], 'world_momentum_absolute_error_Nms': [0.0011834888719022274, 0.09461977332830429, 0.015850091353058815, 0.037783000618219376], 'world_momentum_component_scaled_error': [0.0009238905040547252, 0.05400971695780754, 0.009047357365489006, 0.029402676969766617], 'initial_rates': [[6.28000020980835, 6.28000020980835, -0.0], [6.28000020980835, 6.28000020980835, 40.0], [6.28000020980835, 6.28000020980835, -40.0], [6.28000020980835, 6.28000020980835, 3.0]], 'final_rates': [[-8.364468574523926, 2.9672670364379883, 3.287196159362793e-05], [-7.5486674308776855, 6.310302734375, 44.24250030517578], [-3.5931198596954346, 4.182186126708984, -24.781078338623047], [5.1916303634643555, -8.589770317077637, 3.393052101135254]]}
+Closing Isaac Sim...
+Isaac Sim fast shutdown requested.

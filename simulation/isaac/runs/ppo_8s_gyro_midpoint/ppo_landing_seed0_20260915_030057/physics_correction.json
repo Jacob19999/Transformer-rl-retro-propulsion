@@ -1,0 +1,22 @@
+{
+  "diagnosis": "Unforced Isaac gyro test grew rotational energy 10.20x in 2 seconds at 240 Hz; midpoint integration fixes numerical energy injection at unchanged rotor inertia and full gyro strength. Corrected test energy ratio 0.9967; earlier scores are not validation of this plant.",
+  "changes": {
+    "tvc_env\\dynamics\\propulsion_edf.py": {
+      "before": "2809020f10035235e888e435db1e78a823143ad08c4ba85fe7a82339e4364c86",
+      "after": "f2a45f708ed39082a549f30fcbc5a29ef15cd85475dc6a76cd5406dea523d60a"
+    },
+    "tvc_env\\dynamics\\rotor_reaction.py": {
+      "before": "1278625b580da60945317f69560e35b24d13af3b49a6e1c758df1bcd3389efc7",
+      "after": "fcff962f37fa09136eeb06955a3dccf746e3b2a6c2546159bcdabffc99a2643b"
+    },
+    "tvc_env\\envs\\base_env.py": {
+      "before": "3f14ad1be19684a18bd7bace3df4548b08938303d94b51b66acd45d874bd9faa",
+      "after": "aa6ab722a20e00fb529bdf1baec35c2951361aa7e43c728984df74554d6c6b18"
+    },
+    "tvc_env\\envs\\direct_rl_env.py": {
+      "before": "7718ec9d327d2d05ec34ab49dbf44dcd80c68a8e94bf2dba5622e2b7a0fe60ad",
+      "after": "20900a7c73d1f5572bc91ce6b7a9fe8367a1c577bd8da97a920df419e12dbccb"
+    }
+  },
+  "validation": "Previous scores do not validate corrected physics"
+}

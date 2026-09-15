@@ -1,0 +1,46 @@
+=== Isaac Sim Validation Test: test_13_physx_contact_pipeline ===
+Bootstrapping Isaac Sim...
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: C:\Transformer-rl-retro-propulsion\IsaacLab\apps\isaaclab.python.headless.kit
+Isaac Sim ready.
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.0.2, pluggy-1.6.0 -- C:\Transformer-rl-retro-propulsion\env_isaaclab\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Transformer-rl-retro-propulsion\simulation\isaac
+configfile: pyproject.toml
+plugins: anyio-4.12.1, flaky-3.8.1, hydra-core-1.3.2, mock-3.15.1
+collecting ... collected 1 item
+
+tests/sim/test_13_physx_contact_pipeline.py::test_upright_drop_uses_physx_contact_and_captures_impact_speed PASSED [100%]
+
+============================== 1 passed in 4.46s ==============================
+
+PASS: test_13_physx_contact_pipeline
+Closing Isaac Sim...
+Isaac Sim fast shutdown requested.
+Loading user config located at: 'c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/user.config.json'
+[Info] [carb] Logging to file: c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/logs/Kit/Isaac-Sim/5.1/kit_20260910_160449.log
+2026-09-10T21:04:50Z [1,122ms] [Warning] [omni.usd_config.extension] Enable omni.materialx.libs extension to use MaterialX
+2026-09-10T21:04:53Z [4,136ms] [Warning] [carb] Acquiring non optional plugin interface which is not listed as dependency: [omni::physx::IPhysxBenchmarks v1.0] (plugin: <default plugin>), by client: omni.physics.physx.plugin. Add it to CARB_PLUGIN_IMPL_DEPS() macro of a client.
+2026-09-10T21:04:53Z [4,190ms] [Warning] [omni.isaac.dynamic_control] omni.isaac.dynamic_control is deprecated as of Isaac Sim 4.5. No action is needed from end-users.
+
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 616.64        | Graphics API: D3D12
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA GeForce RTX 5070          | Yes: 0 |     | 11943   MB | 10de      | c4230100.. |
+|     |                                  |        |     |            | 2f04      | 0          |
+|     |                                  |        |     |            | 1         |            |
+|=============================================================================================|
+| OS: Windows 11 Pro, Version: 10.0 (25H2), Build: 26200, Kernel: 10.0.26100.9444
+| Processor: AMD Ryzen 9 9900X 12-Core Processor            
+| Cores: 12 | Logical Cores: 24
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 32360 | Free Memory: 15510
+| Total Page/Swap (MB): 49768 | Free Page/Swap: 25948
+|---------------------------------------------------------------------------------------------|
+2026-09-10T21:05:07Z [18,034ms] [Warning] [omni.physx.plugin] USD stage detach not called, holding a loose ptr to a stage!
+2026-09-10T21:05:07Z [18,598ms] [Warning] [carb] Recursive unloadAllPlugins() detected!

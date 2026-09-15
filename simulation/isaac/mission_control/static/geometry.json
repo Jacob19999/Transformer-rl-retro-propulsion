@@ -1,0 +1,152 @@
+{
+  "source": "assets\\usd\\drone_v2_physics.usd",
+  "source_sha256": "91bb67d634ec37fe0612453cd2998bc06eff5270b1945961adcea7512d637e9b",
+  "coordinate_frame": "USD Z up, metres; geometry local to each rigid link",
+  "links": [
+    {
+      "name": "LeftFin",
+      "source_prim": "/Drone/LeftFin/LeftFin",
+      "source_faces": 12,
+      "rendered_faces": 12,
+      "local_bounds": [
+        [
+          -0.000690179003868252,
+          -0.014293218962848186,
+          -0.05980730429291725
+        ],
+        [
+          0.000690179003868252,
+          0.014273138716816902,
+          0.018823225051164627
+        ]
+      ],
+      "neutral_position": [
+        0.0,
+        0.032999999821186066,
+        0.39622871577739716
+      ],
+      "neutral_quaternion": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "RightFin",
+      "source_prim": "/Drone/RightFin/RightFin",
+      "source_faces": 12,
+      "rendered_faces": 12,
+      "local_bounds": [
+        [
+          -0.000690179003868252,
+          -0.014293218962848186,
+          -0.05980730429291725
+        ],
+        [
+          0.000690179003868252,
+          0.014273138716816902,
+          0.018823225051164627
+        ]
+      ],
+      "neutral_position": [
+        0.0,
+        -0.032999999821186066,
+        0.39622893929481506
+      ],
+      "neutral_quaternion": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "AftFin",
+      "source_prim": "/Drone/AftFin/AftFin",
+      "source_faces": 12,
+      "rendered_faces": 12,
+      "local_bounds": [
+        [
+          -0.014273138716816902,
+          -0.0006901834858581424,
+          -0.05980730429291725
+        ],
+        [
+          0.014293218962848186,
+          0.0006901834858581424,
+          0.018823225051164627
+        ]
+      ],
+      "neutral_position": [
+        -0.032999999821186066,
+        0.0,
+        0.4012530893087387
+      ],
+      "neutral_quaternion": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "FwdFin",
+      "source_prim": "/Drone/FwdFin/FwdFin",
+      "source_faces": 12,
+      "rendered_faces": 12,
+      "local_bounds": [
+        [
+          -0.014273138716816902,
+          -0.0006901834858581424,
+          -0.05980730429291725
+        ],
+        [
+          0.014293218962848186,
+          0.0006901834858581424,
+          0.018823225051164627
+        ]
+      ],
+      "neutral_position": [
+        0.032999999821186066,
+        0.0,
+        0.4012530893087387
+      ],
+      "neutral_quaternion": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "Body",
+      "source_prim": "/Drone/Body/edf_drone/edf_drone",
+      "source_faces": 691680,
+      "rendered_faces": 60000,
+      "local_bounds": [
+        [
+          -0.15636000037193298,
+          -0.15636000037193298,
+          -0.31249451637268066
+        ],
+        [
+          0.15636000037193298,
+          0.156359001994133,
+          0.10914450883865356
+        ]
+      ],
+      "neutral_position": [
+        0.0,
+        0.0,
+        0.5033402442932129
+      ],
+      "neutral_quaternion": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  ]
+}

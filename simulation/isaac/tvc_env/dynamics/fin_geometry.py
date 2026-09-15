@@ -80,7 +80,7 @@ def load_fin_normal_directions(
 def validate_fin_force_geometry(metadata: dict[str, Any], tolerance: float = 1e-5) -> None:
     """Validate the jet-vane force basis in metadata.
 
-    The EDF flow/chord axis is +Z_frd. Each fin normal must be radial and
+    The EDF flow/chord axis is +Z_frd. Each fin normal must be tangential and
     equal to ``hinge_axis x chord_axis`` so normal force cannot leak axial
     thrust into symmetric fin commands.
     """

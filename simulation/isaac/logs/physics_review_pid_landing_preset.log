@@ -1,0 +1,62 @@
+PID hover eval starting: task=landing, duration=30.0s, headless=True, max_wall_time=120.0s
+Bootstrapping Isaac Sim...
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: C:\Transformer-rl-retro-propulsion\IsaacLab\apps\isaaclab.python.headless.kit
+Loading user config located at: 'c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/user.config.json'
+[Info] [carb] Logging to file: c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/logs/Kit/Isaac-Sim/5.1/kit_20260911_104735.log
+2026-09-11T15:47:35Z [396ms] [Warning] [omni.usd_config.extension] Enable omni.materialx.libs extension to use MaterialX
+2026-09-11T15:47:36Z [1,261ms] [Warning] [carb] Acquiring non optional plugin interface which is not listed as dependency: [omni::physx::IPhysxBenchmarks v1.0] (plugin: <default plugin>), by client: omni.physics.physx.plugin. Add it to CARB_PLUGIN_IMPL_DEPS() macro of a client.
+2026-09-11T15:47:36Z [1,277ms] [Warning] [omni.isaac.dynamic_control] omni.isaac.dynamic_control is deprecated as of Isaac Sim 4.5. No action is needed from end-users.
+
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 616.64        | Graphics API: D3D12
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA GeForce RTX 5070          | Yes: 0 |     | 11943   MB | 10de      | c4230100.. |
+|     |                                  |        |     |            | 2f04      | 0          |
+|     |                                  |        |     |            | 1         |            |
+|=============================================================================================|
+| OS: Windows 11 Pro, Version: 10.0 (25H2), Build: 26200, Kernel: 10.0.26100.9444
+| Processor: AMD Ryzen 9 9900X 12-Core Processor            
+| Cores: 12 | Logical Cores: 24
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 32360 | Free Memory: 15384
+| Total Page/Swap (MB): 49768 | Free Page/Swap: 24706
+|---------------------------------------------------------------------------------------------|
+Isaac Sim ready. Building TVC environment...
+
+[36m===================================================================================================================[0m
+[36m[1m[INFO][IsaacLab]: Logging to file: C:\Users\tngzj\AppData\Local\Temp\isaaclab\logs\isaaclab_2026-09-11_10-47-41.log[0m
+[36m===================================================================================================================[0m
+
+Environment reset complete.
+PID hover eval: task=landing, duration=30.0s (900 steps), log_state=False
+
+=== PID Landing Evaluation Results ===
+Duration: 30s budget (900 steps), wall time: 43.7s
+
+Tilt (rad):
+  mean=0.057  max=0.111  (3.3 deg mean, 6.3 deg max)
+Angular rate (rad/s):
+  mean=1.514  max=3.044
+
+Min altitude reached: 0.312 m
+Final pad horizontal distance: 0.208 m
+Crashed: False
+Touchdown: step=851 t=28.355s speed=0.178 m/s pad_dist=0.208 m
+Delta-v proxy (sum of (T/T_max)^2 * dt): 25.347 s
+
+Pass criteria:
+  landed within duration:  PASS
+  not crashed:  PASS
+  touchdown speed <= 0.25 m/s:  PASS
+  pad distance <= 0.50 m:  PASS
+  max tilt < 15 deg:  PASS
+
+PASS: PID landing evaluation
+Closing TVC environment...
+Closing Isaac Sim...
+Isaac Sim fast shutdown requested.

@@ -16,7 +16,7 @@ import sys
 import os
 from pathlib import Path
 
-from runner_safety import WallClockWatchdog
+from runner_safety import WallClockWatchdog, force_process_exit
 
 
 def parse_args():
@@ -141,7 +141,7 @@ def main():
 
 
 if __name__ == "__main__":
-    # The validation runner shuts down cleanly on current Isaac Lab.  A hard
-    # os._exit here could discard pytest's final status on Windows and report
-    # a passing physics gate as failed.
-    raise SystemExit(main())
+    # Match the eval/train runners: flush the actual result before exiting.
+    # Physics review reproduced a post-PASS hang in Kit teardown on Windows;
+    # the watchdog is already stopped by then and cannot release the process.
+    force_process_exit(main())

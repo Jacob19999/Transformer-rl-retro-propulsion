@@ -1,0 +1,8 @@
+{
+  "name": "edf-mission-control",
+  "private": true,
+  "type": "module",
+  "scripts": {"build": "esbuild web/app.js --bundle --format=esm --minify --outfile=static/app.js"},
+  "dependencies": {"three": "0.186.0"},
+  "devDependencies": {"esbuild": "0.25.12", "agent-browser": "0.37.1"}
+}

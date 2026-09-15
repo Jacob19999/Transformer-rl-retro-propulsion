@@ -30,3 +30,15 @@ def test_gusts_start_independently_and_reset_selected_envs():
     assert not model._gust_active[3]
     assert model._gust_active[0]
     assert model._gust_active[2]
+
+
+def test_disabled_wind_preserves_drag_against_vehicle_motion():
+    model = WindModel.from_disturbance_config({'disturbances': {
+        'enabled': True, 'wind': {'enabled': False, 'steady_vector': [10., 0., 0.]},
+        'gust': {'enabled': False}, 'body_drag': {'cd': 1., 'reference_area': .011},
+    }})
+    assert not model.get_effective_wind_world().any()
+    velocity = torch.tensor([[2., 0., 0.]])
+    force = model.compute_drag_force(velocity, torch.tensor([[1., 0., 0., 0.]]))
+    assert force[0, 0] < 0
+    assert force[0, 1:].abs().max() == 0

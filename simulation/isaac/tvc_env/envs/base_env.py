@@ -39,11 +39,16 @@ class BaseEnvConfig:
                 env_config = yaml.safe_load(f)
 
         physics_config = None
+        automatic_physics_defaults = physics_config_path is None
         if physics_config_path is None:
             physics_config_path = self._default_physics_config_path(sim_root, env_config, overrides)
         if physics_config_path is not None:
             with open(physics_config_path, "r", encoding="utf-8") as f:
                 physics_config = yaml.safe_load(f)
+            if automatic_physics_defaults and env_config and 'physics' in env_config:
+                # Defaults must not silently undo the experiment's explicit
+                # solver contract (e.g. coupled midpoint requires one impulse).
+                physics_config = deep_merge(physics_config, {'physics': env_config['physics']})
 
         # Load disturbance config if provided
         disturbance_config = None
@@ -73,6 +78,13 @@ class BaseEnvConfig:
         self.physics_dt: float = env.get("physics_dt", physics.get("dt", 1.0 / 120.0))
         self.decimation: int = env.get("decimation", 4)
         self.task_name: str = task_name
+        gyro_mode = self.config.get('dynamics', {}).get('gyro_integration', 'rotor_midpoint')
+        if gyro_mode not in ('rotor_midpoint', 'coupled_midpoint'):
+            raise ValueError(f'Unknown gyro integration mode: {gyro_mode}')
+        if gyro_mode == 'coupled_midpoint' and physics.get('enable_external_forces_every_iteration', True):
+            raise ValueError('coupled_midpoint requires physics.enable_external_forces_every_iteration: false')
+        if self.config.get('task',{}).get('navigation',{}).get('enabled') and not env.get('observe_battery'):
+            raise ValueError('Waypoint policy observation contract requires observe_battery: true')
 
     @staticmethod
     def _default_physics_config_path(
@@ -187,7 +199,14 @@ class TVCEnvBase:
                 self._config.config, num_envs=num_envs, device=device,
             )
         else:
-            wind_model = None
+            # Still air is not a vacuum. Vehicle-relative airflow produces
+            # translational drag even when external wind disturbances are off.
+            body_config = vehicle_config.get("body", {})
+            wind_model = WindModel(
+                cd=body_config.get("cd_body", 1.0),
+                reference_area=body_config.get("reference_area", 0.011),
+                num_envs=num_envs, device=device,
+            )
 
         if dist_cfg.get("enabled") and dist_cfg.get("com_offset", {}).get("enabled"):
             com_offset_model = COMOffsetModel.from_disturbance_config(
@@ -199,6 +218,9 @@ class TVCEnvBase:
         # Sim interfaces
         body_iface = BodyInterface(articulation, art_map)
         link_force_iface = LinkForceInterface(articulation, art_map, cops)
+        link_force_iface.get_fin_cop_positions_world(
+            body_iface.get_root_quaternion_wxyz(), body_iface.get_root_position()
+        )
         contact_sensor = scene["contact_sensor"]
         sensor_iface = SensorInterface(contact_sensor, metadata)
         wrench_dispatch = WrenchDispatch(
@@ -216,6 +238,11 @@ class TVCEnvBase:
         crash_detector = CrashDetector.from_task_config(self._config.config)
 
         # Reset manager
+        battery_model = None
+        battery_config = self._config.config.get('battery', {})
+        if battery_config.get('enabled', False):
+            from tvc_env.dynamics.battery_lipo import LiPoBattery
+            battery_model = LiPoBattery(battery_config, num_envs, device)
         env_origins = scene.scene.env_origins if hasattr(scene, "scene") else None
         reset_mgr = ResetManager(
             body_iface,
@@ -226,6 +253,7 @@ class TVCEnvBase:
             env_origins=env_origins,
             com_offset_model=com_offset_model,
             wind_model=wind_model,
+            battery_model=battery_model,
         )
         reset_mgr.initialize(num_envs, device)
 
@@ -252,6 +280,19 @@ class TVCEnvBase:
         )
         self._servo_model = servo_model
         self._edf_model = edf_model
+        # Read actual PhysX body inertia, not a damping/tuning surrogate.
+        # This asset's COM/principal axes align with its link axes. Convert
+        # the tensor from Isaac body axes to FRD (D*I*D).
+        locked_inertia=articulation.root_physx_view.get_inertias()[:,art_map.body_index].reshape(-1,3,3).to(device)
+        axes=locked_inertia.new_tensor([1.,-1.,-1.])
+        self._locked_body_inertia=locked_inertia*axes[None,:,None]*axes[None,None,:]
+        self._coupled_jet = None
+        jet_config = self._config.config.get('dynamics', {}).get('coupled_jet', {})
+        if jet_config.get('enabled', False):
+            from tvc_env.dynamics.coupled_jet import CoupledJet
+            self._coupled_jet = CoupledJet(jet_config, aero_model, self._fin_dispatch.normal_dirs)
+        self._body_geometry = vehicle_config.get('body', {})
+        self._battery_model = battery_model
         self._contact_sm = contact_sm
         self._crash_detector = crash_detector
         self._reset_manager = reset_mgr

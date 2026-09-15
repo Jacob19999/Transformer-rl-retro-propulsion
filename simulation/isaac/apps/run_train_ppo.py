@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import copy
+import hashlib
 import json
 import random
 import sys
 import time
+import zipfile
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -30,9 +33,13 @@ def parse_args():
     # so the policy effectively did not move across millions of env steps.
     # target_kl already serves as the safety governor against oversized updates.
     parser.add_argument("--learning-rate", type=float, default=3e-4)
+    parser.add_argument('--critic-learning-rate', type=float, default=None,
+                        help='Independent critic Adam learning rate; default uses --learning-rate.')
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--gae-lambda", type=float, default=0.95)
     parser.add_argument("--clip-coef", type=float, default=0.2)
+    parser.add_argument("--value-clip-range", type=float, default=None,
+                        help="Optional critic clipping in return units; default disables value clipping.")
     # Small entropy bonus keeps the throttle/fin distributions from collapsing
     # around the init bias before the policy has explored the descent basin.
     parser.add_argument("--ent-coef", type=float, default=0.005)
@@ -55,6 +62,23 @@ def parse_args():
     parser.add_argument("--eval-seconds", type=float, default=30.0)
     parser.add_argument("--save-interval", type=int, default=50_000)
     parser.add_argument("--output-dir", default="runs", help="Base output directory under simulation/isaac")
+    parser.add_argument("--resume", default=None,
+                        help="Resume a format-2 checkpoint's optimizer, curriculum and cumulative step count with fresh episodes.")
+    parser.add_argument('--initialize-actor-from', default=None,
+                        help='Explicit transfer experiment: initialize actor/distribution only; fresh critic, optimizer and step count. Allows a new physical task.')
+    parser.add_argument('--initialize-fin-permutation', type=int, nargs=4, default=None,
+                        help='Explicit actor initialization only: new fin output channels from parent indices. No runtime action transformation.')
+    parser.add_argument('--initialize-throttle-hover', action='store_true',
+                        help='With actor transfer, initialize only throttle head to a physical hover prior; train every weight normally.')
+    parser.add_argument('--physics-change-note', default=None,
+                        help='Explicit diagnosis for resuming after physics source corrections; differences are recorded. Never bypasses config/asset checks.')
+    parser.add_argument('--eval-action-mode', choices=['deterministic','stochastic','mean'], default='deterministic')
+    parser.add_argument('--reset-critic', action='store_true',
+                        help='On resume, reinitialize only critic weights/Adam state; required when changing gamma.')
+    parser.add_argument('--std-anneal-steps', type=int, default=0,
+                        help='Transitions to gradually cap exploration; 0 preserves a saved schedule or leaves it disabled.')
+    parser.add_argument('--fin-log-std-target', type=float, default=-4.)
+    parser.add_argument('--throttle-log-std-target', type=float, default=-2.5)
     parser.add_argument("--headless", action="store_true", default=True)
     parser.add_argument("--no-headless", dest="headless", action="store_false")
     parser.add_argument("--fixed-hover-spawn", action="store_true")
@@ -151,10 +175,22 @@ class LandingEvalMetrics:
     max_upward_speed: float
     max_downward_speed: float
     passed: bool
+    mean_energy_wh: float = 0.0
+    mean_propulsive_delta_v_m_s: float = 0.0
+    success_mean_energy_wh: float = float('nan')
+    success_mean_propulsive_delta_v_m_s: float = float('nan')
+    success_mean_duration_s: float = float('nan')
+    rotation: dict | None = None
 
 
 def main():
     args = parse_args()
+    if args.initialize_fin_permutation and not args.initialize_actor_from:
+        raise ValueError('Fin initialization permutation requires --initialize-actor-from')
+    if args.initialize_throttle_hover and not args.initialize_actor_from:
+        raise ValueError('Throttle initialization requires --initialize-actor-from')
+    if args.reset_critic and not args.resume:
+        raise ValueError('--reset-critic requires --resume')
     if args.body_frame_position_error is None:
         args.body_frame_position_error = args.task == "landing"
     max_wall_time = args.max_wall_time
@@ -170,6 +206,20 @@ def main():
     output_dir = sim_root / args.output_dir / run_name
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "args.json").write_text(json.dumps(vars(args), indent=2), encoding="utf-8")
+    source_manifest = {
+        str(path.relative_to(sim_root)): hashlib.sha256(path.read_bytes()).hexdigest()
+        for directory in ('apps', 'tvc_env', 'configs')
+        for path in (sim_root / directory).rglob('*')
+        if path.suffix in ('.py', '.yaml')
+    }
+    for relative in ('assets/usd/drone_v2_physics.usd', 'assets/metadata/edf_drone_v2.asset.yaml'):
+        source_manifest[relative] = hashlib.sha256((sim_root / relative).read_bytes()).hexdigest()
+    (output_dir / 'source_manifest.json').write_text(json.dumps(source_manifest, indent=2), encoding='utf-8')
+    with zipfile.ZipFile(output_dir/'source_snapshot.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
+        for relative in source_manifest:
+            if relative.startswith('assets/'):
+                continue  # Large assets identified by SHA; preserved in repository.
+            archive.write(sim_root/relative, str(Path(relative)).replace('\\','/'))
 
     def append_jsonl(name: str, record: dict) -> None:
         with (output_dir / name).open("a", encoding="utf-8") as fh:
@@ -235,6 +285,14 @@ def main():
             sim_root=sim_root,
         )
         config.validate_for_training()
+        # Record the exact task and model inputs; old weights cannot be treated
+        # as validated after changing the physics.
+        import shutil
+        (output_dir / "task_config.json").write_text(json.dumps(config.config, indent=2), encoding="utf-8")
+        for name in ("params/edf_90mm.yaml", "params/servo_mg996r.yaml", "vehicle/edf_drone_v2.yaml"):
+            shutil.copy2(sim_root / "configs" / name, output_dir / Path(name).name)
+        curriculum_task = copy.deepcopy(config.config)
+        final_spawn = copy.deepcopy(config.config['task']['spawn'])
         task_success_cfg = config.config.get("task", {}).get("success", {})
         if args.task == "landing" and args.landing_touchdown_speed_limit is None:
             configured_speed = task_success_cfg.get("max_touchdown_speed")
@@ -248,7 +306,10 @@ def main():
         env = TVCDirectRLEnv(config)
         num_envs = config.num_envs
         device = env.device
-        obs_dim = 24
+        obs_dim = env.observation_space.shape[0]
+        navigation_cfg = config.config.get('task',{}).get('navigation',{})
+        if navigation_cfg.get('enabled') and abs(float(navigation_cfg.get('shaping_gamma',.999))-args.gamma)>1e-10:
+            raise ValueError('PPO gamma must match task.navigation.shaping_gamma for potential-based shaping')
         act_dim = 5
         max_fin_angle = float(env._servo_model.max_command_angle)
 
@@ -274,19 +335,22 @@ def main():
             return staged_tracker.stage_index if staged_tracker is not None else 0
 
         def set_training_spawn(global_step_value: int):
+            from tvc_env.envs.curriculum import apply_spawn_stage
             curriculum_state = resolve_spawn_curriculum(
-                config.config, global_step_value, stage_index=_stage_index()
+                curriculum_task, global_step_value, stage_index=_stage_index()
             )
             if curriculum_state.enabled:
-                apply_spawn_position_range(config.config, curriculum_state.position_range)
+                stage = dict(_curriculum_cfg['stages'][_stage_index()]) if staged_tracker else {}
+                stage['position_range'] = curriculum_state.position_range
+                apply_spawn_stage(config.config, final_spawn, stage)
             return curriculum_state
 
         def set_eval_spawn():
+            from tvc_env.envs.curriculum import apply_spawn_stage
             curriculum_state = resolve_spawn_curriculum(
-                config.config, args.total_steps, stage_index=_stage_index()
+                curriculum_task, args.total_steps, stage_index=_stage_index()
             )
-            if curriculum_state.enabled:
-                apply_spawn_position_range(config.config, curriculum_state.final_position_range)
+            apply_spawn_stage(config.config, final_spawn, None)
             return curriculum_state
 
         def spawn_xy_half_width(position_range: list[list[float]]) -> float:
@@ -328,75 +392,25 @@ def main():
             obs_policy[:, 0:3] = isaac_position_to_frd(pos_error_body_isaac)
             return obs_policy
 
-        def atanh_clamped(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
-            x = x.clamp(-1.0 + eps, 1.0 - eps)
-            return 0.5 * (torch.log1p(x) - torch.log1p(-x))
-
         # Initial bias for the throttle channel of the actor's output.
         # Action layout: [0:4]=fins (mean=0 ⇒ centered), [4]=throttle.
         # Throttle mapping is throttle = (tanh(z) + 1) / 2, and the EDF model is
-        # T = max_thrust * throttle² (T = k_T * (throttle * ω_max)²). For the
-        # 3.1 kg / 39.2 N drone, hover throttle = sqrt(m·g / T_max) ≈ 0.88.
-        # We bias slightly below hover (~0.78 mean) so initial exploration
-        # straddles hover instead of free-falling from throttle=0.5, which is
-        # the prior cause of the policy never finding the descent basin.
-        hover_throttle_init = 0.78
+        # T = max_thrust * throttle² before vane drag. Derive the bias from
+        # net lift and all link masses, including the separately authored fins.
+        # 2026-07-12 eval_log: 100% crashes, descent >11 m/s at mean
+        # throttle ~0.79. The old prior ignored 4.3 N neutral vane drag;
+        # actual level equilibrium is ~0.934 with all USD link masses.
+        # This is an actor initialization prior, not a control wrapper.
+        hover_throttle_init = env.nominal_hover_throttle()
+        print(f"Physics-derived initial hover throttle: {hover_throttle_init:.4f}", flush=True)
         throttle_bias_init = float(
             torch.atanh(torch.tensor(2.0 * hover_throttle_init - 1.0)).item()
         )
 
-        class ActorCritic(nn.Module):
-            def __init__(self):
-                super().__init__()
-                actor_out = nn.Linear(256, act_dim)
-                nn.init.zeros_(actor_out.weight)
-                nn.init.zeros_(actor_out.bias)
-                with torch.no_grad():
-                    actor_out.bias[4] = throttle_bias_init
-                self.actor = nn.Sequential(
-                    nn.Linear(obs_dim, 256),
-                    nn.Tanh(),
-                    nn.Linear(256, 256),
-                    nn.Tanh(),
-                    actor_out,
-                )
-                self.critic = nn.Sequential(
-                    nn.Linear(obs_dim, 256),
-                    nn.Tanh(),
-                    nn.Linear(256, 256),
-                    nn.Tanh(),
-                    nn.Linear(256, 1),
-                )
-                # Per-dim exploration std: fins start quieter than throttle so
-                # the policy isn't drowning in random ±7.5° lateral noise (the
-                # symptom of a shared log_std=-1.0 init was a "land softly
-                # anywhere" plateau at ~2 m pad distance — see prior run
-                # ppo_landing_seed0_20260426_182954). Fins log_std=-2 ⇒ std≈0.14
-                # (tanh-bounded ±0.05·max_fin_angle range per step), throttle
-                # log_std=-1 ⇒ std≈0.37 keeps thrust exploration alive.
-                init_log_std = torch.full((act_dim,), -1.0)
-                init_log_std[:4] = -2.0  # fin channels quieter
-                self.log_std = nn.Parameter(init_log_std)
+        from tvc_env.controllers.ppo_model import ActorCritic as PPOActorCritic, value_loss, make_optimizer
 
-            def forward(self, obs):
-                mean = self.actor(obs)
-                value = self.critic(obs).squeeze(-1)
-                return mean, value
-
-            def get_action_and_value(self, obs, action_raw=None, deterministic=False):
-                mean, value = self(obs)
-                std = self.log_std.exp().expand_as(mean)
-                dist = Normal(mean, std)
-                if action_raw is None:
-                    pre_tanh = mean if deterministic else dist.rsample()
-                    action_raw = torch.tanh(pre_tanh)
-                else:
-                    action_raw = action_raw.clamp(-1.0 + 1e-6, 1.0 - 1e-6)
-                    pre_tanh = atanh_clamped(action_raw)
-                log_det_jacobian = torch.log(1.0 - action_raw.pow(2) + 1e-6).sum(-1)
-                logprob = dist.log_prob(pre_tanh).sum(-1) - log_det_jacobian
-                entropy = dist.entropy().sum(-1)
-                return action_raw, logprob, entropy, value
+        def ActorCritic():
+            return PPOActorCritic(obs_dim, act_dim, throttle_bias=throttle_bias_init)
 
         def raw_to_env_action(action_raw, obs_for_pid=None, pid_for_residual=None, guidance=None):
             if args.residual_pid:
@@ -424,9 +438,10 @@ def main():
             throttle = (action[:, 4:5].clamp(0.0, 1.0) * 2.0 - 1.0).clamp(-1.0, 1.0)
             return torch.cat([fins, throttle], dim=-1)
 
-        eval_pid = PIDController(num_envs=num_envs, device=device)
         is_landing = args.task == "landing"
         rl_dt = config.physics_dt * config.decimation
+        eval_pid = PIDController(num_envs=num_envs, device=device, dt=rl_dt,
+                                 throttle_hover=hover_throttle_init)
 
         def make_guidance() -> LandingGuidance:
             return LandingGuidance(
@@ -440,6 +455,7 @@ def main():
                 far_descent_rate=args.landing_far_descent_rate,
                 descent_brake_gain=args.landing_descent_brake_gain,
                 min_descent_throttle=args.landing_min_descent_throttle,
+                throttle_hover=hover_throttle_init,
                 dt=rl_dt,
             )
 
@@ -458,8 +474,12 @@ def main():
         eval_guidance = make_guidance() if guidance_enabled else None
         train_guidance = make_guidance() if guidance_enabled else None
 
-        def evaluate_landing(policy, seconds: float) -> LandingEvalMetrics:
-            set_eval_spawn()
+        def evaluate_landing(policy, seconds: float, stage_index=None) -> LandingEvalMetrics:
+            if stage_index is None:
+                set_eval_spawn()
+            else:
+                from tvc_env.envs.curriculum import apply_spawn_stage
+                apply_spawn_stage(config.config, final_spawn, _curriculum_cfg['stages'][stage_index])
             obs_dict, _ = env.reset(seed=args.seed)
             obs = obs_dict["policy"]
             eval_pid.reset()
@@ -475,34 +495,44 @@ def main():
             touchdown_pad_dist_sum = 0.0
             touchdown_pad_dist_max = float("-inf")
             delta_v_proxy = torch.zeros(num_envs, device=device)
+            energy_wh = torch.zeros(num_envs, device=device)
+            propulsive_dv = torch.zeros(num_envs, device=device)
+            durations = torch.zeros(num_envs, device=device)
+            success_mask = torch.zeros(num_envs, dtype=torch.bool, device=device)
+            from tvc_env.envs.rotation_metrics import RotationSummary
+            eval_rotation = RotationSummary(env._rotation)
+            success_rotation = RotationSummary(env._rotation)
             throttle_sum = 0.0
             throttle_count = 0
             max_eval_throttle = 0.0
             max_upward_speed = 0.0
             max_downward_speed = 0.0
+            finished = torch.zeros(num_envs, dtype=torch.bool, device=device)
             omega_max = max(float(env._omega_max), 1.0)
             with torch.no_grad():
                 for step in range(n_steps):
-                    raw_action, _, _, _ = policy.get_action_and_value(
-                        policy_observation(obs), deterministic=True
-                    )
+                    active = ~finished
+                    raw_action = policy.act(policy_observation(obs), args.eval_action_mode)
                     env_action = raw_to_env_action(raw_action, obs, eval_pid, eval_guidance)
-                    throttle = env_action[:, 4]
+                    throttle = env_action[active, 4]
                     throttle_sum += float(throttle.sum().item())
                     throttle_count += int(throttle.numel())
                     max_eval_throttle = max(max_eval_throttle, float(throttle.max().item()))
                     obs_dict, _, done, trunc, info = env.step(env_action)
                     next_obs = obs_dict["policy"]
+                    energy_wh += info['battery_energy_step_wh'] * active
+                    propulsive_dv += info['propulsive_delta_v_step'] * active
+                    durations += active * rl_dt
                     # Use the pre-reset contact state (env auto-resets terminated
                     # envs to AIRBORNE before observations are computed, so
                     # reading next_obs[:, 23] would always miss LANDED/CRASHED).
                     contact_pre = info["contact_state_pre_reset"].long()
-                    vel_frd_pre = info["linear_vel_frd_pre_reset"]
+                    vel_world_pre = info["linear_vel_world_pre_reset"]
                     pos_pre = info["position_pre_reset"]
                     impact_speed_pre = info["touchdown_speed_pre_reset"]
-                    landed_now = contact_pre == int(ContactState.LANDED)
-                    crashed_now = contact_pre == int(ContactState.CRASHED)
-                    timeout_now = trunc.bool()
+                    landed_now = active & (contact_pre == int(ContactState.LANDED))
+                    crashed_now = active & done & ~landed_now
+                    timeout_now = active & trunc.bool()
                     if landed_now.any():
                         td_speed = impact_speed_pre[landed_now]
                         pad_xy = env._target_position[:, :2]
@@ -516,16 +546,23 @@ def main():
                             touchdown_pad_dist_max, float(landed_pad_dist.max().item())
                         )
                         successful = landed_pad_dist <= args.landing_pad_distance_limit
+                        successful &= info['mission_ready_to_land_pre_reset'][landed_now]
                         if args.landing_touchdown_speed_limit is not None:
                             successful &= td_speed <= args.landing_touchdown_speed_limit
                         successful_landing_count += int(successful.sum().item())
+                        success_mask[landed_now] = successful
                     crashed_count += int(crashed_now.sum().item())
                     timeout_count += int(timeout_now.sum().item())
-                    vertical_down_speed = vel_frd_pre[:, 2]
+                    eval_complete = active & (done | trunc)
+                    if step == n_steps-1:
+                        eval_complete |= active
+                    eval_rotation.add(info['rotation_pre_reset'], eval_complete)
+                    success_rotation.add(info['rotation_pre_reset'], eval_complete & success_mask)
+                    vertical_down_speed = -vel_world_pre[active, 2]
                     max_downward_speed = max(max_downward_speed, float(vertical_down_speed.max().item()))
                     max_upward_speed = max(max_upward_speed, float((-vertical_down_speed).max().item()))
                     ratio = (info["motor_omega_pre_reset"] / omega_max).clamp(0.0, 1.0).pow(2)
-                    delta_v_proxy = delta_v_proxy + ratio * rl_dt
+                    delta_v_proxy = delta_v_proxy + ratio * rl_dt * active
                     reset_ids = (done | trunc).nonzero(as_tuple=False).squeeze(-1)
                     if len(reset_ids) > 0:
                         eval_pid.reset(reset_ids)
@@ -533,6 +570,12 @@ def main():
                             eval_guidance.reset(obs=next_obs, env_ids=reset_ids)
                     obs = next_obs
                     env.render()
+                    finished |= done | trunc
+                    if bool(finished.all()):
+                        break
+            # Evaluate one episode per environment. Fast failures must not
+            # receive extra weight through repeated automatic resets.
+            timeout_count += int((~finished).sum().item())
             episode_count = landed_count + crashed_count + timeout_count
             landed_fraction = landed_count / max(episode_count, 1)
             crashed_fraction = crashed_count / max(episode_count, 1)
@@ -562,6 +605,12 @@ def main():
                 max_upward_speed=max_upward_speed,
                 max_downward_speed=max_downward_speed,
                 passed=passed,
+                mean_energy_wh=float(energy_wh.mean()),
+                mean_propulsive_delta_v_m_s=float(propulsive_dv.mean()),
+                success_mean_energy_wh=float(energy_wh[success_mask].mean()) if success_mask.any() else float('nan'),
+                success_mean_propulsive_delta_v_m_s=float(propulsive_dv[success_mask].mean()) if success_mask.any() else float('nan'),
+                success_mean_duration_s=float(durations[success_mask].mean()) if success_mask.any() else float('nan'),
+                rotation=dict(all_episodes=eval_rotation.record(), successful_landings=success_rotation.record()),
             )
 
         def evaluate(policy, seconds: float) -> EvalMetrics:
@@ -609,8 +658,103 @@ def main():
             )
 
         model = ActorCritic().to(device)
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, eps=1e-5)
-        set_training_spawn(0)
+        if args.initialize_actor_from:
+            if args.resume or args.bc_steps:
+                raise ValueError('Actor transfer is separate from resume and behavior cloning')
+            source = Path(args.initialize_actor_from)
+            if not source.is_absolute():
+                source = sim_root / source
+            transfer = torch.load(source, map_location=device, weights_only=False)
+            for key in ('body_frame_position_error', 'residual_pid', 'landing_guidance'):
+                if transfer['args'].get(key) != getattr(args, key):
+                    raise ValueError(f'Actor transfer changes observation/action convention: {key}')
+            # 8S mission 8a0000000001: legacy 6S actor hovered near 0.53m,
+            # timed out after 30s. Learn the new task by PPO; no throttle remap
+            # or guidance wrapper. The old critic's return targets do not apply.
+            model.initialize_actor(transfer['model'], args.initialize_fin_permutation)
+            initial_duty = None
+            if args.initialize_throttle_hover:
+                initial_duty = hover_throttle_init
+                if env._battery_model is not None:
+                    battery = env._battery_model
+                    bc = battery.config
+                    requested = torch.full_like(battery.soc, bc['shaft_power_at_max_w'] *
+                        hover_throttle_init**3 / bc['motor_efficiency'] + bc['auxiliary_power_w'])
+                    voltage, _, _, _ = battery.solve_load(requested)
+                    initial_duty *= bc['reference_voltage_v'] / float(voltage.mean())
+                model.initialize_throttle_prior(initial_duty)
+                print(f'One-time throttle-head initialization: duty={initial_duty:.5f}; all actor weights remain trainable', flush=True)
+            (output_dir / 'actor_transfer.json').write_text(json.dumps(dict(
+                source=str(source), source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+                parent_steps=transfer['step'], critic='fresh', optimizer='fresh',
+                fin_permutation=args.initialize_fin_permutation, observation_dim=obs_dim,
+                initialized_throttle_duty=initial_duty,
+                purpose='Explicit physics transfer; results require new independent validation'), indent=2))
+            print(f'Initialized actor from {source}; fresh critic and optimizer for new physical task', flush=True)
+        initial_critic = copy.deepcopy(model.critic.state_dict()) if args.reset_critic else None
+        optimizer = make_optimizer(model, args.learning_rate, args.critic_learning_rate)
+        resume_state = None
+        if args.resume:
+            if args.bc_steps:
+                raise ValueError('Behavior cloning cannot be repeated when resuming PPO')
+            resume_path = Path(args.resume)
+            if not resume_path.is_absolute():
+                resume_path = sim_root / resume_path
+            resume_state = torch.load(resume_path, map_location=device, weights_only=False)
+            if resume_state.get('format_version') != 2:
+                raise ValueError('This checkpoint has no optimizer/curriculum state; start a fresh run')
+            resume_task = copy.deepcopy(resume_state['task_config'])
+            previous_num_envs = resume_task['env']['num_envs']
+            # Parallel independent copies may change batch size without changing
+            # the physical task. All remaining environment fields must match.
+            resume_task['env']['num_envs'] = curriculum_task['env']['num_envs']
+            if resume_task != curriculum_task:
+                raise ValueError('Resolved environment/task config differs from the checkpoint')
+            if previous_num_envs != num_envs:
+                print(f'Resume changes parallel environments: {previous_num_envs} -> {num_envs}; '
+                      f'rollout batch is {num_envs * args.rollout_steps} transitions', flush=True)
+            for name in ('edf_90mm.yaml', 'servo_mg996r.yaml', 'edf_drone_v2.yaml'):
+                if resume_state['physical_parameters'][name] != (output_dir / name).read_text(encoding='utf-8'):
+                    raise ValueError(f'Physical parameters changed: {name}')
+            for name in ('assets/usd/drone_v2_physics.usd', 'assets/metadata/edf_drone_v2.asset.yaml'):
+                if resume_state.get('source_manifest', {}).get(name) != source_manifest[name]:
+                    raise ValueError(f'Asset physics changed or was not tracked: {name}. Use explicit actor initialization for a new task.')
+            physical_prefixes = ('tvc_env/dynamics/', 'tvc_env/sim/')
+            changed_physics = {name: dict(before=resume_state.get('source_manifest', {}).get(name), after=digest)
+                for name, digest in source_manifest.items()
+                if (name.replace('\\','/').startswith(physical_prefixes) or
+                    name.replace('\\','/') in ('tvc_env/envs/base_env.py','tvc_env/envs/direct_rl_env.py'))
+                and resume_state.get('source_manifest', {}).get(name) != digest}
+            if changed_physics:
+                if not args.physics_change_note:
+                    raise ValueError(f'Physics code differs: {list(changed_physics)}. Initialize a new actor or provide an explicit --physics-change-note for a justified correction.')
+                (output_dir/'physics_correction.json').write_text(json.dumps(dict(
+                    diagnosis=args.physics_change_note, changes=changed_physics,
+                    validation='Previous scores do not validate corrected physics'),indent=2),encoding='utf-8')
+                print(f'Explicit physics correction on resume: {args.physics_change_note}',flush=True)
+            for key in ('gamma', 'gae_lambda', 'body_frame_position_error', 'residual_pid',
+                        'landing_guidance', 'reward_scale', 'value_clip_range'):
+                if resume_state['args'].get(key) != getattr(args, key):
+                    if key == 'gamma' and args.reset_critic:
+                        # 22M full-task evaluation: 98% timeouts. At 30 Hz,
+                        # gamma=.99 discounts a 10 s terminal by ~20x. A
+                        # longer-horizon experiment changes return targets, so
+                        # explicitly reset the critic instead of reusing its fit.
+                        print(f"Discount changed {resume_state['args'][key]} -> {args.gamma}; critic reset requested", flush=True)
+                        continue
+                    raise ValueError(f'Resume changes the learning definition: {key}')
+            model.load_state_dict(resume_state['model'])
+            optimizer = make_optimizer(model, args.learning_rate, args.critic_learning_rate,
+                                       resume_state['optimizer'])
+            if args.reset_critic:
+                model.critic.load_state_dict(initial_critic)
+                for parameter in model.critic.parameters():
+                    optimizer.state.pop(parameter, None)
+                print('Reset critic weights and Adam state; retained learned actor and its optimizer state', flush=True)
+            if staged_tracker is not None:
+                staged_tracker.load_state_dict(resume_state['curriculum'])
+            print(f"Resuming step {resume_state['step']:,}, stage {_stage_index()}, with fresh episodes", flush=True)
+        set_training_spawn(resume_state['step'] if resume_state else 0)
         obs_dict, _ = env.reset(seed=args.seed)
         obs = obs_dict["policy"]
         if train_guidance is not None:
@@ -663,27 +807,57 @@ def main():
             raise ValueError("--minibatches is too large for rollout batch")
 
         obs_buf = torch.zeros((rollout_steps, num_envs, obs_dim), device=device)
-        action_buf = torch.zeros((rollout_steps, num_envs, act_dim), device=device)
+        latent_buf = torch.zeros((rollout_steps, num_envs, act_dim), device=device)
         logprob_buf = torch.zeros((rollout_steps, num_envs), device=device)
         reward_buf = torch.zeros((rollout_steps, num_envs), device=device)
         done_buf = torch.zeros((rollout_steps, num_envs), device=device)
         value_buf = torch.zeros((rollout_steps, num_envs), device=device)
         throttle_buf = torch.zeros((rollout_steps, num_envs), device=device)
 
-        global_step = 0
-        update = 0
+        global_step = int(resume_state['step']) if resume_state else 0
+        initial_global_step = global_step
+        std_schedule = resume_state.get('std_schedule') if resume_state else None
+        if std_schedule is None and args.std_anneal_steps > 0:
+            initial_std = model.log_std.detach().clone()
+            target_std = torch.tensor([args.fin_log_std_target] * 4 + [args.throttle_log_std_target], device=device)
+            std_schedule = dict(initial_step=global_step, duration=args.std_anneal_steps,
+                                initial=initial_std.cpu().tolist(), target=torch.minimum(initial_std, target_std).cpu().tolist())
+        if std_schedule is not None:
+            print(f'Explicit exploration annealing: {std_schedule}', flush=True)
+        std_schedule_progress = None
+        update = int(resume_state['update']) if resume_state else 0
         best_eval = None
-        last_eval_bucket = -1
+        if resume_state and resume_state.get('best_eval'):
+            best_eval = (LandingEvalMetrics if is_landing else EvalMetrics)(**resume_state['best_eval'])
+        last_eval_bucket = global_step // max(args.eval_interval, 1) if resume_state and not args.reset_critic else -1
+        last_evaluation_step = -1
         last_save_bucket = -1
         start_time = time.time()
         loss_ema: float | None = None
         loss_plateau_count = 0
         loss_plateau_delta = float("inf")
         stop_for_loss_plateau = False
-        train_pid = PIDController(num_envs=num_envs, device=device)
+        train_pid = PIDController(num_envs=num_envs, device=device, dt=rl_dt,
+                                  throttle_hover=hover_throttle_init)
         train_pid.reset()
         if train_guidance is not None:
             train_guidance.reset(obs=obs)
+
+        def checkpoint_payload():
+            return dict(format_version=2, model=model.state_dict(), optimizer=optimizer.state_dict(),
+                        source_manifest=source_manifest,
+                        std_schedule=std_schedule,
+                        args=vars(args), step=global_step, update=update,
+                        task_config=curriculum_task,
+                        physical_parameters={name: (output_dir / name).read_text(encoding='utf-8')
+                                             for name in ('edf_90mm.yaml', 'servo_mg996r.yaml', 'edf_drone_v2.yaml')},
+                        curriculum=staged_tracker.state_dict() if staged_tracker else None,
+                        best_eval=asdict(best_eval) if best_eval else None)
+
+        def save_checkpoint(path):
+            temporary = path.with_suffix(path.suffix + '.tmp')
+            torch.save(checkpoint_payload(), temporary)
+            temporary.replace(path)
 
         # Pull success criterion thresholds once for the staged-tracker. Reading
         # from the task config dict directly keeps this independent of the
@@ -696,18 +870,27 @@ def main():
         )
 
         while global_step < args.total_steps:
+            # Creating STOP in this run directory requests a clean boundary:
+            # finish the current rollout, write final checkpoint/eval, close Kit.
+            if (output_dir / 'STOP').exists():
+                print('Graceful stop requested through run-directory STOP file.', flush=True)
+                break
             update += 1
             spawn_curriculum = set_training_spawn(global_step)
             stage_success_count = 0
             stage_termination_count = 0
+            rollout_landed_count = rollout_crashed_count = rollout_timeout_count = 0
+            from tvc_env.envs.rotation_metrics import RotationSummary
+            rollout_rotation = RotationSummary(env._rotation)
+            rollout_success_rotation = RotationSummary(env._rotation)
             stage_env_steps = 0
             for t in range(rollout_steps):
                 global_step += num_envs
                 obs_policy = policy_observation(obs)
                 obs_buf[t] = obs_policy
                 with torch.no_grad():
-                    action_raw, logprob, _entropy, value = model.get_action_and_value(obs_policy)
-                action_buf[t] = action_raw
+                    action_raw, logprob, _entropy, value, latent = model.get_action_and_value(obs_policy, return_latent=True)
+                latent_buf[t] = latent
                 logprob_buf[t] = logprob
                 value_buf[t] = value
 
@@ -732,23 +915,29 @@ def main():
                 # Tally terminal events for the staged-curriculum tracker.
                 # info["contact_state_pre_reset"] is set by the env before
                 # auto-reset, so LANDED/CRASHED markers survive the boundary.
-                if staged_tracker is not None and is_landing:
+                if is_landing:
                     contact_pre = info["contact_state_pre_reset"].long()
                     pos_pre = info["position_pre_reset"]
                     impact_speed_pre = info["touchdown_speed_pre_reset"]
                     landed = contact_pre == int(ContactState.LANDED)
-                    crashed = contact_pre == int(ContactState.CRASHED)
                     pad_xy = env._target_position[:, :2]
                     horiz = (pos_pre[:, :2] - pad_xy).norm(dim=-1)
                     on_pad = horiz <= _success_max_pad_distance
                     if _success_max_td_speed is not None:
                         soft = impact_speed_pre <= _success_max_td_speed
-                        success = landed & on_pad & soft
+                        success = landed & on_pad & soft & info['mission_ready_to_land_pre_reset']
                     else:
-                        success = landed & on_pad
+                        success = landed & on_pad & info['mission_ready_to_land_pre_reset']
                     stage_success_count += int(success.sum().item())
-                    stage_termination_count += int((landed | crashed).sum().item())
+                    stage_termination_count += int(done.sum().item())
+                    rollout_landed_count += int(landed.sum().item())
+                    rollout_crashed_count += int((terminated & ~landed).sum().item())
+                    rollout_timeout_count += int(truncated.sum().item())
                     stage_env_steps += num_envs
+                    rollout_rotation.add(info['rotation_pre_reset'], done)
+                    rollout_success_rotation.add(info['rotation_pre_reset'], done & success)
+                    if staged_tracker is not None:
+                        staged_tracker.record_outcomes(num_envs, success[done].tolist())
 
                 obs = next_obs
                 env.render()
@@ -758,12 +947,9 @@ def main():
             # for the current stage has been crossed (or the stage budget is
             # exhausted).
             stage_advanced = False
+            stage_success_before_advance = staged_tracker.success_fraction() if staged_tracker else None
+            completed_stage = _stage_index()
             if staged_tracker is not None:
-                staged_tracker.record_step(
-                    num_env_steps=stage_env_steps,
-                    success_count=stage_success_count,
-                    termination_count=stage_termination_count,
-                )
                 if staged_tracker.should_advance():
                     advanced_to = staged_tracker.advance()
                     spawn_curriculum = set_training_spawn(global_step)
@@ -791,12 +977,17 @@ def main():
                 returns = advantages + value_buf
 
             b_obs = obs_buf.reshape((-1, obs_dim))
-            b_actions = action_buf.reshape((-1, act_dim))
+            b_latents = latent_buf.reshape((-1, act_dim))
             b_logprobs = logprob_buf.reshape(-1)
             b_advantages = advantages.reshape(-1)
             b_returns = returns.reshape(-1)
             b_values = value_buf.reshape(-1)
             b_advantages = (b_advantages - b_advantages.mean()) / (b_advantages.std() + 1e-8)
+
+            from tvc_env.controllers.ppo_model import policy_kl
+            with torch.no_grad():
+                old_means = model.actor(b_obs)
+                old_log_std = model.log_std.detach().clone()
 
             clipfracs = []
             approx_kl = torch.tensor(0.0, device=device)
@@ -805,13 +996,27 @@ def main():
             entropy_acc = 0.0
             loss_acc = 0.0
             n_minibatches = 0
+            kl_early_stop = False
             for _epoch in range(args.update_epochs):
                 inds = torch.randperm(batch_size, device=device)
                 epoch_kls = []
                 for start in range(0, batch_size, minibatch_size):
                     mb_inds = inds[start : start + minibatch_size]
+                    # Annealing run regressed from 36.3% success at 28M to
+                    # 3.5% at 40M; epoch-averaged KL peaked at .887 vs .03.
+                    # Like SB3's pre-update minibatch guard, stop BEFORE more
+                    # gradients are applied after crossing the limit. Use
+                    # analytic Gaussian KL, valid through the tanh bijection.
+                    with torch.no_grad():
+                        current_kl = policy_kl(old_means[mb_inds], old_log_std,
+                                               model.actor(b_obs[mb_inds]), model.log_std).mean()
+                    if not torch.isfinite(current_kl):
+                        raise FloatingPointError('Non-finite PPO policy KL')
+                    if current_kl > args.target_kl:
+                        kl_early_stop = True
+                        break
                     _a, newlogprob, entropy, newvalue = model.get_action_and_value(
-                        b_obs[mb_inds], b_actions[mb_inds]
+                        b_obs[mb_inds], latent_action=b_latents[mb_inds]
                     )
                     logratio = newlogprob - b_logprobs[mb_inds]
                     ratio = logratio.exp()
@@ -823,18 +1028,23 @@ def main():
                     pg_loss1 = -b_advantages[mb_inds] * ratio
                     pg_loss2 = -b_advantages[mb_inds] * ratio.clamp(1 - args.clip_coef, 1 + args.clip_coef)
                     pg_loss = torch.max(pg_loss1, pg_loss2).mean()
-                    v_loss_unclipped = (newvalue - b_returns[mb_inds]) ** 2
-                    v_clipped = b_values[mb_inds] + (newvalue - b_values[mb_inds]).clamp(
-                        -args.clip_coef, args.clip_coef
-                    )
-                    v_loss_clipped = (v_clipped - b_returns[mb_inds]) ** 2
-                    v_loss = 0.5 * torch.max(v_loss_unclipped, v_loss_clipped).mean()
+                    # Review final run: critic loss reached 13,481 at stage
+                    # advancement. Reusing policy ratio clip=.2 in value units
+                    # creates flat gradients after tiny improvements toward
+                    # ~475-unit terminal returns. Value clipping is optional
+                    # and reward-scale dependent (SB3 PPO documentation).
+                    v_loss = value_loss(newvalue, b_returns[mb_inds],
+                                        b_values[mb_inds], args.value_clip_range)
                     entropy_loss = entropy.mean()
                     loss = pg_loss - args.ent_coef * entropy_loss + args.vf_coef * v_loss
 
                     optimizer.zero_grad(set_to_none=True)
                     loss.backward()
-                    nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+                    # Actor and critic have disjoint networks. Large critic
+                    # errors (v_loss ~2900-4300 in July's failed run) must not
+                    # shrink every actor update through a shared norm clip.
+                    nn.utils.clip_grad_norm_(list(model.actor.parameters()) + [model.log_std], args.max_grad_norm)
+                    nn.utils.clip_grad_norm_(model.critic.parameters(), args.max_grad_norm)
                     optimizer.step()
 
                     pg_loss_acc += float(pg_loss.detach().item())
@@ -842,10 +1052,9 @@ def main():
                     entropy_acc += float(entropy_loss.detach().item())
                     loss_acc += float(loss.detach().item())
                     n_minibatches += 1
-                # PPO's KL stop is an epoch-level diagnostic.  Using only the
-                # last minibatch made the stop decision depend on shuffle order.
-                approx_kl = torch.stack(epoch_kls).mean()
-                if approx_kl > args.target_kl:
+                if epoch_kls:
+                    approx_kl = torch.stack(epoch_kls).mean()
+                if kl_early_stop:
                     break
 
             denom = max(n_minibatches, 1)
@@ -855,7 +1064,7 @@ def main():
             mean_loss = loss_acc / denom
             mean_clipfrac = sum(clipfracs) / max(len(clipfracs), 1)
             wall_elapsed = time.time() - start_time
-            sps = global_step / max(wall_elapsed, 1e-6)
+            sps = (global_step - initial_global_step) / max(wall_elapsed, 1e-6)
             if loss_ema is None:
                 loss_ema = mean_loss
                 loss_plateau_delta = float("inf")
@@ -878,6 +1087,24 @@ def main():
                     args.loss_plateau_early_stop
                     and loss_plateau_count >= args.early_stop_patience
                 )
+            if std_schedule is not None:
+                from tvc_env.controllers.ppo_model import anneal_log_std
+                # 24M: ~65% sampled training success but 0/512 deterministic
+                # successes; bounded-action expectation also failed 512 trials.
+                # Gradually reduce action variance so the actor must learn a
+                # reliable mean under the real servo deadband/nonlinear EDF.
+                # No controller or force compensation is applied at inference.
+                std_schedule_progress = min(1., (global_step - std_schedule['initial_step']) / std_schedule['duration'])
+                anneal_log_std(model.log_std,
+                              torch.tensor(std_schedule['initial'], device=device),
+                              torch.tensor(std_schedule['target'], device=device), std_schedule_progress)
+
+            with torch.no_grad():
+                # Full rollout, final parameters, including variance annealing;
+                # unlike epoch averages this exposes the actual policy change.
+                final_policy_kl = policy_kl(old_means, old_log_std,
+                                           model.actor(b_obs), model.log_std).mean()
+
             log_record = {
                 "type": "train_update",
                 "update": update,
@@ -892,8 +1119,16 @@ def main():
                 "loss_plateau_count": loss_plateau_count,
                 "pg_loss": round(mean_pg, 6),
                 "v_loss": round(mean_v, 6),
+                "value_clip_range": args.value_clip_range,
+                "actor_learning_rate": optimizer.param_groups[0]['lr'],
+                "critic_learning_rate": optimizer.param_groups[1]['lr'],
+                "explained_variance": round(float((1 - (b_returns - b_values).var() /
+                                                       b_returns.var().clamp(min=1e-8)).item()), 6),
                 "entropy": round(mean_ent, 6),
                 "approx_kl": round(float(approx_kl.item()), 6),
+                "policy_kl_final": round(float(final_policy_kl.item()), 6),
+                "kl_early_stop": kl_early_stop,
+                "optimizer_minibatches": n_minibatches,
                 "clipfrac": round(mean_clipfrac, 4),
                 "reward_mean": round(float(reward_buf.mean().item()), 4),
                 "reward_std": round(float(reward_buf.std().item()), 4),
@@ -911,6 +1146,14 @@ def main():
                 "spawn_num_stages": spawn_curriculum.num_stages,
                 "stage_success_count": stage_success_count,
                 "stage_termination_count": stage_termination_count,
+                "rollout_landed_count": rollout_landed_count,
+                "rollout_crashed_count": rollout_crashed_count,
+                "rollout_timeout_count": rollout_timeout_count,
+                "rotation": dict(all_completed=rollout_rotation.record(),
+                                 successful_landings=rollout_success_rotation.record()),
+                "policy_latent_std": model.log_std.detach().exp().cpu().tolist(),
+                "std_schedule_progress": std_schedule_progress,
+                "stage_success_fraction_before_advance": stage_success_before_advance,
                 "stage_success_fraction": (
                     round(staged_tracker.success_fraction(), 4) if staged_tracker is not None else None
                 ),
@@ -922,10 +1165,20 @@ def main():
             print(json.dumps(log_record, separators=(",", ":")), flush=True)
             append_jsonl("train_log.jsonl", log_record)
 
+            if stage_advanced:
+                save_checkpoint(output_dir / f'ppo_stage_{completed_stage}_mastered.pt')
+                # Finish the previous rollout/GAE update before resetting. Do
+                # not count old-stage episodes toward the new stage's mastery.
+                obs_dict, _ = env.reset()
+                obs = obs_dict['policy']
+                train_pid.reset()
+                if train_guidance is not None:
+                    train_guidance.reset(obs=obs)
+
             save_bucket = global_step // max(args.save_interval, 1)
             if save_bucket > last_save_bucket or global_step >= args.total_steps:
                 ckpt = output_dir / f"ppo_step_{global_step}.pt"
-                torch.save({"model": model.state_dict(), "args": vars(args), "step": global_step}, ckpt)
+                save_checkpoint(ckpt)
                 last_save_bucket = save_bucket
 
             eval_bucket = global_step // max(args.eval_interval, 1)
@@ -969,21 +1222,31 @@ def main():
                     is_best = best_eval is None or metrics.mean_pos < best_eval.mean_pos
                 if is_best:
                     best_eval = metrics
-                    torch.save(
-                        {"model": model.state_dict(), "args": vars(args), "step": global_step},
-                        output_dir / "ppo_best.pt",
-                    )
+                    save_checkpoint(output_dir / "ppo_best.pt")
                 (output_dir / "eval_latest.json").write_text(
                     json.dumps(asdict(metrics), indent=2), encoding="utf-8"
                 )
                 eval_record = {
                     "type": "eval",
+                    "action_mode": args.eval_action_mode,
                     "global_step": global_step,
                     "update": update,
                     "wall_s": round(time.time() - start_time, 2),
                     **asdict(metrics),
                 }
                 append_jsonl("eval_log.jsonl", eval_record)
+                last_evaluation_step = global_step
+                if is_landing and staged_tracker is not None:
+                    stage_cfg = _curriculum_cfg['stages'][_stage_index()]
+                    same_reset = all(stage_cfg.get(key, final_spawn.get(key)) == final_spawn.get(key)
+                                     for key in ('position_range', 'velocity_range', 'attitude_range',
+                                                 'initial_motor_omega_fraction'))
+                    # The final stage can be identical to the full task. Reuse
+                    # that exact evaluation instead of replaying the same seed.
+                    stage_metrics = metrics if same_reset else evaluate_landing(model, args.eval_seconds, _stage_index())
+                    append_jsonl('curriculum_eval.jsonl', dict(global_step=global_step, stage_index=_stage_index(), action_mode=args.eval_action_mode,
+                                                              **asdict(stage_metrics)))
+                    print(f'Current-stage {args.eval_action_mode} evaluation: {asdict(stage_metrics)}', flush=True)
                 print(
                     f"step={global_step:,} reward_mean={reward_buf.mean().item():.3f} "
                     f"kl={approx_kl.item():.5f} clipfrac={sum(clipfracs)/max(len(clipfracs),1):.3f} "
@@ -1005,17 +1268,18 @@ def main():
                 break
 
         elapsed = time.time() - start_time
-        final_metrics = (
+        final_metrics = metrics if last_evaluation_step == global_step else (
             evaluate_landing(model, args.eval_seconds)
             if is_landing
             else evaluate(model, args.eval_seconds)
         )
-        torch.save({"model": model.state_dict(), "args": vars(args), "step": global_step}, output_dir / "ppo_final.pt")
+        save_checkpoint(output_dir / "ppo_final.pt")
         (output_dir / "eval_final.json").write_text(json.dumps(asdict(final_metrics), indent=2), encoding="utf-8")
         append_jsonl(
             "eval_log.jsonl",
             {
                 "type": "final_eval",
+                "action_mode": args.eval_action_mode,
                 "global_step": global_step,
                 "update": update,
                 "wall_s": round(time.time() - start_time, 2),

@@ -1,0 +1,231 @@
+# 2026-09-15 force-frame correction; see docs/momentum_landing_2026-09-14.md.
+# Installed Isaac Lab 2.3.2 composer position kernel used a world lever arm
+# with local force and overwrote supplied torque. Explicit world COM moments
+# now pass real heading-covariance and +/-10mm thrust/COM impulse tests.
+# Previous 100.139M run reached warm stage-2 mastery at 84.410M, then full cold
+# task stayed at 0% success. Preserve that earlier actor as initialization;
+# fresh critic/optimizer and additional rotor-state curriculum. No action
+# controller, thrust floor, or prescribed descent speed; same energy/rewards.
+# Full task remains 16-20m, +/-2m XY, cold rotor, strict soft/on-pad contact.
+# Old one-time throttle-head initialization ablation failed (0% stage-0 soft
+# success at 10.224M); do not use that initializer for this experiment.
+env:
+  num_envs: 2048
+  env_spacing: 4.0
+  dispatch_mode: per_link_force
+  gizmos_enabled: false
+  decimation: 8
+  physics_dt: 0.004166666666666667
+  replicate_physics: true
+  observe_battery: true
+edf:
+  max_thrust: 48.0
+  omega_max: 4649.56
+  exhaust_speed_nominal: 128.0
+  k_T: null
+servo:
+  transit_time_60deg: 0.15
+  max_angular_velocity: 6.981317
+  stall_torque: 1.0787315
+battery:
+  enabled: true
+  cells: 8
+  capacity_ah: 5.0
+  c_rating: 45.0
+  initial_soc: 1.0
+  cell_resistance_ohm: 0.003
+  polarization_resistance_ohm: 0.006
+  polarization_time_s: 15.0
+  max_current_a: 120.0
+  cutoff_cell_v: 3.0
+  reference_voltage_v: 29.6
+  motor_efficiency: 0.88
+  shaft_power_at_max_w: 3072.0
+  auxiliary_power_w: 10.0
+  ambient_c: 25.0
+  thermal_capacity_j_k: 800.0
+  cooling_w_k: 2.0
+  soc_knots:
+  - 0.0
+  - 0.05
+  - 0.1
+  - 0.2
+  - 0.5
+  - 0.8
+  - 0.9
+  - 1.0
+  cell_ocv_knots:
+  - 3.3
+  - 3.5
+  - 3.6
+  - 3.7
+  - 3.8
+  - 3.97
+  - 4.08
+  - 4.2
+task:
+  contact:
+    dwell_frames: 30
+  reward:
+    alive_bonus: -0.005
+    delta_v_cost: 0.0
+    battery_energy_cost: -2.0
+    propulsive_delta_v_cost: -0.1
+    position_error: -0.002
+    horizontal_position_error: -0.02
+    horizontal_closure: 0.0
+    attitude_error: -0.05
+    angular_velocity: -0.01
+    control_effort: 0.0
+    control_rate: -0.0005
+    vertical_speed_shaping: 0.0
+    landing_descent_tracking: 0.0
+  spawn:
+    curriculum:
+      enabled: true
+      mode: staged
+      success_window_size: 1024
+      stages:
+      - position_range:
+        - - -1.0
+          - -1.0
+          - 6.0
+        - - 1.0
+          - 1.0
+          - 10.0
+        velocity_range:
+        - - -0.4
+          - -0.4
+          - -1.0
+        - - 0.4
+          - 0.4
+          - 0.0
+        attitude_range:
+        - - -0.05
+          - -0.05
+          - -0.15
+        - - 0.05
+          - 0.05
+          - 0.15
+        initial_motor_omega_fraction: 0.84
+        min_steps: 500000
+        max_steps: 0
+        advance_success_fraction: 0.7
+        min_terminations: 512
+      - position_range:
+        - - -2.0
+          - -2.0
+          - 16.0
+        - - 2.0
+          - 2.0
+          - 20.0
+        velocity_range:
+        - - -1.0
+          - -1.0
+          - -2.0
+        - - 1.0
+          - 1.0
+          - 0.0
+        attitude_range:
+        - - -0.1
+          - -0.1
+          - -0.2
+        - - 0.1
+          - 0.1
+          - 0.2
+        initial_motor_omega_fraction: 0.84
+        min_steps: 1000000
+        max_steps: 0
+        advance_success_fraction: 0.7
+        min_terminations: 512
+      - position_range:
+        - - -2.0
+          - -2.0
+          - 16.0
+        - - 2.0
+          - 2.0
+          - 20.0
+        velocity_range:
+        - - -1.0
+          - -1.0
+          - -2.0
+        - - 1.0
+          - 1.0
+          - 0.0
+        attitude_range:
+        - - -0.1
+          - -0.1
+          - -0.2
+        - - 0.1
+          - 0.1
+          - 0.2
+        initial_motor_omega_fraction: 0.55
+        min_steps: 1000000
+        max_steps: 0
+        advance_success_fraction: 0.7
+        min_terminations: 512
+      - position_range:
+        - - -2.0
+          - -2.0
+          - 16.0
+        - - 2.0
+          - 2.0
+          - 20.0
+        velocity_range:
+        - - -1.0
+          - -1.0
+          - -2.0
+        - - 1.0
+          - 1.0
+          - 0.0
+        attitude_range:
+        - - -0.1
+          - -0.1
+          - -0.2
+        - - 0.1
+          - 0.1
+          - 0.2
+        initial_motor_omega_fraction: 0.25
+        min_steps: 1000000
+        max_steps: 0
+        advance_success_fraction: 0.7
+        min_terminations: 512
+      - position_range:
+        - - -2.0
+          - -2.0
+          - 16.0
+        - - 2.0
+          - 2.0
+          - 20.0
+        velocity_range:
+        - - -1.0
+          - -1.0
+          - -2.0
+        - - 1.0
+          - 1.0
+          - 0.0
+        attitude_range:
+        - - -0.1
+          - -0.1
+          - -0.2
+        - - 0.1
+          - 0.1
+          - 0.2
+        initial_motor_omega_fraction: 0.0
+        min_steps: 1000000
+        max_steps: 0
+        advance_success_fraction: 1.0
+        min_terminations: 512
+physics:
+  enable_gyroscopic_forces: true
+  max_angular_velocity_deg_s: 3600.0
+dynamics:
+  body_angular_damping: 0.0
+  coupled_jet:
+    enabled: true
+    residual_swirl_fraction: 0.1
+    shaft_power_at_max_w: 3072.0
+    exit_position_frd:
+    - 0
+    - 0
+    - 0.05

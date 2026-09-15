@@ -13,8 +13,8 @@ Where:
 
 All computations are vectorized for (num_envs, 4) fin arrays.
 The scalar normal force is later oriented by fin_force_dispatch.py using
-metadata directions. Tangential drag is exposed as thrust-loss; it is not
-applied as a separate COP force to avoid double-counting axial thrust loss.
+metadata directions. Tangential drag is applied at each moving COP, while
+the EDF receives its raw thrust, so the axial loss is counted exactly once.
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ class FinAeroModel:
     @classmethod
     def from_config(cls, vehicle_config: dict, edf_config: dict) -> "FinAeroModel":
         """Create FinAeroModel from vehicle and EDF YAML config dicts."""
-        fins = vehicle_config.get("fins", {})
+        fins = vehicle_config.get("vehicle", vehicle_config).get("fins", {})
         edf = edf_config.get("edf", edf_config)
         return cls(
             fin_area=fins.get("area", 0.002),
@@ -99,7 +99,7 @@ class FinAeroModel:
 
         # Tangential force (drag): C_D = C_D_0 + C_D_α² * α²
         C_D = self.C_D_0 + self.C_D_alpha2 * alpha_sq
-        F_t = q * C_D  # (num_envs, 4), always positive (opposing flow)
+        F_t = q * C_D  # (num_envs, 4), positive force on the vane along the jet
 
         # Thrust loss from fin blockage / drag. Dispatch clamps the total
         # loss against available EDF thrust before applying it.
@@ -108,8 +108,9 @@ class FinAeroModel:
         # Compatibility diagnostic only. The dispatch path uses the scalar
         # normal/tangential fields with metadata-derived body-frame bases.
         force_vector = torch.zeros(*fin_angles.shape, 3, device=fin_angles.device, dtype=fin_angles.dtype)
-        force_vector[..., 0] = F_n
-        force_vector[..., 2] = -F_t
+        # Diagnostic basis: +X = hinge x flow, +Z = downstream flow.
+        force_vector[..., 0] = -F_n
+        force_vector[..., 2] = F_t
 
         return FinForceResult(
             force_vector=force_vector,

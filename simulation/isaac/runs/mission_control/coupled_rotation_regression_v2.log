@@ -1,0 +1,43 @@
+=== Isaac Sim Validation Test: test_15_coupled_jet ===
+Bootstrapping Isaac Sim...
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: C:\Transformer-rl-retro-propulsion\IsaacLab\apps\isaaclab.python.headless.kit
+Loading user config located at: 'c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/user.config.json'
+[Info] [carb] Logging to file: c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/logs/Kit/Isaac-Sim/5.1/kit_20260915_145442.log
+2026-09-15T19:54:42Z [379ms] [Warning] [omni.usd_config.extension] Enable omni.materialx.libs extension to use MaterialX
+2026-09-15T19:54:43Z [1,304ms] [Warning] [carb] Acquiring non optional plugin interface which is not listed as dependency: [omni::physx::IPhysxBenchmarks v1.0] (plugin: <default plugin>), by client: omni.physics.physx.plugin. Add it to CARB_PLUGIN_IMPL_DEPS() macro of a client.
+2026-09-15T19:54:43Z [1,321ms] [Warning] [omni.isaac.dynamic_control] omni.isaac.dynamic_control is deprecated as of Isaac Sim 4.5. No action is needed from end-users.
+
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 616.92        | Graphics API: D3D12
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA GeForce RTX 5070          | Yes: 0 |     | 11943   MB | 10de      | 5b220100.. |
+|     |                                  |        |     |            | 2f04      | 0          |
+|     |                                  |        |     |            | 1         |            |
+|=============================================================================================|
+| OS: Windows 11 Pro, Version: 10.0 (25H2), Build: 26200, Kernel: 10.0.26100.9457
+| Processor: AMD Ryzen 9 9900X 12-Core Processor            
+| Cores: 12 | Logical Cores: 24
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 32360 | Free Memory: 16294
+| Total Page/Swap (MB): 52840 | Free Page/Swap: 30630
+|---------------------------------------------------------------------------------------------|
+Isaac Sim ready.
+
+[36m===================================================================================================================[0m
+[36m[1m[INFO][IsaacLab]: Logging to file: C:\Users\tngzj\AppData\Local\Temp\isaaclab\logs\isaaclab_2026-09-15_14-54-49.log[0m
+[36m===================================================================================================================[0m
+
+[33m14:54:49 [simulation_context.py] WARNING: The `enable_external_forces_every_iteration` parameter in the PhysxCfg is set to False. If you are experiencing noisy velocities, consider enabling this flag. You may need to slightly increase the number of velocity iterations (setting it to 1 or 2 rather than 0), together with this flag, to improve the accuracy of velocity updates.[0m
+PASS real 8S battery/jet/gyro integration and finite observations
+{"edf_dynamic_torque_body_frd_Nm": [[-0.0, -0.0, -0.5173827409744263], [-0.0, -0.0, -0.5173827409744263], [-0.0, -0.0, -0.5173827409744263], [-0.0, -0.0, -0.5173827409744263]], "edf_gyro_torque_body_frd_Nm": [[1.5179277397692204e-05, 1.7538151951157488e-05, -0.0], [1.513208553660661e-05, 1.7503216440672986e-05, -0.0], [1.5095533854037058e-05, 1.7605547327548265e-05, -0.0], [1.5186476957751438e-05, 1.7507654774817638e-05, -0.0]], "body_damping_torque_body_frd_Nm": [[-2.6541985772318526e-14, 2.4639924161348054e-14, 0.0], [-2.6438258117597764e-14, 2.4515788094796147e-14, 0.0], [-2.664004508255626e-14, 2.4510575454038744e-14, 0.0], [-2.648784681446182e-14, 2.4648079394564218e-14, 0.0]], "jet_mass_flow_kg_s": [0.28825098276138306, 0.28825098276138306, 0.28825098276138306, 0.28825098276138306], "jet_swirl_power_w": [1.6443750858306885, 1.6443727016448975, 1.6443697214126587, 1.6443713903427124], "vane_dissipated_power_w": [274.09893798828125, 274.09893798828125, 274.09893798828125, 274.09893798828125]}
+PASS measured moving-fin COP airflow
+PASS real touchdown at 0.143062 m/s, 0.125s dwell
+
+PASS: test_15_coupled_jet
+Closing Isaac Sim...
+Isaac Sim fast shutdown requested.

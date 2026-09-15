@@ -1,0 +1,291 @@
+{
+  "task": {
+    "name": "landing",
+    "target_position": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "episode_length_s": 30.0,
+    "spawn": {
+      "position_range": [
+        [
+          -2.0,
+          -2.0,
+          16.0
+        ],
+        [
+          2.0,
+          2.0,
+          20.0
+        ]
+      ],
+      "velocity_range": [
+        [
+          -1.0,
+          -1.0,
+          -2.0
+        ],
+        [
+          1.0,
+          1.0,
+          0.0
+        ]
+      ],
+      "attitude_range": [
+        [
+          -0.1,
+          -0.1,
+          -0.2
+        ],
+        [
+          0.1,
+          0.1,
+          0.2
+        ]
+      ],
+      "curriculum": {
+        "enabled": true,
+        "mode": "staged",
+        "success_window_size": 1024,
+        "stages": [
+          {
+            "position_range": [
+              [
+                -0.1,
+                -0.1,
+                0.7
+              ],
+              [
+                0.1,
+                0.1,
+                1.2
+              ]
+            ],
+            "velocity_range": [
+              [
+                -0.05,
+                -0.05,
+                -0.1
+              ],
+              [
+                0.05,
+                0.05,
+                0.0
+              ]
+            ],
+            "attitude_range": [
+              [
+                -0.01,
+                -0.01,
+                -0.05
+              ],
+              [
+                0.01,
+                0.01,
+                0.05
+              ]
+            ],
+            "initial_motor_omega_fraction": 0.934,
+            "min_steps": 100000,
+            "max_steps": 0,
+            "advance_success_fraction": 0.6,
+            "min_terminations": 256
+          },
+          {
+            "position_range": [
+              [
+                -0.5,
+                -0.5,
+                2.0
+              ],
+              [
+                0.5,
+                0.5,
+                4.0
+              ]
+            ],
+            "velocity_range": [
+              [
+                -0.2,
+                -0.2,
+                -0.5
+              ],
+              [
+                0.2,
+                0.2,
+                0.0
+              ]
+            ],
+            "attitude_range": [
+              [
+                -0.03,
+                -0.03,
+                -0.1
+              ],
+              [
+                0.03,
+                0.03,
+                0.1
+              ]
+            ],
+            "initial_motor_omega_fraction": 0.934,
+            "min_steps": 150000,
+            "max_steps": 0,
+            "advance_success_fraction": 0.5,
+            "min_terminations": 256
+          },
+          {
+            "position_range": [
+              [
+                -1.0,
+                -1.0,
+                6.0
+              ],
+              [
+                1.0,
+                1.0,
+                10.0
+              ]
+            ],
+            "velocity_range": [
+              [
+                -0.4,
+                -0.4,
+                -1.0
+              ],
+              [
+                0.4,
+                0.4,
+                0.0
+              ]
+            ],
+            "initial_motor_omega_fraction": 0.934,
+            "min_steps": 200000,
+            "max_steps": 0,
+            "advance_success_fraction": 0.4,
+            "min_terminations": 256
+          },
+          {
+            "position_range": [
+              [
+                -2.0,
+                -2.0,
+                16.0
+              ],
+              [
+                2.0,
+                2.0,
+                20.0
+              ]
+            ],
+            "min_steps": 500000,
+            "max_steps": 0,
+            "advance_success_fraction": 1.0,
+            "min_terminations": 256
+          }
+        ]
+      }
+    },
+    "contact": {
+      "dwell_frames": 15,
+      "min_contact_force": 1.0
+    },
+    "reward": {
+      "alive_bonus": 0.01,
+      "position_error": -0.003,
+      "horizontal_position_error": -0.01,
+      "horizontal_closure": 0.05,
+      "attitude_error": -0.1,
+      "angular_velocity": -0.03,
+      "control_effort": -0.002,
+      "control_rate": -0.001,
+      "vertical_speed_shaping": -0.01,
+      "landing_descent_tracking": -0.05,
+      "delta_v_cost": -0.01,
+      "crash_penalty": -200.0,
+      "off_pad_landing_penalty": -150.0,
+      "touchdown_softness": 25.0,
+      "pad_accuracy": 200.0,
+      "landing_success": 250.0
+    },
+    "descent_reward": {
+      "touchdown_root_height": 0.3125,
+      "touchdown_speed": 0.15,
+      "max_descent_speed": 1.0,
+      "braking_acceleration": 0.8
+    },
+    "success": {
+      "state": "LANDED",
+      "max_pad_distance": 0.5,
+      "max_touchdown_speed": 0.25
+    },
+    "termination": {
+      "max_tilt": 1.57,
+      "max_altitude_error": 30.0,
+      "max_impact_speed": 3.0,
+      "max_tilt_at_contact": 0.5,
+      "max_angular_rate_at_contact": 3.0,
+      "crash": true
+    }
+  },
+  "env": {
+    "num_envs": 128,
+    "env_spacing": 4.0,
+    "dispatch_mode": "per_link_force",
+    "gizmos_enabled": false,
+    "decimation": 4,
+    "physics_dt": 0.00833,
+    "replicate_physics": true
+  },
+  "physics": {
+    "dt": 0.00833,
+    "gravity": [
+      0.0,
+      0.0,
+      -9.81
+    ],
+    "enable_scene_query_support": false,
+    "device": "cuda:0",
+    "gpu_temp_buffer_capacity": 16777216,
+    "gpu_max_rigid_contact_count": 524288,
+    "gpu_max_rigid_patch_count": 81920,
+    "gpu_found_lost_pairs_capacity": 8192,
+    "solver_type": 1,
+    "num_position_iterations": 4,
+    "num_velocity_iterations": 1,
+    "enable_external_forces_every_iteration": true,
+    "contact_offset": 0.001,
+    "rest_offset": 0.0
+  },
+  "disturbances": {
+    "enabled": false,
+    "wind": {
+      "enabled": false,
+      "steady_vector": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "gust": {
+      "enabled": false,
+      "magnitude": 0.0,
+      "duration": 0.0,
+      "interval": [
+        5.0,
+        15.0
+      ]
+    },
+    "body_drag": {
+      "cd": 1.0,
+      "reference_area": 0.02
+    },
+    "com_offset": {
+      "enabled": false
+    },
+    "sensor_noise": {
+      "enabled": false
+    }
+  }
+}

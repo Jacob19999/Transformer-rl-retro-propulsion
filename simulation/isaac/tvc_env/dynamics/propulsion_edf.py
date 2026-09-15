@@ -145,6 +145,7 @@ class EDFModel:
         body_angular_vel: Tensor,   # (num_envs, 3) body angular velocity in body-FRD frame
         dt: float,
         spin_axis: Tensor | None = None,  # (3,) rotor spin axis in body-FRD, default [0,0,1]
+        body_inertia: Tensor | None = None,  # (N,3,3), enables stable midpoint gyro integration
     ) -> EDFOutput:
         """Compute full EDF output including all torque components.
 
@@ -183,6 +184,10 @@ class EDFModel:
         # apply this reaction as an external body torque.
         H_rotor = spin_axis.unsqueeze(0) * (self.rotor_inertia * omega).unsqueeze(-1)  # (num_envs, 3)
         gyro_precession = -self.gyro_torque_scale * torch.linalg.cross(body_angular_vel, H_rotor)  # (num_envs, 3)
+        if body_inertia is not None:
+            from tvc_env.dynamics.rotor_reaction import compute_midpoint_gyroscopic_torque
+            gyro_precession = compute_midpoint_gyroscopic_torque(omega, body_angular_vel,
+                self.gyro_torque_scale*self.rotor_inertia, spin_axis, body_inertia, dt)
 
         return EDFOutput(
             thrust_force=thrust_magnitude,

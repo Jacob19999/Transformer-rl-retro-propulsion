@@ -26,12 +26,14 @@ asset:
     - "joint_LeftFin"
 
   # Hinge axes for each fin joint in body-FRD frame (unit vectors)
-  # Positive deflection rotates fin tip toward the hinge axis using right-hand rule
+  # Positive deflection follows the right-hand rule about the hinge axis.
   hinge_axes:
-    - [0.0, 1.0, 0.0]   # FwdFin: hinge along +Y (pitches body nose up on positive deflection)
-    - [-1.0, 0.0, 0.0]  # RightFin: hinge along -X (rolls body right on positive deflection)
-    - [0.0, -1.0, 0.0]  # AftFin: hinge along -Y
-    - [1.0, 0.0, 0.0]   # LeftFin: hinge along +X
+    # 2026-09-14: builder confirms hinges run along radial vane spans.
+    # Previous tangential joints rotated the thin CAD plates in their planes.
+    - [1.0, 0.0, 0.0]   # FwdFin: outward +X, positive angle -> -roll, +yaw
+    - [0.0, 1.0, 0.0]   # RightFin: outward +Y, positive angle -> -pitch, +yaw
+    - [-1.0, 0.0, 0.0]  # AftFin: outward -X, positive angle -> +roll, +yaw
+    - [0.0, -1.0, 0.0]  # LeftFin: outward -Y, positive angle -> +pitch, +yaw
 
   # Joint limits [min_rad, max_rad] — must match USD PhysicsRevoluteJoint limits
   joint_limits:
@@ -40,8 +42,9 @@ asset:
     - [-0.262, 0.262]   # AftFin, 15°
     - [-0.262, 0.262]   # LeftFin, 15°
 
-  # Center-of-pressure (COP) positions for each fin in body-FRD frame (m)
-  # These are used for set_external_force_and_torque(positions=...) in Isaac Sim
+  # Neutral center-of-pressure positions in body-FRD (m), relative to Body's
+  # link origin. Runtime caches these in each fin's local frame at startup,
+  # then follows the measured fin-link pose when applying external forces.
   fin_cop_positions:
     - [0.04, 0.0, 0.10]    # FwdFin COP: forward-offset, at EDF exit plane z
     - [0.0, 0.04, 0.10]    # RightFin COP
@@ -57,12 +60,12 @@ asset:
     - [0.0, 0.0, 1.0]   # LeftFin chord
 
   # Normal directions in body-FRD frame at zero deflection.
-  # normal = hinge_axis x chord, giving radial vane side-force directions.
+  # normal = hinge_axis x chord; force ON the vane is -F_n * normal.
   fin_normal_directions:
-    - [1.0, 0.0, 0.0]   # FwdFin: +X radial
-    - [0.0, 1.0, 0.0]   # RightFin: +Y radial
-    - [-1.0, 0.0, 0.0]  # AftFin: -X radial
-    - [0.0, -1.0, 0.0]  # LeftFin: -Y radial
+    - [0.0, -1.0, 0.0]  # FwdFin: tangential -Y
+    - [1.0, 0.0, 0.0]   # RightFin: tangential +X
+    - [0.0, 1.0, 0.0]   # AftFin: tangential +Y
+    - [-1.0, 0.0, 0.0]  # LeftFin: tangential -X
 
   # EDF thrust axis in body-FRD frame (exhaust exits downward = +z in FRD)
   edf_thrust_axis: [0.0, 0.0, 1.0]

@@ -1,0 +1,449 @@
+# Sept 15: user requested adverse-condition/inverted recovery and spline
+# waypoint missions with timed hover (default 2s) and fly-through points.
+# New task contract: 43 observations (28 battery-aware landing + 15 mission).
+# Actor prefix transfer only; new critic/optimizer/curriculum, direct PPO actions.
+# Phase progression is mission state, not a controller. Real contact is required.
+# Landing early cannot collect landing rewards or count as mission success.
+# Inverted airborne states are allowed; contact tilt/speed/rate gates unchanged.
+# 480Hz combined gyro/body midpoint, TGS external force once; 30Hz policy.
+# Test18: native explicit body p^2+q^2 grew 114x at 40rad/s; corrected <1.01x.
+# Potential shaping is gamma*Phi(next)-Phi(previous), Phi=-remaining route
+# length, zero only at absorbing terminations. Gamma must equal PPO gamma.
+# Reward budget: at most 120 rotation + 120 path + ~233 electrical + 186
+# propulsive impulse + 57 attitude + 13 servo + 8 time costs over 120s
+# in the stated 3500W/15.5m/s2 envelope, versus -1000 crash / +2200 landing.
+# Hard contact penalty exceeds the +1200 partial landing rewards.
+# Full eval uses the uncurricularized 25-100m, +/-100m XY, inverted-inclusive
+# attitude box, +/-360deg/s roll/pitch and +/-720deg/s yaw initial rates.
+# These extreme starts are research coverage, not a claim all are recoverable.
+env:
+  num_envs: 2048
+  env_spacing: 4.0
+  dispatch_mode: per_link_force
+  gizmos_enabled: false
+  decimation: 16
+  physics_dt: 0.0020833333333333333
+  replicate_physics: true
+  observe_battery: true
+edf:
+  max_thrust: 48.0
+  omega_max: 4649.56
+  exhaust_speed_nominal: 128.0
+  k_T: null
+servo:
+  transit_time_60deg: 0.15
+  max_angular_velocity: 6.981317
+  stall_torque: 1.0787315
+battery:
+  enabled: true
+  cells: 8
+  capacity_ah: 5.0
+  c_rating: 45.0
+  initial_soc: 1.0
+  cell_resistance_ohm: 0.003
+  polarization_resistance_ohm: 0.006
+  polarization_time_s: 15.0
+  max_current_a: 120.0
+  cutoff_cell_v: 3.0
+  reference_voltage_v: 29.6
+  motor_efficiency: 0.88
+  shaft_power_at_max_w: 3072.0
+  auxiliary_power_w: 10.0
+  ambient_c: 25.0
+  thermal_capacity_j_k: 800.0
+  cooling_w_k: 2.0
+  soc_knots:
+  - 0.0
+  - 0.05
+  - 0.1
+  - 0.2
+  - 0.5
+  - 0.8
+  - 0.9
+  - 1.0
+  cell_ocv_knots:
+  - 3.3
+  - 3.5
+  - 3.6
+  - 3.7
+  - 3.8
+  - 3.97
+  - 4.08
+  - 4.2
+task:
+  contact:
+    dwell_frames: 60
+  reward:
+    alive_bonus: -0.002
+    delta_v_cost: 0.0
+    battery_energy_cost: -2.0
+    propulsive_delta_v_cost: -0.1
+    position_error: 0.0
+    horizontal_position_error: 0.0
+    horizontal_closure: 0.0
+    attitude_error: -0.005
+    angular_velocity: 0.0
+    control_effort: 0.0
+    control_rate: -0.0005
+    vertical_speed_shaping: 0.0
+    landing_descent_tracking: 0.0
+    excess_rotation_cost: -1.0
+    mission_progress: 3.0
+    waypoint_completion: 20.0
+    path_tracking_cost: -1.0
+    premature_landing_penalty: -1000.0
+    crash_penalty: -1000.0
+    off_pad_landing_penalty: -1000.0
+    hard_landing_penalty: -1400.0
+    touchdown_softness: 200.0
+    pad_accuracy: 1000.0
+    landing_success: 1000.0
+  spawn:
+    position_range: &id001
+    - - -100
+      - -100
+      - 25
+    - - 100
+      - 100
+      - 100
+    velocity_range: &id002
+    - - -10
+      - -10
+      - -10
+    - - 10
+      - 10
+      - 5.0
+    attitude_range: &id003
+    - - -3.141592653589793
+      - -1.57
+      - -3.141592653589793
+    - - 3.141592653589793
+      - 1.57
+      - 3.141592653589793
+    angular_velocity_range: &id004
+    - - -6.28
+      - -6.28
+      - -12.56
+    - - 6.28
+      - 6.28
+      - 12.56
+    initial_motor_omega_fraction: 0.0
+    waypoint_count_range: &id005
+    - 0
+    - 3
+    waypoint_spread_m: 8
+    curriculum:
+      enabled: true
+      mode: staged
+      success_window_size: 2048
+      stages:
+      - position_range:
+        - - -1
+          - -1
+          - 6
+        - - 1
+          - 1
+          - 10
+        velocity_range:
+        - - -0.4
+          - -0.4
+          - -1.0
+        - - 0.4
+          - 0.4
+          - 0.2
+        attitude_range:
+        - - -0.05
+          - -0.05
+          - -3.141592653589793
+        - - 0.05
+          - 0.05
+          - 3.141592653589793
+        angular_velocity_range:
+        - - -0.1
+          - -0.1
+          - -0.2
+        - - 0.1
+          - 0.1
+          - 0.2
+        initial_motor_omega_fraction: 0.84
+        waypoint_count_range:
+        - 0
+        - 0
+        waypoint_spread_m: 0
+        min_steps: 1000000
+        max_steps: 0
+        advance_success_fraction: 0.7
+        min_terminations: 1024
+      - position_range:
+        - - -3
+          - -3
+          - 8
+        - - 3
+          - 3
+          - 15
+        velocity_range:
+        - - -0.5
+          - -0.5
+          - -1.0
+        - - 0.5
+          - 0.5
+          - 0.25
+        attitude_range:
+        - - -0.15
+          - -0.15
+          - -3.141592653589793
+        - - 0.15
+          - 0.15
+          - 3.141592653589793
+        angular_velocity_range:
+        - - -0.2
+          - -0.2
+          - -0.4
+        - - 0.2
+          - 0.2
+          - 0.4
+        initial_motor_omega_fraction: 0.84
+        waypoint_count_range:
+        - 0
+        - 1
+        waypoint_spread_m: 1
+        min_steps: 1000000
+        max_steps: 0
+        advance_success_fraction: 0.7
+        min_terminations: 1024
+      - position_range:
+        - - -6
+          - -6
+          - 12
+        - - 6
+          - 6
+          - 25
+        velocity_range:
+        - - -1
+          - -1
+          - -1.0
+        - - 1
+          - 1
+          - 0.5
+        attitude_range:
+        - - -0.35
+          - -0.35
+          - -3.141592653589793
+        - - 0.35
+          - 0.35
+          - 3.141592653589793
+        angular_velocity_range:
+        - - -0.75
+          - -0.75
+          - -1.5
+        - - 0.75
+          - 0.75
+          - 1.5
+        initial_motor_omega_fraction: 0.84
+        waypoint_count_range:
+        - 0
+        - 2
+        waypoint_spread_m: 2
+        min_steps: 1000000
+        max_steps: 0
+        advance_success_fraction: 0.7
+        min_terminations: 1024
+      - position_range:
+        - - -15
+          - -15
+          - 20
+        - - 15
+          - 15
+          - 35
+        velocity_range:
+        - - -2
+          - -2
+          - -2
+        - - 2
+          - 2
+          - 1.0
+        attitude_range:
+        - - -0.7
+          - -0.7
+          - -3.141592653589793
+        - - 0.7
+          - 0.7
+          - 3.141592653589793
+        angular_velocity_range:
+        - - -1.57
+          - -1.57
+          - -3.14
+        - - 1.57
+          - 1.57
+          - 3.14
+        initial_motor_omega_fraction: 0.84
+        waypoint_count_range:
+        - 0
+        - 3
+        waypoint_spread_m: 4
+        min_steps: 1000000
+        max_steps: 0
+        advance_success_fraction: 0.7
+        min_terminations: 1024
+      - position_range:
+        - - -25
+          - -25
+          - 25
+        - - 25
+          - 25
+          - 45
+        velocity_range:
+        - - -3
+          - -3
+          - -3
+        - - 3
+          - 3
+          - 1.5
+        attitude_range:
+        - - -1.2
+          - -1.2
+          - -3.141592653589793
+        - - 1.2
+          - 1.2
+          - 3.141592653589793
+        angular_velocity_range:
+        - - -2.0
+          - -2.0
+          - -4.0
+        - - 2.0
+          - 2.0
+          - 4.0
+        initial_motor_omega_fraction: 0.5
+        waypoint_count_range:
+        - 0
+        - 3
+        waypoint_spread_m: 5
+        min_steps: 1000000
+        max_steps: 0
+        advance_success_fraction: 0.7
+        min_terminations: 1024
+      - position_range:
+        - - -40
+          - -40
+          - 30
+        - - 40
+          - 40
+          - 60
+        velocity_range:
+        - - -4
+          - -4
+          - -4
+        - - 4
+          - 4
+          - 2.0
+        attitude_range:
+        - - -1.4
+          - -1.4
+          - -3.141592653589793
+        - - 1.4
+          - 1.4
+          - 3.141592653589793
+        angular_velocity_range:
+        - - -3.14
+          - -3.14
+          - -6.28
+        - - 3.14
+          - 3.14
+          - 6.28
+        initial_motor_omega_fraction: 0.0
+        waypoint_count_range:
+        - 0
+        - 3
+        waypoint_spread_m: 6
+        min_steps: 1000000
+        max_steps: 0
+        advance_success_fraction: 0.7
+        min_terminations: 1024
+      - position_range:
+        - - -60
+          - -60
+          - 40
+        - - 60
+          - 60
+          - 80
+        velocity_range:
+        - - -6
+          - -6
+          - -6
+        - - 6
+          - 6
+          - 3.0
+        attitude_range:
+        - - -3.141592653589793
+          - -1.57
+          - -3.141592653589793
+        - - 3.141592653589793
+          - 1.57
+          - 3.141592653589793
+        angular_velocity_range:
+        - - -3.14
+          - -3.14
+          - -6.28
+        - - 3.14
+          - 3.14
+          - 6.28
+        initial_motor_omega_fraction: 0.0
+        waypoint_count_range:
+        - 0
+        - 3
+        waypoint_spread_m: 8
+        min_steps: 1000000
+        max_steps: 0
+        advance_success_fraction: 0.7
+        min_terminations: 1024
+      - position_range: *id001
+        velocity_range: *id002
+        attitude_range: *id003
+        angular_velocity_range: *id004
+        initial_motor_omega_fraction: 0.0
+        waypoint_count_range: *id005
+        waypoint_spread_m: 8
+        min_steps: 1000000
+        max_steps: 0
+        advance_success_fraction: 1.0
+        min_terminations: 1024
+  rotation:
+    soft_limits_deg_s:
+    - 90.0
+    - 90.0
+    - 180.0
+    scope: whole_flight_through_terminal_contact
+    measurement: true_body_frd_physics_substeps
+  episode_length_s: 120.0
+  termination:
+    max_tilt: 3.1415936535897933
+    max_altitude_error: 150.0
+    max_impact_speed: 3.0
+    max_tilt_at_contact: 0.5
+    max_angular_rate_at_contact: 3.0
+    crash: true
+  navigation:
+    enabled: true
+    count_range:
+    - 0
+    - 3
+    spread_m: 8.0
+    radius_m: 1.0
+    hover_hold_s: 2.0
+    speed_m_s: 3.0
+    shaping_gamma: 0.999
+physics:
+  enable_gyroscopic_forces: true
+  max_angular_velocity_deg_s: 3600.0
+  enable_external_forces_every_iteration: false
+dynamics:
+  body_angular_damping: 0.0
+  coupled_jet:
+    enabled: true
+    residual_swirl_fraction: 0.1
+    shaft_power_at_max_w: 3072.0
+    exit_position_frd:
+    - 0
+    - 0
+    - 0.05
+  gyro_integration: coupled_midpoint

@@ -13,6 +13,7 @@ from __future__ import annotations
 import torch
 from torch import Tensor
 from tvc_env.common.frames import frd_position_to_isaac
+from tvc_env.common.quaternions import rotate_vector, inverse
 
 
 class LinkForceInterface:
@@ -29,6 +30,25 @@ class LinkForceInterface:
         self._art = articulation
         self._map = art_map
         self._cop_positions_body = cop_positions_body  # (4, 3)
+        self._cop_positions_fin_local = None
+
+    def get_fin_cop_positions_world(self, root_quaternion_wxyz: Tensor, root_position_w: Tensor) -> Tensor:
+        """Attach each metadata COP to its moving fin, calibrated at zero joints.
+
+        Initialize immediately after scene construction, before commanding fins.
+        Metadata positions are neutral body-frame points, not fixed world points.
+        """
+        ids = self._map.fin_body_indices
+        fin_q = self._art.data.body_link_quat_w[:, ids]
+        fin_pos = self._art.data.body_link_pos_w[:, ids]
+        if self._cop_positions_fin_local is None:
+            neutral = frd_position_to_isaac(self._cop_positions_body.to(root_position_w))
+            world = root_position_w[:, None] + rotate_vector(
+                root_quaternion_wxyz[:, None].expand(-1, len(ids), -1),
+                neutral[None].expand(root_position_w.shape[0], -1, -1),
+            )
+            self._cop_positions_fin_local = rotate_vector(inverse(fin_q), world - fin_pos)
+        return fin_pos + rotate_vector(fin_q, self._cop_positions_fin_local)
 
     def apply_fin_forces_at_cop(
         self,
@@ -39,10 +59,11 @@ class LinkForceInterface:
     ) -> None:
         """Apply external fin forces at each fin's COP.
 
-        With ``is_global=True``, Isaac Lab expects force application positions
-        to be world-absolute. It derives the COP moment internally as ``r x F``;
-        explicit fin torques are intentionally ignored here to avoid
-        double-counting or overwriting that moment.
+        Compose the COP moment explicitly about the link COM in world space.
+        Isaac Lab 2.3.2's installed WrenchComposer position kernel crosses a
+        world lever arm with a local force, and its set path overwrites a
+        supplied torque when positions is nonempty. Its downstream PhysX call
+        applies the resultant at COM. Passing positions=None avoids both bugs.
 
         Args:
             forces_world: Tensor (num_envs, 4, 3) force per fin in Isaac world frame (N).
@@ -66,33 +87,51 @@ class LinkForceInterface:
         num_fins = 4
         fin_body_ids = torch.tensor(self._map.fin_body_indices, device=device)
 
-        # Transform COP offsets from body-FRD to world frame.
-        # Metadata stores COPs in the body-FRD convention, so convert them to
-        # Isaac body axes before applying the root orientation.
-        cop_body = self._cop_positions_body.to(device=device).unsqueeze(0).expand(num_envs, -1, -1)
-        cop_body_isaac = frd_position_to_isaac(cop_body)
-        # q: (num_envs, 4) -> (num_envs, 1, 4) -> broadcast over 4 fins
-        q = root_quaternion_wxyz.unsqueeze(1).expand(-1, num_fins, -1)
-        cop_world_offset = rotate_vector(q.reshape(-1, 4), cop_body_isaac.reshape(-1, 3)).reshape(num_envs, num_fins, 3)
-        cop_world = root_position_w.unsqueeze(1) + cop_world_offset
+        cop_world = self.get_fin_cop_positions_world(root_quaternion_wxyz, root_position_w)
+        moment_world = torch.linalg.cross(
+            cop_world - self._art.data.body_com_pos_w[:, self._map.fin_body_indices], forces_world)
 
         self._art.instantaneous_wrench_composer.set_forces_and_torques(
             forces=forces_world,
+            torques=moment_world,
             body_ids=fin_body_ids,
-            positions=cop_world,
             is_global=True,
         )
+
+    def get_cop_velocity_relative_body_frd(self, cop_world: Tensor, root_quaternion: Tensor) -> Tensor:
+        """Actual articulation COP velocity, relative to translating body origin.
+
+        Use COM velocities with COM lever arms; mixing link-origin positions
+        with COM velocity would create a spurious rotational inflow.
+        """
+        from tvc_env.common.frames import isaac_velocity_to_frd
+        ids = self._map.fin_body_indices
+        data = self._art.data
+        velocity = data.body_com_lin_vel_w[:, ids] + torch.linalg.cross(
+            data.body_com_ang_vel_w[:, ids], cop_world - data.body_com_pos_w[:, ids])
+        velocity -= data.body_link_lin_vel_w[:, self._map.body_index, None]
+        return isaac_velocity_to_frd(rotate_vector(inverse(root_quaternion)[:, None].expand(-1, 4, -1), velocity))
 
     def apply_body_wrench(
         self,
         force_world: Tensor,
         torque_world: Tensor,
         body_id: int,
+        position_world: Tensor | None = None,
     ) -> None:
-        """Apply a body-level force and torque with no COP position."""
+        """Apply force at an explicit body point, or COM when none is supplied.
+
+        EDF thrust belongs to the airframe thrust line, not the randomized
+        COM. Compute the application-point moment once, explicitly, because
+        the installed composer position path uses mixed frames and overwrites
+        supplied rotor reaction torques (2026-09-15 source/runtime audit).
+        """
         device = torch.device(self._art.device)
         force_world = force_world.to(device=device)
         torque_world = torque_world.to(device=device)
+        if position_world is not None:
+            torque_world = torque_world + torch.linalg.cross(
+                position_world.to(device=device) - self._art.data.body_com_pos_w[:, body_id], force_world)
 
         forces = force_world.unsqueeze(1)
         torques = torque_world.unsqueeze(1)

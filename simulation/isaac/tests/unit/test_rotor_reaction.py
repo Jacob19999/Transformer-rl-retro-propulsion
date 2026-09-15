@@ -218,10 +218,10 @@ class TestEDFTorqueScales:
         assert model.gyro_torque_scale == 1.0
 
     def test_yaml_default_gyro_scale_matches_override(self):
-        """The committed YAML override (gyro=0.1, dynamic=0.0) must be loaded."""
+        """The nominal task must retain the rotor's full angular momentum."""
         from pathlib import Path
         from tvc_env.dynamics.propulsion_edf import EDFModel
         edf_yaml = Path(__file__).parents[2] / "configs/params/edf_90mm.yaml"
         model = EDFModel.from_yaml(edf_yaml)
-        assert model.gyro_torque_scale == pytest.approx(0.1)
-        assert model.dynamic_torque_scale == pytest.approx(0.0)
+        assert model.gyro_torque_scale == pytest.approx(1.0)
+        assert model.dynamic_torque_scale == pytest.approx(1.0)

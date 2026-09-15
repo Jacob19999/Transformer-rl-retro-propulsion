@@ -1,0 +1,31 @@
+{
+  "checkpoint": "C:\\Transformer-rl-retro-propulsion\\simulation\\isaac\\runs\\ppo_exploration_anneal\\ppo_landing_seed0_20260911_184222\\ppo_step_26034176.pt",
+  "trained_steps": 26034176,
+  "seed": 2026,
+  "action_mode": "stochastic",
+  "curriculum_stage": null,
+  "episodes": 2048,
+  "success_count": 2000,
+  "success_fraction": 0.9765625,
+  "landed_fraction": 0.9931640625,
+  "crashed_fraction": 0.0068359375,
+  "timeout_fraction": 0.0,
+  "failure_counts": {
+    "contact_or_tilt_failure": 14,
+    "hard_landing": 13,
+    "hard_off_pad": 7,
+    "off_pad": 14,
+    "success": 2000
+  },
+  "success_max_pad_distance": 0.5,
+  "success_max_touchdown_speed": 0.25,
+  "touchdown_speed_landed": {
+    "mean": 0.15664225270936857,
+    "max": 1.3122079372406006
+  },
+  "pad_distance_landed": {
+    "mean": 0.21597850129132837,
+    "max": 1.297247290611267
+  },
+  "passed": true
+}

@@ -1,6 +1,6 @@
 """Replay a trained PPO landing policy in a single environment for N episodes.
 
-Loads a saved actor-critic checkpoint, runs the policy deterministically against
+Loads a saved actor-critic checkpoint, runs the policy against
 the landing task in single-env mode (headed by default), and reports per-episode
 landed/crashed/touchdown-speed/pad-distance plus a summary over all episodes.
 
@@ -35,6 +35,12 @@ def parse_args():
     parser.add_argument("--episodes", type=int, default=100)
     parser.add_argument("--max-episode-seconds", type=float, default=30.0)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument('--action-mode', choices=['deterministic', 'stochastic', 'mean'],
+                        default='deterministic', help='Recorded inference mode; stochastic uses the learned distribution.')
+    parser.add_argument("--curriculum-stage", type=int, default=None,
+                        help="Diagnostic evaluation at an explicit curriculum stage; default is the full task.")
+    parser.add_argument("--trace-every", type=int, default=0,
+                        help="Write observation/action/physical-state samples every N steps to trajectory.jsonl.")
     parser.add_argument("--headless", action="store_true", default=False)
     parser.add_argument("--no-headless", dest="headless", action="store_false")
     parser.add_argument(
@@ -98,8 +104,7 @@ def main():
 
     try:
         import torch
-        import torch.nn as nn
-        from torch.distributions import Normal
+        from tvc_env.controllers.ppo_model import ActorCritic
 
         from tvc_env.common.constants import ContactState
         from tvc_env.common.frames import isaac_position_to_frd
@@ -117,10 +122,16 @@ def main():
         )
         if config.num_envs != 1:
             raise ValueError(f"--env-config must specify num_envs=1, got {config.num_envs}")
+        if args.curriculum_stage is not None:
+            from copy import deepcopy
+            from tvc_env.envs.curriculum import apply_spawn_stage
+            spawn = deepcopy(config.config['task']['spawn'])
+            stages = spawn.get('curriculum', {}).get('stages', [])
+            if not 0 <= args.curriculum_stage < len(stages):
+                raise ValueError('Requested curriculum stage is outside the task definition')
+            apply_spawn_stage(config.config, spawn, stages[args.curriculum_stage])
         env = TVCDirectRLEnv(config)
         device = env.device
-        obs_dim = 24
-        act_dim = 5
         max_fin_angle = float(env._servo_model.max_command_angle)
         rl_dt = config.physics_dt * config.decimation
         max_episode_steps = int(args.max_episode_seconds / rl_dt)
@@ -130,31 +141,6 @@ def main():
         success_touchdown_speed = (
             float(success_touchdown_speed) if success_touchdown_speed is not None else None
         )
-
-        # Match the actor-critic architecture from run_train_ppo.py so the
-        # checkpoint state-dict loads cleanly.
-        class ActorCritic(nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.actor = nn.Sequential(
-                    nn.Linear(obs_dim, 256),
-                    nn.Tanh(),
-                    nn.Linear(256, 256),
-                    nn.Tanh(),
-                    nn.Linear(256, act_dim),
-                )
-                self.critic = nn.Sequential(
-                    nn.Linear(obs_dim, 256),
-                    nn.Tanh(),
-                    nn.Linear(256, 256),
-                    nn.Tanh(),
-                    nn.Linear(256, 1),
-                )
-                self.log_std = nn.Parameter(torch.zeros(act_dim))
-
-            def deterministic_action(self, obs: torch.Tensor) -> torch.Tensor:
-                mean = self.actor(obs)
-                return torch.tanh(mean)
 
         def raw_to_env_action(action_raw: torch.Tensor) -> torch.Tensor:
             fins = action_raw[:, :4].clamp(-1.0, 1.0) * max_fin_angle
@@ -186,7 +172,7 @@ def main():
         print(
             f"Loaded checkpoint {ckpt_path.name} "
             f"(trained for {ckpt.get('step', '?')} steps); "
-            f"running {args.episodes} episodes in single env, headless={args.headless}.",
+            f"running {args.episodes} episodes in single env, action_mode={args.action_mode}, headless={args.headless}.",
             flush=True,
         )
 
@@ -206,6 +192,8 @@ def main():
             if not out_dir.is_absolute():
                 out_dir = sim_root / out_dir
             out_dir.mkdir(parents=True, exist_ok=True)
+            if (out_dir / 'episodes.jsonl').exists():
+                raise ValueError('Choose a new output directory; evaluation records already exist')
             (out_dir / "args.json").write_text(json.dumps(vars(args), indent=2), encoding="utf-8")
 
         episodes: list[EpisodeRecord] = []
@@ -236,7 +224,7 @@ def main():
 
             with torch.no_grad():
                 while step < max_episode_steps:
-                    raw_action = model.deterministic_action(policy_observation(obs))
+                    raw_action = model.act(policy_observation(obs), args.action_mode)
                     env_action = raw_to_env_action(raw_action)
                     throttle_cmd = float(env_action[0, 4].item())
                     throttle_sum += throttle_cmd
@@ -245,14 +233,25 @@ def main():
                     next_obs = obs_dict["policy"]
 
                     contact_pre = info["contact_state_pre_reset"].long()
-                    vel_frd_pre = info["linear_vel_frd_pre_reset"]
+                    vel_world_pre = info["linear_vel_world_pre_reset"]
                     pos_pre = info["position_pre_reset"]
                     impact_speed_pre = info["touchdown_speed_pre_reset"]
-                    max_downward = max(max_downward, float(vel_frd_pre[0, 2].clamp(min=0.0).item()))
+                    max_downward = max(max_downward, float((-vel_world_pre[0, 2]).clamp(min=0.0).item()))
 
                     landed_now = bool((contact_pre == int(ContactState.LANDED))[0])
                     crashed_now = bool((contact_pre == int(ContactState.CRASHED))[0])
                     done = bool((terminated | truncated)[0])
+                    if out_dir is not None and args.trace_every > 0 and (step % args.trace_every == 0 or done):
+                        trace = dict(episode=ep_idx, time_s=(step + 1) * rl_dt,
+                                     observation_before=obs[0].cpu().tolist(),
+                                     action=env_action[0].cpu().tolist(),
+                                     position=pos_pre[0].cpu().tolist(),
+                                     velocity_world=vel_world_pre[0].cpu().tolist(),
+                                     observation_after=info['observation_pre_reset'][0].cpu().tolist(),
+                                     touchdown_speed=float(impact_speed_pre[0]),
+                                     contact_state=int(contact_pre[0]), done=done)
+                        with (out_dir / 'trajectory.jsonl').open('a', encoding='utf-8') as fh:
+                            fh.write(json.dumps(trace) + '\n')
 
                     if landed_now or crashed_now:
                         outcome = "LANDED" if landed_now else "CRASHED"
@@ -263,6 +262,9 @@ def main():
                         touchdown_x = float(pos_pre[0, 0].item())
                         touchdown_y = float(pos_pre[0, 1].item())
                         touchdown_throttle = throttle_cmd
+                    elif bool(terminated[0]):
+                        # Tilt/altitude fail-stops are failures even before contact.
+                        outcome = 'CRASHED'
 
                     obs = next_obs
                     env.render()
@@ -285,8 +287,10 @@ def main():
                 episode=ep_idx,
                 outcome=outcome,
                 duration_s=round(step * rl_dt, 3),
-                touchdown_speed=_r(touchdown_speed),
-                pad_distance=_r(pad_distance),
+                # Keep precision for success gates: rounding .25004 to .25
+                # would turn a failed touchdown into a reported success.
+                touchdown_speed=touchdown_speed,
+                pad_distance=pad_distance,
                 max_downward_speed=round(max_downward, 3),
                 mean_throttle=round(mean_throttle, 4),
                 spawn_x=round(spawn_x, 4),
@@ -369,6 +373,9 @@ def main():
         summary = {
             "checkpoint": str(ckpt_path),
             "trained_steps": ckpt.get("step", None),
+            "action_mode": args.action_mode,
+            "seed": args.seed,
+            "curriculum_stage": args.curriculum_stage,
             "episodes": n,
             "landed_fraction": round(len(landed) / n, 4),
             "crashed_fraction": round(len(crashed) / n, 4),

@@ -84,11 +84,11 @@ def test_touchdown_softness_reward_only_pays_when_landed():
         [ContactState.AIRBORNE, ContactState.GROUND_CONTACT_CANDIDATE, ContactState.LANDED]
     )
     state = _state(positions, contact)
-    state.linear_vel_frd = torch.tensor(
+    state.linear_vel_world = torch.tensor(
         [
             [0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.2],
-            [0.0, 0.0, 0.2],
+            [0.0, 0.0, -0.2],
+            [0.0, 0.0, -0.2],
         ],
         dtype=torch.float32,
     )
@@ -146,12 +146,12 @@ def test_landing_success_reward_gates_on_touchdown_speed_when_configured():
     positions = torch.zeros(3, 3, dtype=torch.float32)
     contact = torch.tensor([ContactState.LANDED, ContactState.LANDED, ContactState.LANDED])
     state = _state(positions, contact)
-    # FRD: +z is down, so positive values = downward speed at touchdown.
-    state.linear_vel_frd = torch.tensor(
+    # World: -z is down; this fallback is independent of body tilt.
+    state.linear_vel_world = torch.tensor(
         [
-            [0.0, 0.0, 0.10],   # soft  (under 0.25 gate) → counts
-            [0.0, 0.0, 0.30],   # hard  (over 0.25 gate)  → no success
-            [0.0, 0.0, 0.25],   # exactly at gate         → counts (≤)
+            [0.0, 0.0, -0.10],   # soft  (under 0.25 gate) → counts
+            [0.0, 0.0, -0.30],   # hard  (over 0.25 gate)  → no success
+            [0.0, 0.0, -0.25],   # exactly at gate         → counts (≤)
         ],
         dtype=torch.float32,
     )

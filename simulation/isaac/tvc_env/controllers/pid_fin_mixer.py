@@ -1,26 +1,9 @@
-"""
-PID fin mixing logic for TVC environment.
+"""Allocate body-axis efforts to vanes hinged along their radial spans.
 
-Converts roll/pitch/yaw rate commands (rad/s) to 4 individual fin deflection
-angles (rad) based on fin geometry:
-
-  Fin 0 (+X, front): hinge along Y — primarily controls PITCH
-  Fin 1 (+Y, right): hinge along X — primarily controls ROLL
-  Fin 2 (-X, rear) : hinge along Y — PITCH with opposite sign from fin 0
-  Fin 3 (-Y, left) : hinge along X — ROLL with opposite sign from fin 1
-
-Mixing matrix in FRD frame (rows = fins, cols = [roll, pitch, yaw]):
-
-         roll  pitch  yaw
-  fin0:  [ 0,   +1,  +0.5 ]   (+X fin: pitch + yaw coupling)
-  fin1:  [-1,    0,  -0.5 ]   (+Y fin: -roll - yaw coupling)
-  fin2:  [ 0,   -1,  +0.5 ]   (-X fin: -pitch + yaw coupling)
-  fin3:  [+1,    0,  -0.5 ]   (-Y fin: roll - yaw coupling)
-
-Sign conventions (FRD):
-  +roll_cmd  -> positive +X body torque        -> -fin1, +fin3
-  +pitch_cmd -> positive +Y body torque        -> +fin0, -fin2
-  +yaw_cmd   → yaw right   (nose right)       → differential coupling
+Positive joint rotation turns the downstream jet toward hinge x flow; the
+reaction on the body is opposite. Radial hinges produce tangential jet forces
+and rank-three torque authority, including yaw through common-mode deflection.
+Commands are fin-angle efforts, not measured body rates.
 """
 
 from __future__ import annotations
@@ -34,7 +17,7 @@ class PIDFinMixer:
     def __init__(
         self,
         max_fin_angle: float = 0.262,   # rad (15°) per action_space contract
-        yaw_coupling: float = 0.5,      # yaw cross-coupling scale
+        yaw_coupling: float = 1.0,      # dimensionless fin-angle effort allocation
         device: torch.device = None,
     ):
         self._max_fin_angle = max_fin_angle
@@ -44,10 +27,10 @@ class PIDFinMixer:
         # Row ordering: [fin_+X, fin_+Y, fin_-X, fin_-Y]
         self._mix = torch.tensor(
             [
-                [ 0.0,  1.0,  yaw_coupling],   # fin_+X: pitch + yaw
-                [-1.0,  0.0, -yaw_coupling],   # fin_+Y: -roll - yaw
-                [ 0.0, -1.0,  yaw_coupling],   # fin_-X: -pitch + yaw
-                [ 1.0,  0.0, -yaw_coupling],   # fin_-Y: roll - yaw
+                [-1.0,  0.0, yaw_coupling],
+                [ 0.0, -1.0, yaw_coupling],
+                [ 1.0,  0.0, yaw_coupling],
+                [ 0.0,  1.0, yaw_coupling],
             ],
             dtype=torch.float32,
             device=device,
@@ -59,12 +42,12 @@ class PIDFinMixer:
         pitch_cmd: Tensor,  # (num_envs,)
         yaw_cmd: Tensor,    # (num_envs,)
     ) -> Tensor:
-        """Compute fin angles from roll/pitch/yaw rate commands.
+        """Compute fin angles from roll/pitch/yaw fin-angle efforts.
 
         Args:
-            roll_cmd:  Roll rate command  (num_envs,) rad/s
-            pitch_cmd: Pitch rate command (num_envs,) rad/s
-            yaw_cmd:   Yaw rate command   (num_envs,) rad/s
+            roll_cmd:  Roll effort  (num_envs,) rad
+            pitch_cmd: Pitch effort (num_envs,) rad
+            yaw_cmd:   Yaw fin-angle effort (num_envs,) rad
 
         Returns:
             Tensor (num_envs, 4) — fin angles clamped to ±max_fin_angle (rad).

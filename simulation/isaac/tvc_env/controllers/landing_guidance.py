@@ -26,6 +26,8 @@ import torch
 from torch import Tensor
 
 from tvc_env.common.constants import ContactState
+from tvc_env.common.frames import frd_velocity_to_isaac, isaac_velocity_to_frd
+from tvc_env.common.quaternions import rotate_vector, inverse, normalize
 
 
 class LandingGuidance:
@@ -132,7 +134,15 @@ class LandingGuidance:
         # zero vertical speed is the target. During landing the target is a
         # controlled downward speed, so expose velocity error instead. Body-FRD
         # z velocity is positive downward.
-        modified[:, 9] = obs[:, 9] - self._target_down_rate.to(dtype=obs.dtype)
+        # Subtract the WORLD vertical reference velocity, expressed in body
+        # coordinates. Editing body-z alone injects a lateral velocity error
+        # at nonzero tilt and is inconsistent with the PID's world-z loop.
+        reference_world = torch.zeros_like(obs[:, 7:10])
+        reference_world[:, 2] = -self._target_down_rate.to(dtype=obs.dtype)
+        reference_body = isaac_velocity_to_frd(
+            rotate_vector(inverse(normalize(obs[:, 3:7])), reference_world)
+        )
+        modified[:, 7:10] = obs[:, 7:10] - reference_body
         return modified
 
     def post_action(self, action: Tensor, obs: Tensor | None = None) -> Tensor:
@@ -140,7 +150,8 @@ class LandingGuidance:
         out = action
         if obs is not None:
             out = out.clone()
-            vertical_down_speed = obs[:, 9]
+            velocity_world = rotate_vector(normalize(obs[:, 3:7]), frd_velocity_to_isaac(obs[:, 7:10]))
+            vertical_down_speed = -velocity_world[:, 2]
             target_down_rate = self._target_down_rate.to(dtype=obs.dtype)
             too_slow_or_climbing = vertical_down_speed < target_down_rate
             throttle_cap = (

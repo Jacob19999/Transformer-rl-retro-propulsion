@@ -1,0 +1,53 @@
+{
+  "checkpoint": "C:\\Transformer-rl-retro-propulsion\\simulation\\isaac\\runs\\ppo_8s_gyro_midpoint\\ppo_landing_seed0_20260915_030057\\ppo_step_12058624.pt",
+  "trained_steps": 12058624,
+  "seed": 9517,
+  "action_mode": "stochastic",
+  "curriculum_stage": 1,
+  "episodes": 512,
+  "success_count": 47,
+  "success_fraction": 0.091796875,
+  "landed_fraction": 0.30078125,
+  "crashed_fraction": 0.69921875,
+  "timeout_fraction": 0.0,
+  "failure_counts": {
+    "contact_or_tilt_failure": 358,
+    "hard_landing": 1,
+    "hard_off_pad": 30,
+    "off_pad": 76,
+    "success": 47
+  },
+  "success_max_pad_distance": 0.5,
+  "success_max_touchdown_speed": 0.25,
+  "touchdown_speed_landed": {
+    "mean": 0.20261166385048396,
+    "max": 0.39071911573410034
+  },
+  "pad_distance_landed": {
+    "mean": 0.6615406111753607,
+    "max": 1.3618364334106445
+  },
+  "successful_landing_efficiency": {
+    "energy_wh": {
+      "mean": 3.584510919895578,
+      "min": 3.1723575592041016,
+      "max": 4.199487209320068
+    },
+    "propulsive_delta_v_m_s": {
+      "mean": 49.43369431191302,
+      "min": 41.67573928833008,
+      "max": 59.39509201049805
+    },
+    "duration_s": {
+      "mean": 5.056028368794327,
+      "min": 4.2,
+      "max": 6.133333333333333
+    },
+    "low_altitude_hover_time_s": {
+      "mean": 0.09574468568601507,
+      "min": 0.0,
+      "max": 0.5666667222976685
+    }
+  },
+  "passed": false
+}

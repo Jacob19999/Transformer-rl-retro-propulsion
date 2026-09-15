@@ -1,0 +1,8 @@
+{
+  "source": "C:\\Transformer-rl-retro-propulsion\\simulation\\isaac\\runs\\ppo_exploration_anneal\\ppo_landing_seed0_20260911_184222\\ppo_step_26034176.pt",
+  "source_sha256": "ac786a14bf2383faea4e620549950a811ac98a89c1c955339f1206882630e924",
+  "parent_steps": 26034176,
+  "critic": "fresh",
+  "optimizer": "fresh",
+  "purpose": "Explicit physics transfer; results require new independent validation"
+}

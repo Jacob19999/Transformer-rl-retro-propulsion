@@ -1,0 +1,363 @@
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: C:\Transformer-rl-retro-propulsion\IsaacLab\apps\isaaclab.python.headless.kit
+
+[36m===================================================================================================================[0m
+[36m[1m[INFO][IsaacLab]: Logging to file: C:\Users\tngzj\AppData\Local\Temp\isaaclab\logs\isaaclab_2026-09-10_21-35-20.log[0m
+[36m===================================================================================================================[0m
+
+{
+  "task": "landing",
+  "seed": 42,
+  "cases_per_candidate": 4,
+  "duration_s": 30.0,
+  "args": {
+    "task": "landing",
+    "seeds": 4,
+    "seed": 42,
+    "kp_att": [
+      0.05,
+      0.1,
+      0.2
+    ],
+    "kd_att": [
+      0.01,
+      0.02,
+      0.05
+    ],
+    "gyro_comp_rp": [
+      0.03,
+      0.06
+    ],
+    "min_fin_cmd_xy": 0.0,
+    "descent_rate": 2.0,
+    "flare_alt": 1.5,
+    "flare_descent_rate": 0.15,
+    "output": "logs/physics_review_pid_landing_sweep.json"
+  },
+  "candidates": [
+    {
+      "kp_att": 0.2,
+      "kd_att": 0.05,
+      "gyro_comp_rp": 0.06,
+      "throttle_hover": 0.9338860327388341,
+      "landed": 2,
+      "crashed": 0,
+      "success": 1,
+      "final_error_mean": 1.3404282331466675,
+      "rms_error_last_5s": 3.4022810459136963,
+      "max_tilt_rad": 0.20587119460105896,
+      "touchdown_speed": [
+        NaN,
+        NaN,
+        0.18529050052165985,
+        0.035961806774139404
+      ]
+    },
+    {
+      "kp_att": 0.2,
+      "kd_att": 0.05,
+      "gyro_comp_rp": 0.03,
+      "throttle_hover": 0.9338860327388341,
+      "landed": 0,
+      "crashed": 0,
+      "success": 0,
+      "final_error_mean": 0.8789938688278198,
+      "rms_error_last_5s": 1.0464977025985718,
+      "max_tilt_rad": 0.17496946454048157,
+      "touchdown_speed": [
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ]
+    },
+    {
+      "kp_att": 0.2,
+      "kd_att": 0.02,
+      "gyro_comp_rp": 0.03,
+      "throttle_hover": 0.9338860327388341,
+      "landed": 0,
+      "crashed": 0,
+      "success": 0,
+      "final_error_mean": 2.3512303829193115,
+      "rms_error_last_5s": 2.5435256958007812,
+      "max_tilt_rad": 0.25404244661331177,
+      "touchdown_speed": [
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ]
+    },
+    {
+      "kp_att": 0.1,
+      "kd_att": 0.05,
+      "gyro_comp_rp": 0.03,
+      "throttle_hover": 0.9338860327388341,
+      "landed": 0,
+      "crashed": 0,
+      "success": 0,
+      "final_error_mean": 57.217201232910156,
+      "rms_error_last_5s": 82.85124969482422,
+      "max_tilt_rad": 0.30805546045303345,
+      "touchdown_speed": [
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ]
+    },
+    {
+      "kp_att": 0.1,
+      "kd_att": 0.05,
+      "gyro_comp_rp": 0.06,
+      "throttle_hover": 0.9338860327388341,
+      "landed": 0,
+      "crashed": 0,
+      "success": 0,
+      "final_error_mean": 57.59248352050781,
+      "rms_error_last_5s": 87.68885040283203,
+      "max_tilt_rad": 0.25548869371414185,
+      "touchdown_speed": [
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ]
+    },
+    {
+      "kp_att": 0.1,
+      "kd_att": 0.02,
+      "gyro_comp_rp": 0.03,
+      "throttle_hover": 0.9338860327388341,
+      "landed": 0,
+      "crashed": 0,
+      "success": 0,
+      "final_error_mean": 72.33561706542969,
+      "rms_error_last_5s": 90.43656158447266,
+      "max_tilt_rad": 0.35081276297569275,
+      "touchdown_speed": [
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ]
+    },
+    {
+      "kp_att": 0.05,
+      "kd_att": 0.05,
+      "gyro_comp_rp": 0.06,
+      "throttle_hover": 0.9338860327388341,
+      "landed": 0,
+      "crashed": 0,
+      "success": 0,
+      "final_error_mean": 366.8540344238281,
+      "rms_error_last_5s": 319.1092529296875,
+      "max_tilt_rad": 0.1745728701353073,
+      "touchdown_speed": [
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ]
+    },
+    {
+      "kp_att": 0.05,
+      "kd_att": 0.01,
+      "gyro_comp_rp": 0.03,
+      "throttle_hover": 0.9338860327388341,
+      "landed": 0,
+      "crashed": 0,
+      "success": 0,
+      "final_error_mean": 366.856689453125,
+      "rms_error_last_5s": 319.113037109375,
+      "max_tilt_rad": 0.1745687574148178,
+      "touchdown_speed": [
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ]
+    },
+    {
+      "kp_att": 0.05,
+      "kd_att": 0.05,
+      "gyro_comp_rp": 0.03,
+      "throttle_hover": 0.9338860327388341,
+      "landed": 0,
+      "crashed": 0,
+      "success": 0,
+      "final_error_mean": 366.8568115234375,
+      "rms_error_last_5s": 319.1123046875,
+      "max_tilt_rad": 0.1745728701353073,
+      "touchdown_speed": [
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ]
+    },
+    {
+      "kp_att": 0.05,
+      "kd_att": 0.02,
+      "gyro_comp_rp": 0.06,
+      "throttle_hover": 0.9338860327388341,
+      "landed": 0,
+      "crashed": 0,
+      "success": 0,
+      "final_error_mean": 366.8575439453125,
+      "rms_error_last_5s": 319.1117858886719,
+      "max_tilt_rad": 0.17456841468811035,
+      "touchdown_speed": [
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ]
+    },
+    {
+      "kp_att": 0.05,
+      "kd_att": 0.02,
+      "gyro_comp_rp": 0.03,
+      "throttle_hover": 0.9338860327388341,
+      "landed": 0,
+      "crashed": 0,
+      "success": 0,
+      "final_error_mean": 366.8587951660156,
+      "rms_error_last_5s": 319.11383056640625,
+      "max_tilt_rad": 0.17456257343292236,
+      "touchdown_speed": [
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ]
+    },
+    {
+      "kp_att": 0.05,
+      "kd_att": 0.01,
+      "gyro_comp_rp": 0.06,
+      "throttle_hover": 0.9338860327388341,
+      "landed": 0,
+      "crashed": 0,
+      "success": 0,
+      "final_error_mean": 366.8631591796875,
+      "rms_error_last_5s": 319.1160583496094,
+      "max_tilt_rad": 0.17456702888011932,
+      "touchdown_speed": [
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ]
+    },
+    {
+      "kp_att": 0.1,
+      "kd_att": 0.01,
+      "gyro_comp_rp": 0.03,
+      "throttle_hover": 0.9338860327388341,
+      "landed": 0,
+      "crashed": 3,
+      "success": 0,
+      "final_error_mean": 86.02043151855469,
+      "rms_error_last_5s": 157.8423614501953,
+      "max_tilt_rad": 0.4471719264984131,
+      "touchdown_speed": [
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ]
+    },
+    {
+      "kp_att": 0.1,
+      "kd_att": 0.01,
+      "gyro_comp_rp": 0.06,
+      "throttle_hover": 0.9338860327388341,
+      "landed": 0,
+      "crashed": 3,
+      "success": 0,
+      "final_error_mean": 88.57850646972656,
+      "rms_error_last_5s": 182.45729064941406,
+      "max_tilt_rad": 0.4162648320198059,
+      "touchdown_speed": [
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ]
+    },
+    {
+      "kp_att": 0.1,
+      "kd_att": 0.02,
+      "gyro_comp_rp": 0.06,
+      "throttle_hover": 0.9338860327388341,
+      "landed": 0,
+      "crashed": 3,
+      "success": 0,
+      "final_error_mean": 93.474365234375,
+      "rms_error_last_5s": 180.48548889160156,
+      "max_tilt_rad": 0.3243087828159332,
+      "touchdown_speed": [
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ]
+    },
+    {
+      "kp_att": 0.2,
+      "kd_att": 0.02,
+      "gyro_comp_rp": 0.06,
+      "throttle_hover": 0.9338860327388341,
+      "landed": 0,
+      "crashed": 4,
+      "success": 0,
+      "final_error_mean": 5.514406681060791,
+      "rms_error_last_5s": 0.0,
+      "max_tilt_rad": 0.3232264518737793,
+      "touchdown_speed": [
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ]
+    },
+    {
+      "kp_att": 0.2,
+      "kd_att": 0.01,
+      "gyro_comp_rp": 0.06,
+      "throttle_hover": 0.9338860327388341,
+      "landed": 0,
+      "crashed": 4,
+      "success": 0,
+      "final_error_mean": 7.004471778869629,
+      "rms_error_last_5s": 0.0,
+      "max_tilt_rad": 0.3849053382873535,
+      "touchdown_speed": [
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ]
+    },
+    {
+      "kp_att": 0.2,
+      "kd_att": 0.01,
+      "gyro_comp_rp": 0.03,
+      "throttle_hover": 0.9338860327388341,
+      "landed": 0,
+      "crashed": 4,
+      "success": 0,
+      "final_error_mean": 7.198979377746582,
+      "rms_error_last_5s": 0.0,
+      "max_tilt_rad": 0.394462913274765,
+      "touchdown_speed": [
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ]
+    }
+  ]
+}

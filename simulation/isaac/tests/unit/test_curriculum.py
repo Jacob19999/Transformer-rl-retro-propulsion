@@ -197,6 +197,24 @@ def test_tracker_window_evicts_old_terminations():
     assert tracker.termination_count() == 4  # window stays at 4
 
 
+def test_ordered_outcomes_do_not_sort_failures_to_window_tail():
+    tracker = StagedCurriculumTracker(stages=[{}, {}], success_window_size=4)
+    tracker.record_outcomes(128, [False, True, False, True, False, True])
+    assert tracker.success_fraction() == .5
+    assert tracker.steps_in_stage == 128
+
+
+def test_curriculum_checkpoint_preserves_advancement_and_window():
+    tracker = StagedCurriculumTracker(stages=[{}, {}], success_window_size=4)
+    tracker.advance()
+    tracker.record_outcomes(128, [True, False, True])
+    restored = StagedCurriculumTracker(stages=[{}, {}], success_window_size=4)
+    restored.load_state_dict(tracker.state_dict())
+    assert restored.stage_index == 1
+    assert restored.steps_in_stage == 128
+    assert restored.success_fraction() == 2/3
+
+
 def test_tracker_rejects_inconsistent_counts():
     cfg = _staged_landing_config()
     tracker = StagedCurriculumTracker(stages=cfg["task"]["spawn"]["curriculum"]["stages"])
@@ -204,3 +222,17 @@ def test_tracker_rejects_inconsistent_counts():
         tracker.record_step(num_env_steps=10, success_count=5, termination_count=4)
     with pytest.raises(ValueError):
         tracker.record_step(num_env_steps=-1, success_count=0, termination_count=0)
+
+
+def test_evaluation_restores_full_spawn_after_easy_warm_rotor_stage():
+    from copy import deepcopy
+    from tvc_env.envs.curriculum import apply_spawn_stage
+    config = _staged_landing_config()
+    config['task']['spawn']['velocity_range'] = [[-1., -1., -2.], [1., 1., 0.]]
+    final_spawn = deepcopy(config['task']['spawn'])
+    apply_spawn_stage(config, final_spawn, {'position_range': [[0, 0, .7], [0, 0, 1.2]],
+                                          'velocity_range': [[0, 0, 0], [0, 0, 0]],
+                                          'initial_motor_omega_fraction': .934})
+    assert config['task']['spawn']['initial_motor_omega_fraction'] == .934
+    apply_spawn_stage(config, final_spawn, None)
+    assert config['task']['spawn'] == final_spawn

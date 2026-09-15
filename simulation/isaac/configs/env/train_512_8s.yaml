@@ -1,0 +1,60 @@
+# Explicit full-task 8S LiPo transfer experiment.
+# Diagnostic: legacy 6S mission 8a0000000001 timed out at z=0.53m after 30s.
+# No controller wrapper or action remap; all coefficients retained in this YAML.
+env:
+  num_envs: 512
+  env_spacing: 4.0
+  dispatch_mode: per_link_force
+  gizmos_enabled: false
+  decimation: 4
+  physics_dt: 0.00833
+  replicate_physics: true
+edf:
+  max_thrust: 48.0
+  omega_max: 4649.56
+  exhaust_speed_nominal: 128.0
+  k_T: null
+servo:
+  transit_time_60deg: 0.15
+  max_angular_velocity: 6.981317
+  stall_torque: 1.0787315
+battery:
+  enabled: true
+  cells: 8
+  capacity_ah: 5.0
+  initial_soc: 1.0
+  cell_resistance_ohm: 0.003
+  polarization_resistance_ohm: 0.006
+  polarization_time_s: 15.0
+  max_current_a: 120.0
+  cutoff_cell_v: 3.0
+  reference_voltage_v: 29.6
+  motor_efficiency: 0.88
+  shaft_power_at_max_w: 3072.0
+  auxiliary_power_w: 10.0
+  ambient_c: 25.0
+  thermal_capacity_j_k: 800.0
+  cooling_w_k: 2.0
+  soc_knots:
+  - 0.0
+  - 0.05
+  - 0.1
+  - 0.2
+  - 0.5
+  - 0.8
+  - 0.9
+  - 1.0
+  cell_ocv_knots:
+  - 3.3
+  - 3.5
+  - 3.6
+  - 3.7
+  - 3.8
+  - 3.97
+  - 4.08
+  - 4.2
+  c_rating: 45.0
+task:
+  spawn:
+    curriculum:
+      enabled: false

@@ -75,7 +75,7 @@ class WrenchDispatch:
             )
         elif self.mode == DispatchMode.COLLAPSED_BODY_WRENCH:
             self._dispatch_collapsed(
-                forces_body_frd, cop_positions, root_quaternion_wxyz, body_force, edf_torque_body_frd
+                forces_body_frd, cop_positions, root_quaternion_wxyz, root_position_w, body_force, edf_torque_body_frd
             )
 
     def _dispatch_per_link(
@@ -111,6 +111,7 @@ class WrenchDispatch:
             body_force_world,
             body_torque_world,
             body_id=self._body_link_index,
+            position_world=root_position_w,
         )
 
         # TVCSimScene.step() performs the single scene.write_data_to_sim()
@@ -122,6 +123,7 @@ class WrenchDispatch:
         forces_body_frd: Tensor,
         cop_positions: Tensor,
         root_quaternion_wxyz: Tensor,
+        root_position_w: Tensor,
         body_force_frd: Tensor,
         body_torque_frd: Tensor,
     ) -> None:
@@ -134,7 +136,9 @@ class WrenchDispatch:
 
         # Compute torques from r × F for each fin
         # cop_positions: (4, 3), forces: (num_envs, 4, 3)
-        cops = cop_positions.unsqueeze(0).expand(forces_body_frd.shape[0], -1, -1)
+        cops = cop_positions
+        if cops.ndim == 2:
+            cops = cops.unsqueeze(0).expand(forces_body_frd.shape[0], -1, -1)
         torques = torch.linalg.cross(cops, forces_body_frd)  # (num_envs, 4, 3)
         total_torque_body = torques.sum(dim=1) + body_torque_frd  # (num_envs, 3)
 
@@ -146,5 +150,6 @@ class WrenchDispatch:
             total_force_world,
             total_torque_world,
             body_id=self._body_link_index,
+            position_world=root_position_w,
         )
         # Flushed once by TVCSimScene.step().

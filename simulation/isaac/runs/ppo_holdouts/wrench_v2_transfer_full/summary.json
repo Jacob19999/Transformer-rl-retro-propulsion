@@ -1,0 +1,27 @@
+{
+  "checkpoint": "C:\\Transformer-rl-retro-propulsion\\simulation\\isaac\\runs\\ppo_8s_momentum_2048\\ppo_landing_seed0_20260914_191453\\ppo_stage_2_mastered.pt",
+  "trained_steps": 84410368,
+  "seed": 9317,
+  "action_mode": "stochastic",
+  "curriculum_stage": null,
+  "episodes": 512,
+  "success_count": 0,
+  "success_fraction": 0.0,
+  "landed_fraction": 0.0,
+  "crashed_fraction": 1.0,
+  "timeout_fraction": 0.0,
+  "failure_counts": {
+    "contact_or_tilt_failure": 512
+  },
+  "success_max_pad_distance": 0.5,
+  "success_max_touchdown_speed": 0.25,
+  "touchdown_speed_landed": null,
+  "pad_distance_landed": null,
+  "successful_landing_efficiency": {
+    "energy_wh": null,
+    "propulsive_delta_v_m_s": null,
+    "duration_s": null,
+    "low_altitude_hover_time_s": null
+  },
+  "passed": false
+}

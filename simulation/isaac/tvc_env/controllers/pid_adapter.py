@@ -19,9 +19,9 @@ from typing import Any
 
 from tvc_env.controllers.base import BaseController
 from tvc_env.controllers.pid_fin_mixer import PIDFinMixer
-from tvc_env.common.quaternions import to_euler
+from tvc_env.common.quaternions import to_euler, from_euler
 from tvc_env.common.quaternions import inverse as quat_inverse, normalize as quat_normalize, rotate_vector
-from tvc_env.common.frames import isaac_velocity_to_frd
+from tvc_env.common.frames import isaac_velocity_to_frd, frd_velocity_to_isaac
 
 
 class PIDController(BaseController):
@@ -34,9 +34,9 @@ class PIDController(BaseController):
         ki_alt: float = 0.01,
         kd_alt: float = 0.10,
         # Attitude gains (roll/pitch shared, yaw separate)
-        kp_att: float = 0.30,
+        kp_att: float = 0.20,
         ki_att: float = 0.00,
-        kd_att: float = 0.20,
+        kd_att: float = 0.05,
         kp_yaw: float = 0.20,
         ki_yaw: float = 0.00,
         kd_yaw: float = 0.20,
@@ -52,16 +52,17 @@ class PIDController(BaseController):
         lateral_recovery_attenuation: float = 0.70,
         min_lateral_scale: float = 0.0,
         max_rate_cmd_rp: float | None = None,
-        gyro_comp_rp: float = 0.0,
+        gyro_comp_rp: float = 0.06,
         # Deadband-aware lateral actuation floor (servo deadband ~= 0.017 rad)
         min_fin_cmd_xy: float = 0.018,
         xy_active_error: float = 0.20,
         # Throttle bias for gravity compensation
-        throttle_hover: float = 0.90,
+        throttle_hover: float = 0.934,
         max_fin_angle: float = 0.115,
         num_envs: int = 1,
         config: dict[str, Any] | None = None,
         device: torch.device | None = None,
+        dt: float = 1.0 / 30.0,
     ):
         super().__init__(config)
         self.kp_alt = kp_alt
@@ -85,6 +86,9 @@ class PIDController(BaseController):
         self.lateral_recovery_attenuation = lateral_recovery_attenuation
         self.min_lateral_scale = min_lateral_scale
         self.max_rate_cmd_rp = max_rate_cmd_rp
+        # Full-rotor physics sweep (logs/physics_review_pid_sweep.json):
+        # kp=.2, kd=.05, gyro=.06 achieved 0.08 m late hover RMS over four
+        # identical-seed cases. H/(d torque/d fin angle) ~ .8/13 = .06.
         self.gyro_comp_rp = gyro_comp_rp
         self.min_fin_cmd_xy = min_fin_cmd_xy
         self.xy_active_error = xy_active_error
@@ -105,7 +109,9 @@ class PIDController(BaseController):
         self._int_att = torch.zeros(num_envs, 3, device=device)
         self._int_pos_xy = torch.zeros(num_envs, 2, device=device)
         self._desired_tilt_cmd = torch.zeros(num_envs, 2, device=device)
-        self._dt = 1.0 / 30.0  # Approximately 30 Hz RL update rate
+        if dt <= 0.0:
+            raise ValueError("PID dt must be positive")
+        self._dt = dt
         self._last_debug: dict[str, Tensor] = {}
 
     def compute_action(self, obs: Tensor) -> Tensor:
@@ -126,14 +132,23 @@ class PIDController(BaseController):
         lin_vel_frd = obs[:, 7:10]        # (num_envs, 3)
         ang_vel_frd = obs[:, 10:13]       # (num_envs, 3)
 
-        # Rotate XY position error into body-FRD to build desired roll/pitch commands.
-        q_inv = quat_inverse(quat_normalize(quat_wxyz))
-        pos_error_body_isaac = rotate_vector(q_inv, pos_error_world)
+        # Position hold operates in a level heading frame. A full inverse body
+        # rotation leaked the large landing altitude error and descent velocity
+        # into the lateral loop whenever the vehicle tilted (review regression).
+        q = quat_normalize(quat_wxyz)
+        _, _, heading = to_euler(q)
+        heading_q = from_euler(torch.zeros_like(heading), torch.zeros_like(heading), heading)
+        q_inv = quat_inverse(heading_q)
+        horizontal_error = pos_error_world.clone()
+        horizontal_error[:, 2] = 0.0
+        pos_error_body_isaac = rotate_vector(q_inv, horizontal_error)
         pos_error_body_frd = isaac_velocity_to_frd(pos_error_body_isaac)
+        velocity_world = rotate_vector(q, frd_velocity_to_isaac(lin_vel_frd))
+        velocity_heading = isaac_velocity_to_frd(rotate_vector(q_inv, velocity_world))
 
         # XY hold uses PI on position + D on velocity to reject steady lateral drift.
         pos_error_xy = pos_error_body_frd[:, 0:2]
-        vel_xy = lin_vel_frd[:, 0:2]
+        vel_xy = velocity_heading[:, 0:2]
         candidate_int_xy = (self._int_pos_xy + pos_error_xy * self._dt).clamp(-1.5, 1.5)
         desired_xy_unsat_candidate = (
             self.k_pos_xy * pos_error_xy
@@ -173,8 +188,8 @@ class PIDController(BaseController):
         self._desired_tilt_cmd = self._desired_tilt_cmd + desired_tilt_delta
         desired_xy = self._desired_tilt_cmd
 
-        # Body-FRD thrust acts along -Z. Positive pitch tilts lift toward +X in
-        # the rigid-body dynamics, so X position error must command opposite pitch.
+        # Body-FRD thrust acts along -Z. Positive FRD pitch tilts lift toward
+        # -X, so positive X position error must command negative pitch.
         # Positive roll tilts lift toward body +Y.
         desired_pitch = -desired_xy[:, 0]
         desired_roll = desired_xy[:, 1]
@@ -184,7 +199,7 @@ class PIDController(BaseController):
         # z-position error in Isaac world frame (z-up): positive means target is above current position.
         alt_err = pos_error_world[:, 2]
         # Body-FRD z-velocity is positive downward; adding this term increases throttle while descending.
-        alt_vel_down = lin_vel_frd[:, 2]
+        alt_vel_down = -velocity_world[:, 2]
 
         candidate_int_alt = (self._int_alt + alt_err * self._dt).clamp(-2.5, 2.5)
         throttle_unsat_candidate = (
@@ -215,7 +230,7 @@ class PIDController(BaseController):
         pitch = -pitch
         yaw = -yaw
         att_err = torch.stack(
-            [desired_roll - roll, desired_pitch - pitch, desired_yaw - yaw],
+            [desired_roll - roll, desired_pitch - pitch, torch.atan2(torch.sin(desired_yaw - yaw), torch.cos(desired_yaw - yaw))],
             dim=-1,
         )
 

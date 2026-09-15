@@ -1,0 +1,71 @@
+PID hover eval starting: task=landing, duration=30.0s, headless=True, max_wall_time=180.0s
+Bootstrapping Isaac Sim...
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: C:\Transformer-rl-retro-propulsion\IsaacLab\apps\isaaclab.python.headless.kit
+Loading user config located at: 'c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/user.config.json'
+[Info] [carb] Logging to file: c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/logs/Kit/Isaac-Sim/5.1/kit_20260910_214450.log
+2026-09-11T02:44:50Z [456ms] [Warning] [omni.usd_config.extension] Enable omni.materialx.libs extension to use MaterialX
+2026-09-11T02:44:51Z [1,423ms] [Warning] [carb] Acquiring non optional plugin interface which is not listed as dependency: [omni::physx::IPhysxBenchmarks v1.0] (plugin: <default plugin>), by client: omni.physics.physx.plugin. Add it to CARB_PLUGIN_IMPL_DEPS() macro of a client.
+2026-09-11T02:44:51Z [1,441ms] [Warning] [omni.isaac.dynamic_control] omni.isaac.dynamic_control is deprecated as of Isaac Sim 4.5. No action is needed from end-users.
+
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 616.64        | Graphics API: D3D12
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA GeForce RTX 5070          | Yes: 0 |     | 11943   MB | 10de      | c4230100.. |
+|     |                                  |        |     |            | 2f04      | 0          |
+|     |                                  |        |     |            | 1         |            |
+|=============================================================================================|
+| OS: Windows 11 Pro, Version: 10.0 (25H2), Build: 26200, Kernel: 10.0.26100.9444
+| Processor: AMD Ryzen 9 9900X 12-Core Processor            
+| Cores: 12 | Logical Cores: 24
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 32360 | Free Memory: 8988
+| Total Page/Swap (MB): 49768 | Free Page/Swap: 14224
+|---------------------------------------------------------------------------------------------|
+2026-09-11T02:44:57Z [6,872ms] [Warning] [omni.kvdb.plugin] Disabling key-value database because another kit process is locking it
+Isaac Sim ready. Building TVC environment...
+
+[36m===================================================================================================================[0m
+[36m[1m[INFO][IsaacLab]: Logging to file: C:\Users\tngzj\AppData\Local\Temp\isaaclab\logs\isaaclab_2026-09-10_21-44-57.log[0m
+[36m===================================================================================================================[0m
+
+Environment reset complete.
+PID hover eval: task=landing, duration=30.0s (900 steps), log_state=True
+{"type":"state_vector","phase":"initial_reset","step":0,"sim_time_s":0.0,"reward":null,"terminated":false,"truncated":false,"target_position_world_m":[[0.0,0.0,0.0]],"position_error_world_m":[0.404,-0.067,-16.1],"tilt_rad":0.111,"roll_pitch_yaw_rad":[-0.096,0.055,0.146],"angular_rate_norm_rad_s":0.0,"action":null,"state":{"position_world_m":[-0.404,0.067,16.1],"quaternion_wxyz":[0.996,-0.05,0.024,0.074],"linear_vel_world_m_s":[0.944,0.582,-1.062],"angular_vel_world_rad_s":[0.0,0.0,0.0],"linear_vel_frd_m_s":[1.076,-0.533,0.958],"angular_vel_frd_rad_s":[0.0,-0.0,-0.0],"height_m":16.1,"fin_angles_rad":[0.0,0.0,0.0,0.0],"fin_rates_rad_s":[0.0,0.0,0.0,0.0],"motor_omega_rad_s":0.0,"contact_state":0},"dynamics_debug":{}}
+{"type":"state_vector","step":0,"sim_time_s":0.0,"reward":-0.127,"terminated":false,"truncated":false,"target_position_world_m":[[0.0,0.0,0.0]],"position_error_world_m":[0.372,-0.086,-16.059],"tilt_rad":0.111,"roll_pitch_yaw_rad":[-0.092,0.061,0.216],"angular_rate_norm_rad_s":2.815,"action":[-0.023,0.04,0.023,-0.04,0.693],"state":{"position_world_m":[-0.372,0.086,16.059],"quaternion_wxyz":[0.993,-0.049,0.025,0.109],"linear_vel_world_m_s":[0.945,0.582,-1.385],"angular_vel_world_rad_s":[0.113,0.289,2.798],"linear_vel_frd_m_s":[1.13,-0.486,1.279],"angular_vel_frd_rad_s":[0.001,0.0,-2.815],"height_m":16.059,"fin_angles_rad":[-0.005,0.011,0.005,-0.011],"fin_rates_rad_s":[-0.093,0.369,0.093,-0.369],"motor_omega_rad_s":608.537,"contact_state":0},"dynamics_debug":{"fin_force_body_frd_N":[[0.012,-0.024,0.086]],"fin_torque_body_frd_Nm":[[0.002,0.001,-0.0]],"thrust_loss_N":[0.086],"edf_raw_thrust_N":[0.785],"edf_applied_thrust_N":[0.699],"edf_static_torque_body_frd_Nm":[[-0.0,-0.0,-0.0]],"edf_dynamic_torque_body_frd_Nm":[[-0.0,-0.0,-3.346]],"edf_gyro_torque_body_frd_Nm":[[-0.0,0.0,-0.0]],"body_damping_torque_body_frd_Nm":[[-0.0,-0.0,0.778]],"edf_total_torque_body_frd_Nm":[[-0.0,-0.0,-2.568]],"wind_force_body_frd_N":[[-0.013,0.006,-0.014]]}}
+{"type":"state_vector","step":120,"sim_time_s":3.998,"reward":-0.159,"terminated":false,"truncated":false,"target_position_world_m":[[0.0,0.0,0.0]],"position_error_world_m":[-0.921,-2.848,-12.303],"tilt_rad":0.055,"roll_pitch_yaw_rad":[0.024,-0.049,1.056],"angular_rate_norm_rad_s":0.127,"action":[0.018,0.018,-0.018,-0.018,0.919],"state":{"position_world_m":[0.921,2.848,12.303],"quaternion_wxyz":[0.863,0.023,-0.015,0.504],"linear_vel_world_m_s":[-0.309,0.09,0.677],"angular_vel_world_rad_s":[0.012,0.011,0.126],"linear_vel_frd_m_s":[-0.041,-0.329,-0.672],"angular_vel_frd_rad_s":[0.022,0.002,-0.125],"height_m":12.303,"fin_angles_rad":[0.002,0.001,-0.002,-0.001],"fin_rates_rad_s":[0.0,0.007,0.0,-0.007],"motor_omega_rad_s":3924.873,"contact_state":0},"dynamics_debug":{"fin_force_body_frd_N":[[-0.206,-0.17,3.571]],"fin_torque_body_frd_Nm":[[0.017,-0.021,0.0]],"thrust_loss_N":[3.571],"edf_raw_thrust_N":[32.659],"edf_applied_thrust_N":[29.088],"edf_static_torque_body_frd_Nm":[[-0.0,-0.0,-0.0]],"edf_dynamic_torque_body_frd_Nm":[[-0.0,-0.0,-0.036]],"edf_gyro_torque_body_frd_Nm":[[-0.003,0.015,-0.0]],"body_damping_torque_body_frd_Nm":[[-0.005,-0.001,0.033]],"edf_total_torque_body_frd_Nm":[[-0.008,0.014,-0.003]],"wind_force_body_frd_N":[[0.0,0.002,0.003]]}}
+{"type":"state_vector","step":240,"sim_time_s":7.997,"reward":-0.176,"terminated":false,"truncated":false,"target_position_world_m":[[0.0,0.0,0.0]],"position_error_world_m":[-0.563,0.011,-12.283],"tilt_rad":0.077,"roll_pitch_yaw_rad":[-0.037,0.067,1.392],"angular_rate_norm_rad_s":1.484,"action":[-0.018,0.018,0.018,-0.018,0.996],"state":{"position_world_m":[0.563,-0.011,12.283],"quaternion_wxyz":[0.766,-0.036,0.014,0.641],"linear_vel_world_m_s":[0.007,-0.502,-2.268],"angular_vel_world_rad_s":[0.03,0.087,1.481],"linear_vel_frd_m_s":[-0.339,0.01,2.298],"angular_vel_frd_rad_s":[-0.009,0.069,-1.482],"height_m":12.283,"fin_angles_rad":[-0.002,0.003,0.002,-0.003],"fin_rates_rad_s":[0.0,0.0,0.0,0.0],"motor_omega_rad_s":4067.241,"contact_state":0},"dynamics_debug":{"fin_force_body_frd_N":[[0.218,-0.427,3.835]],"fin_torque_body_frd_Nm":[[0.043,0.022,-0.0]],"thrust_loss_N":[3.835],"edf_raw_thrust_N":[35.071],"edf_applied_thrust_N":[31.236],"edf_static_torque_body_frd_Nm":[[-0.0,-0.0,-0.0]],"edf_dynamic_torque_body_frd_Nm":[[-0.0,-0.0,-0.307]],"edf_gyro_torque_body_frd_Nm":[[-0.056,-0.006,0.0]],"body_damping_torque_body_frd_Nm":[[0.002,-0.019,0.412]],"edf_total_torque_body_frd_Nm":[[-0.054,-0.025,0.105]],"wind_force_body_frd_N":[[0.005,-0.0,-0.036]]}}
+{"type":"state_vector","step":360,"sim_time_s":11.995,"reward":-0.101,"terminated":false,"truncated":false,"target_position_world_m":[[0.0,0.0,0.0]],"position_error_world_m":[0.219,-0.501,-4.198],"tilt_rad":0.066,"roll_pitch_yaw_rad":[0.043,-0.051,1.496],"angular_rate_norm_rad_s":0.097,"action":[-0.023,0.018,0.023,-0.018,0.938],"state":{"position_world_m":[-0.219,0.501,4.198],"quaternion_wxyz":[0.732,0.033,-0.004,0.68],"linear_vel_world_m_s":[-0.288,0.073,-2.005],"angular_vel_world_rad_s":[-0.078,0.043,-0.038],"linear_vel_frd_m_s":[-0.05,-0.206,2.016],"angular_vel_frd_rad_s":[0.036,-0.079,0.043],"height_m":4.198,"fin_angles_rad":[-0.007,0.002,0.007,-0.002],"fin_rates_rad_s":[-0.044,0.01,0.044,-0.01],"motor_omega_rad_s":4047.129,"contact_state":0},"dynamics_debug":{"fin_force_body_frd_N":[[0.87,-0.267,3.799]],"fin_torque_body_frd_Nm":[[0.027,0.087,-0.0]],"thrust_loss_N":[3.799],"edf_raw_thrust_N":[34.725],"edf_applied_thrust_N":[30.926],"edf_static_torque_body_frd_Nm":[[-0.0,-0.0,-0.0]],"edf_dynamic_torque_body_frd_Nm":[[0.0,0.0,0.017]],"edf_gyro_torque_body_frd_Nm":[[0.083,0.014,-0.0]],"body_damping_torque_body_frd_Nm":[[-0.005,0.028,-0.011]],"edf_total_torque_body_frd_Nm":[[0.079,0.042,0.006]],"wind_force_body_frd_N":[[0.001,0.003,-0.028]]}}
+{"type":"state_vector","step":480,"sim_time_s":15.994,"reward":-0.092,"terminated":false,"truncated":false,"target_position_world_m":[[0.0,0.0,0.0]],"position_error_world_m":[-1.262,0.188,-0.811],"tilt_rad":0.049,"roll_pitch_yaw_rad":[-0.026,-0.042,1.453],"angular_rate_norm_rad_s":0.474,"action":[0.045,0.018,-0.045,-0.018,0.93],"state":{"position_world_m":[1.262,-0.188,0.811],"quaternion_wxyz":[0.747,0.004,-0.024,0.664],"linear_vel_world_m_s":[0.039,0.14,0.213],"angular_vel_world_rad_s":[0.117,-0.459,-0.012],"linear_vel_frd_m_s":[0.152,0.028,-0.206],"angular_vel_frd_rad_s":[-0.442,0.17,-0.003],"height_m":0.811,"fin_angles_rad":[0.024,-0.014,-0.024,0.014],"fin_rates_rad_s":[0.185,0.378,-0.186,-0.378],"motor_omega_rad_s":3998.38,"contact_state":0},"dynamics_debug":{"fin_force_body_frd_N":[[-2.864,2.251,3.75]],"fin_torque_body_frd_Nm":[[-0.225,-0.286,0.0]],"thrust_loss_N":[3.75],"edf_raw_thrust_N":[33.894],"edf_applied_thrust_N":[30.144],"edf_static_torque_body_frd_Nm":[[-0.0,-0.0,-0.0]],"edf_dynamic_torque_body_frd_Nm":[[0.0,0.0,0.002]],"edf_gyro_torque_body_frd_Nm":[[-0.231,-0.301,0.0]],"body_damping_torque_body_frd_Nm":[[0.102,-0.078,0.001]],"edf_total_torque_body_frd_Nm":[[-0.13,-0.379,0.003]],"wind_force_body_frd_N":[[-0.0,-0.0,0.0]]}}
+{"type":"state_vector","step":600,"sim_time_s":19.992,"reward":-0.03,"terminated":false,"truncated":false,"target_position_world_m":[[0.0,0.0,0.0]],"position_error_world_m":[0.309,0.203,-0.899],"tilt_rad":0.07,"roll_pitch_yaw_rad":[0.043,0.055,1.473],"angular_rate_norm_rad_s":0.17,"action":[-0.026,-0.018,0.026,0.018,0.936],"state":{"position_world_m":[-0.309,-0.203,0.899],"quaternion_wxyz":[0.741,-0.002,0.035,0.671],"linear_vel_world_m_s":[0.469,0.459,-0.088],"angular_vel_world_rad_s":[0.039,-0.165,0.017],"linear_vel_frd_m_s":[0.506,0.424,0.042],"angular_vel_frd_rad_s":[-0.161,0.055,-0.01],"height_m":0.899,"fin_angles_rad":[-0.01,-0.001,0.01,0.001],"fin_rates_rad_s":[-0.033,0.0,0.033,0.0],"motor_omega_rad_s":4022.823,"contact_state":0},"dynamics_debug":{"fin_force_body_frd_N":[[1.312,0.192,3.757]],"fin_torque_body_frd_Nm":[[-0.019,0.131,-0.0]],"thrust_loss_N":[3.757],"edf_raw_thrust_N":[34.309],"edf_applied_thrust_N":[30.552],"edf_static_torque_body_frd_Nm":[[-0.0,-0.0,-0.0]],"edf_dynamic_torque_body_frd_Nm":[[-0.0,-0.0,-0.002]],"edf_gyro_torque_body_frd_Nm":[[-0.042,-0.126,0.0]],"body_damping_torque_body_frd_Nm":[[0.042,-0.014,0.003]],"edf_total_torque_body_frd_Nm":[[0.0,-0.14,0.001]],"wind_force_body_frd_N":[[-0.002,-0.002,-0.0]]}}
+{"type":"state_vector","step":720,"sim_time_s":23.99,"reward":-0.06,"terminated":false,"truncated":false,"target_position_world_m":[[0.0,0.0,0.0]],"position_error_world_m":[-0.76,0.407,-0.413],"tilt_rad":0.114,"roll_pitch_yaw_rad":[-0.075,0.087,1.485],"angular_rate_norm_rad_s":0.058,"action":[-0.018,-0.018,0.018,0.018,0.936],"state":{"position_world_m":[0.76,-0.407,0.413],"quaternion_wxyz":[0.735,-0.057,0.007,0.676],"linear_vel_world_m_s":[0.513,0.009,-0.139],"angular_vel_world_rad_s":[0.003,-0.057,0.01],"linear_vel_frd_m_s":[0.065,0.499,0.171],"angular_vel_frd_rad_s":[-0.057,0.008,-0.005],"height_m":0.413,"fin_angles_rad":[-0.003,-0.002,0.003,0.002],"fin_rates_rad_s":[-0.0,0.0,0.0,-0.0],"motor_omega_rad_s":4024.5,"contact_state":0},"dynamics_debug":{"fin_force_body_frd_N":[[0.421,0.266,3.755]],"fin_torque_body_frd_Nm":[[-0.027,0.042,0.0]],"thrust_loss_N":[3.755],"edf_raw_thrust_N":[34.338],"edf_applied_thrust_N":[30.583],"edf_static_torque_body_frd_Nm":[[-0.0,-0.0,-0.0]],"edf_dynamic_torque_body_frd_Nm":[[-0.0,-0.0,-0.002]],"edf_gyro_torque_body_frd_Nm":[[-0.006,-0.043,0.0]],"body_damping_torque_body_frd_Nm":[[0.014,-0.002,0.001]],"edf_total_torque_body_frd_Nm":[[0.008,-0.044,-0.001]],"wind_force_body_frd_N":[[-0.0,-0.002,-0.001]]}}
+
+=== PID Landing Evaluation Results ===
+Duration: 30s budget (900 steps), wall time: 55.1s
+
+Tilt (rad):
+  mean=0.067  max=0.126  (3.8 deg mean, 7.2 deg max)
+Angular rate (rad/s):
+  mean=0.310  max=2.815
+
+Min altitude reached: 0.313 m
+Final pad horizontal distance: 0.834 m
+Crashed: False
+Touchdown: step=767 t=25.556s speed=0.467 m/s pad_dist=0.834 m
+Delta-v proxy (sum of (T/T_max)^2 * dt): 22.425 s
+
+Pass criteria:
+  landed within duration:  PASS
+  not crashed:  PASS
+  touchdown speed <= 0.25 m/s:  FAIL
+  pad distance < 0.50 m:  FAIL
+  max tilt < 15 deg:  PASS
+
+FAIL: PID landing evaluation
+Closing TVC environment...
+Closing Isaac Sim...
+Isaac Sim fast shutdown requested.

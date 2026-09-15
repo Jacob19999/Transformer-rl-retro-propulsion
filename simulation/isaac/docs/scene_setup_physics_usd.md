@@ -60,11 +60,11 @@ Required keys:
 
 | Property           | Value                                 |
 | ------------------ | ------------------------------------- |
-| Total mass         | 3.1 kg                                |
-| Inertia Ixx        | 0.0486 kg·m²                          |
-| Inertia Iyy        | 0.0438 kg·m²                          |
-| Inertia Izz        | 0.0202 kg·m²                          |
-| Body COM offset    | `[0.0, 0.0, 0.01]` m (body-FRD frame) |
+| Body mass          | 3.1 kg; four 0.001 kg fins give 3.104 kg articulated mass |
+| Inertia Ixx        | 0.05 kg·m²                            |
+| Inertia Iyy        | 0.05 kg·m²                            |
+| Inertia Izz        | 0.02 kg·m²                            |
+| Body COM offset    | `[0.0, 0.0, -0.01]` m (body-FRD frame) |
 | Max fin deflection | ±0.262 rad (15°)                      |
 
 
@@ -100,8 +100,8 @@ ArticulationCfg(
     actuators={
         "all_joints": ImplicitActuatorCfg(
             joint_names_expr=["joint_.*"],
-            stiffness=400.0,                   # N/rad — servo stiffness
-            damping=40.0,                      # N·s/rad — servo damping
+            stiffness=80.0,                    # N·m/rad — servo stiffness
+            damping=2.0,                       # N·m·s/rad — servo damping
         ),
     },
 
@@ -289,5 +289,4 @@ This lets `test_00_asset_validation` run without a headless Isaac Sim instance.
 | Offline USD fixtures           | `tests/sim/conftest.py`                   |
 | Test runner                    | `apps/run_single_test.py`                 |
 | Commands reference             | `../Isaac_Commands.md`                    |
-
 

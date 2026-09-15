@@ -1,0 +1,86 @@
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: C:\Transformer-rl-retro-propulsion\IsaacLab\apps\isaaclab.python.headless.kit
+Loading user config located at: 'c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/user.config.json'
+[Info] [carb] Logging to file: c:/transformer-rl-retro-propulsion/env_isaaclab/lib/site-packages/isaacsim/kit/logs/Kit/Isaac-Sim/5.1/kit_20260915_093950.log
+2026-09-15T14:39:51Z [638ms] [Warning] [omni.usd_config.extension] Enable omni.materialx.libs extension to use MaterialX
+2026-09-15T14:39:52Z [1,859ms] [Warning] [carb] Acquiring non optional plugin interface which is not listed as dependency: [omni::physx::IPhysxBenchmarks v1.0] (plugin: <default plugin>), by client: omni.physics.physx.plugin. Add it to CARB_PLUGIN_IMPL_DEPS() macro of a client.
+2026-09-15T14:39:52Z [1,877ms] [Warning] [omni.isaac.dynamic_control] omni.isaac.dynamic_control is deprecated as of Isaac Sim 4.5. No action is needed from end-users.
+
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 616.92        | Graphics API: D3D12
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA GeForce RTX 5070          | Yes: 0 |     | 11943   MB | 10de      | 5b220100.. |
+|     |                                  |        |     |            | 2f04      | 0          |
+|     |                                  |        |     |            | 1         |            |
+|=============================================================================================|
+| OS: Windows 11 Pro, Version: 10.0 (25H2), Build: 26200, Kernel: 10.0.26100.9457
+| Processor: AMD Ryzen 9 9900X 12-Core Processor            
+| Cores: 12 | Logical Cores: 24
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 32360 | Free Memory: 13189
+| Total Page/Swap (MB): 52840 | Free Page/Swap: 24285
+|---------------------------------------------------------------------------------------------|
+2026-09-15T14:39:57Z [7,140ms] [Warning] [omni.kvdb.plugin] Disabling key-value database because another kit process is locking it
+
+[36m===================================================================================================================[0m
+[36m[1m[INFO][IsaacLab]: Logging to file: C:\Users\tngzj\AppData\Local\Temp\isaaclab\logs\isaaclab_2026-09-15_09-39-58.log[0m
+[36m===================================================================================================================[0m
+
+Evaluated 512/512 independent episodes
+{
+  "checkpoint": "C:\\Transformer-rl-retro-propulsion\\simulation\\isaac\\runs\\ppo_8s_gyro_midpoint\\ppo_landing_seed0_20260915_030057\\ppo_step_12058624.pt",
+  "trained_steps": 12058624,
+  "seed": 9517,
+  "action_mode": "stochastic",
+  "curriculum_stage": 1,
+  "episodes": 512,
+  "success_count": 47,
+  "success_fraction": 0.091796875,
+  "landed_fraction": 0.30078125,
+  "crashed_fraction": 0.69921875,
+  "timeout_fraction": 0.0,
+  "failure_counts": {
+    "contact_or_tilt_failure": 358,
+    "hard_landing": 1,
+    "hard_off_pad": 30,
+    "off_pad": 76,
+    "success": 47
+  },
+  "success_max_pad_distance": 0.5,
+  "success_max_touchdown_speed": 0.25,
+  "touchdown_speed_landed": {
+    "mean": 0.20261166385048396,
+    "max": 0.39071911573410034
+  },
+  "pad_distance_landed": {
+    "mean": 0.6615406111753607,
+    "max": 1.3618364334106445
+  },
+  "successful_landing_efficiency": {
+    "energy_wh": {
+      "mean": 3.584510919895578,
+      "min": 3.1723575592041016,
+      "max": 4.199487209320068
+    },
+    "propulsive_delta_v_m_s": {
+      "mean": 49.43369431191302,
+      "min": 41.67573928833008,
+      "max": 59.39509201049805
+    },
+    "duration_s": {
+      "mean": 5.056028368794327,
+      "min": 4.2,
+      "max": 6.133333333333333
+    },
+    "low_altitude_hover_time_s": {
+      "mean": 0.09574468568601507,
+      "min": 0.0,
+      "max": 0.5666667222976685
+    }
+  },
+  "passed": false
+}
