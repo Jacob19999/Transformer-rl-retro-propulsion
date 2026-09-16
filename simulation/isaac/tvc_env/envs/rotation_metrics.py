@@ -85,6 +85,11 @@ class RotationTracker:
     def snapshot(self):
         return {name: value.clone() for name, value in self.episode.items()}
 
+    @property
+    def peak_rate_rad_s(self):
+        """Whole-flight per-axis peak rate used by the terminal quality reward."""
+        return self.episode['peak_rate_rad_s']
+
     def record(self, env_id=0):
         return rotation_record(self.episode, self.limits, env_id)
 

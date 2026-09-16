@@ -148,7 +148,9 @@ def apply_spawn_stage(task_config: dict[str, Any], final_spawn: dict[str, Any], 
     """
     spawn = task_config.setdefault("task", {}).setdefault("spawn", {})
     for key in ("position_range", "velocity_range", "attitude_range", "angular_velocity_range",
-                "initial_motor_omega_fraction", "waypoint_count_range", "waypoint_spread_m"):
+                "initial_motor_omega_fraction", "waypoint_count_range", "waypoint_spread_m",
+                "waypoint_kind", "waypoint_hover_hold_s", "waypoint_radius_m",
+                "waypoint_speed_m_s"):
         source = stage if stage is not None and key in stage else final_spawn
         if key in source:
             value = source[key]
@@ -158,6 +160,19 @@ def apply_spawn_stage(task_config: dict[str, Any], final_spawn: dict[str, Any], 
             elif key == 'waypoint_spread_m':
                 if not 0 <= float(value) <= 100:
                     raise ValueError('waypoint_spread_m must be within 0..100')
+            elif key == 'waypoint_kind':
+                value = str(value).lower()
+                if value not in ('mixed', 'hover', 'flypass'):
+                    raise ValueError("waypoint_kind must be 'mixed', 'hover', or 'flypass'")
+            elif key == 'waypoint_hover_hold_s':
+                if not 0 <= float(value) <= 60:
+                    raise ValueError('waypoint_hover_hold_s must be within 0..60')
+            elif key == 'waypoint_radius_m':
+                if not 0 < float(value) <= 25:
+                    raise ValueError('waypoint_radius_m must be within (0, 25]')
+            elif key == 'waypoint_speed_m_s':
+                if not 0 < float(value) <= 25:
+                    raise ValueError('waypoint_speed_m_s must be within (0, 25]')
             elif key.endswith("_range"):
                 value = _as_range(value, name=key)
             elif not 0.0 <= float(value) <= 1.0:

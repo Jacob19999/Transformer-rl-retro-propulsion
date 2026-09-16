@@ -1,0 +1,11 @@
+{
+  "source": "C:\\Transformer-rl-retro-propulsion\\simulation\\isaac\\runs\\ppo_8s_gyro_continuation\\ppo_landing_seed0_20260915_093514\\ppo_final.pt",
+  "source_sha256": "6a2b0fced135a20e1262d72c92cacd4bd2f5404a84ba98cd224502f28e3a1bef",
+  "parent_steps": 17825792,
+  "critic": "fresh",
+  "optimizer": "fresh",
+  "fin_permutation": null,
+  "observation_dim": 43,
+  "initialized_throttle_duty": null,
+  "purpose": "Explicit physics transfer; results require new independent validation"
+}

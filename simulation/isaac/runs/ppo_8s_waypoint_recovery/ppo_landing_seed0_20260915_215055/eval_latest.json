@@ -1,0 +1,105 @@
+{
+  "landed_fraction": 0.0,
+  "crashed_fraction": 1.0,
+  "timeout_fraction": 0.0,
+  "success_fraction": 0.0,
+  "mean_touchdown_speed": NaN,
+  "max_touchdown_speed": NaN,
+  "mean_pad_distance": NaN,
+  "max_pad_distance": NaN,
+  "mean_delta_v_proxy": 1.101628065109253,
+  "mean_eval_throttle": 0.41560032905697625,
+  "max_eval_throttle": 1.0,
+  "max_upward_speed": 5.3270134925842285,
+  "max_downward_speed": 60.16997528076172,
+  "passed": false,
+  "mean_energy_wh": 1.9971275329589844,
+  "mean_propulsive_delta_v_m_s": 15.114731788635254,
+  "success_mean_energy_wh": NaN,
+  "success_mean_propulsive_delta_v_m_s": NaN,
+  "success_mean_duration_s": NaN,
+  "rotation": {
+    "all_episodes": {
+      "episodes": 2048,
+      "mean": {
+        "axes": [
+          "roll",
+          "pitch",
+          "yaw"
+        ],
+        "soft_limits_deg_s": [
+          90.0,
+          90.0,
+          180.0
+        ],
+        "source": "true_body_frd_physics_substeps",
+        "peak_rate_deg_s": [
+          1070.9805908203125,
+          995.4381103515625,
+          2329.540771484375
+        ],
+        "angular_travel_deg": [
+          869.8681030273438,
+          872.653564453125,
+          4787.291015625
+        ],
+        "excess_rotation_deg": [
+          492.1261291503906,
+          494.6386413574219,
+          3962.742919921875
+        ],
+        "time_above_limit_s": [
+          3.525501012802124,
+          3.5298779010772705,
+          4.264400482177734
+        ],
+        "peak_rate_norm_deg_s": 2883.38330078125,
+        "angular_path_deg": 5167.89013671875,
+        "excess_cost_s": 3.676968812942505,
+        "flight_time_s": 4.890895843505859
+      },
+      "max": {
+        "axes": [
+          "roll",
+          "pitch",
+          "yaw"
+        ],
+        "soft_limits_deg_s": [
+          90.0,
+          90.0,
+          180.0
+        ],
+        "source": "true_body_frd_physics_substeps",
+        "peak_rate_deg_s": [
+          7731.9736328125,
+          5798.5654296875,
+          8323.6865234375
+        ],
+        "angular_travel_deg": [
+          2552.70166015625,
+          2538.99267578125,
+          22996.041015625
+        ],
+        "excess_rotation_deg": [
+          1906.23779296875,
+          1910.24853515625,
+          21376.1015625
+        ],
+        "time_above_limit_s": [
+          7.613114833831787,
+          7.663817405700684,
+          11.689648628234863
+        ],
+        "peak_rate_norm_deg_s": 9242.0078125,
+        "angular_path_deg": 23160.216796875,
+        "excess_cost_s": 10.030560493469238,
+        "flight_time_s": 11.734029769897461
+      }
+    },
+    "successful_landings": {
+      "episodes": 0,
+      "mean": null,
+      "max": null
+    }
+  }
+}

@@ -70,6 +70,10 @@ def parse_args():
                         help='Explicit actor initialization only: new fin output channels from parent indices. No runtime action transformation.')
     parser.add_argument('--initialize-throttle-hover', action='store_true',
                         help='With actor transfer, initialize only throttle head to a physical hover prior; train every weight normally.')
+    parser.add_argument('--initialize-fin-log-std', type=float, default=None,
+                        help='With actor transfer, reset all four fin log standard deviations before PPO.')
+    parser.add_argument('--initialize-throttle-log-std', type=float, default=None,
+                        help='With actor transfer, reset throttle log standard deviation before PPO.')
     parser.add_argument('--physics-change-note', default=None,
                         help='Explicit diagnosis for resuming after physics source corrections; differences are recorded. Never bypasses config/asset checks.')
     parser.add_argument('--eval-action-mode', choices=['deterministic','stochastic','mean'], default='deterministic')
@@ -189,6 +193,10 @@ def main():
         raise ValueError('Fin initialization permutation requires --initialize-actor-from')
     if args.initialize_throttle_hover and not args.initialize_actor_from:
         raise ValueError('Throttle initialization requires --initialize-actor-from')
+    if ((args.initialize_fin_log_std is None) != (args.initialize_throttle_log_std is None)):
+        raise ValueError('Set both initial fin and throttle log standard deviations together')
+    if args.initialize_fin_log_std is not None and not args.initialize_actor_from:
+        raise ValueError('Exploration initialization requires --initialize-actor-from')
     if args.reset_critic and not args.resume:
         raise ValueError('--reset-critic requires --resume')
     if args.body_frame_position_error is None:
@@ -672,6 +680,13 @@ def main():
             # timed out after 30s. Learn the new task by PPO; no throttle remap
             # or guidance wrapper. The old critic's return targets do not apply.
             model.initialize_actor(transfer['model'], args.initialize_fin_permutation)
+            initialized_log_std = None
+            if args.initialize_fin_log_std is not None:
+                model.initialize_exploration(args.initialize_fin_log_std,
+                                             args.initialize_throttle_log_std)
+                initialized_log_std = model.log_std.detach().cpu().tolist()
+                print(f'One-time exploration initialization: log_std={initialized_log_std}; '
+                      'all distribution parameters remain trainable', flush=True)
             initial_duty = None
             if args.initialize_throttle_hover:
                 initial_duty = hover_throttle_init
@@ -689,6 +704,7 @@ def main():
                 parent_steps=transfer['step'], critic='fresh', optimizer='fresh',
                 fin_permutation=args.initialize_fin_permutation, observation_dim=obs_dim,
                 initialized_throttle_duty=initial_duty,
+                initialized_log_std=initialized_log_std,
                 purpose='Explicit physics transfer; results require new independent validation'), indent=2))
             print(f'Initialized actor from {source}; fresh critic and optimizer for new physical task', flush=True)
         initial_critic = copy.deepcopy(model.critic.state_dict()) if args.reset_critic else None
@@ -880,6 +896,7 @@ def main():
             stage_success_count = 0
             stage_termination_count = 0
             rollout_landed_count = rollout_crashed_count = rollout_timeout_count = 0
+            rollout_waypoints_completed = rollout_premature_landings = 0
             from tvc_env.envs.rotation_metrics import RotationSummary
             rollout_rotation = RotationSummary(env._rotation)
             rollout_success_rotation = RotationSummary(env._rotation)
@@ -933,6 +950,8 @@ def main():
                     rollout_landed_count += int(landed.sum().item())
                     rollout_crashed_count += int((terminated & ~landed).sum().item())
                     rollout_timeout_count += int(truncated.sum().item())
+                    rollout_waypoints_completed += int(info['waypoints_completed_pre_reset'][done].sum().item())
+                    rollout_premature_landings += int((landed & ~info['mission_ready_to_land_pre_reset']).sum().item())
                     stage_env_steps += num_envs
                     rollout_rotation.add(info['rotation_pre_reset'], done)
                     rollout_success_rotation.add(info['rotation_pre_reset'], done & success)
@@ -1149,6 +1168,8 @@ def main():
                 "rollout_landed_count": rollout_landed_count,
                 "rollout_crashed_count": rollout_crashed_count,
                 "rollout_timeout_count": rollout_timeout_count,
+                "rollout_waypoints_completed_in_finished_episodes": rollout_waypoints_completed,
+                "rollout_premature_landings": rollout_premature_landings,
                 "rotation": dict(all_completed=rollout_rotation.record(),
                                  successful_landings=rollout_success_rotation.record()),
                 "policy_latent_std": model.log_std.detach().exp().cpu().tolist(),
@@ -1240,6 +1261,10 @@ def main():
                     stage_cfg = _curriculum_cfg['stages'][_stage_index()]
                     same_reset = all(stage_cfg.get(key, final_spawn.get(key)) == final_spawn.get(key)
                                      for key in ('position_range', 'velocity_range', 'attitude_range',
+                                                 'angular_velocity_range', 'waypoint_count_range',
+                                                 'waypoint_spread_m', 'waypoint_kind',
+                                                 'waypoint_hover_hold_s', 'waypoint_radius_m',
+                                                 'waypoint_speed_m_s',
                                                  'initial_motor_omega_fraction'))
                     # The final stage can be identical to the full task. Reuse
                     # that exact evaluation instead of replaying the same seed.

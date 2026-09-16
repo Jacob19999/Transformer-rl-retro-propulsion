@@ -6,6 +6,57 @@ For first-time dependencies run that Python with `-m pip install -r
 simulation/isaac/mission_control/requirements.txt`. The launcher installs the
 locked browser dependencies and builds the frontend. No cloud service is used.
 
+## Draggable mission planner and experimental recovery policy
+
+Use the top **X/Y** and side **X/Z** canvases to drag the cyan starting diamond
+or numbered waypoints. Changes update the numeric form immediately. X/Y can
+range from −100 to +100 m; Z is above-ground altitude, from 0.34 to 100 m for
+the starting body origin. Waypoints allow 1–100 m altitude. Negative altitude
+would start underground and is rejected. View range controls zoom, not the
+allowed bounds. The amber velocity endpoint represents two seconds of initial
+velocity; use numeric velocity fields when the zero-length arrow overlaps the
+start marker. **Invert Start** toggles roll between 0° and 180°.
+
+**+ HOVER** creates a timed hold, default **2 seconds**. Hold time accrues only
+continuously within its radius at speed ≤0.4 m/s; leaving resets the timer.
+**+ FLY-THROUGH** advances on a forward swept pass within the acceptance
+radius. Edit position, radius, speed and hover duration in the waypoint rows;
+reorder with ↑ or remove with ×. Up to twelve points can be edited; the
+training task currently samples zero to three. Every route ends at the
+landing pad. The dashed curve is a reference path, not a scripted controller.
+Routes whose waypoint splines dip below ground clearance between control
+points are rejected; raising the neighboring points can remove the overshoot.
+
+Waypoint missions require the **EXPERIMENTAL PPO · latest recovery + waypoints**
+choice registered in `mission_policy_registry.json`. This explicitly
+experimental choice follows completed checkpoint saves in the designated run;
+it does not qualify them or alter archived recordings. Each new mission logs
+the exact checkpoint file and hash. The initial saved model has only easy-stage
+training; the initial full adverse evaluation had 0/2,048 successes.
+Old policies do not observe waypoint targets and are rejected for such
+requests. The wider recovery policy is still training; inverted starts and
+long routes are not qualified capabilities. Training status shows current
+stage and independent full-task evaluation separately. Simulation launch is
+disabled while the trainer owns Isaac; editing plans and replay remain usable.
+
+To test interactively before a long training run finishes, create a file named
+`STOP` inside its run directory. The trainer finishes its current rollout or
+evaluation, saves `ppo_final.pt`, and releases Isaac. Wait for the training
+banner to clear before launching a mission. The browser's **STOP RUN** button
+only stops a mission, not PPO training. The active run and exact launch options
+are recorded in `runs/ppo_8s_waypoint_recovery/*/args.json`.
+
+The recorded mission phase displays the active waypoint, cross-track error
+and hover timer. Editing a draft does not alter the reference route in replay
+cameras or exported footage. Old recordings retain their original telemetry;
+missing navigation or cumulative rotation is shown as unavailable.
+
+The whole-flight rotation panel reports per-axis peak rate, angular travel,
+excess rotation and seconds above the provisional 90/90/180°/s limits. Travel
+counts turns and reversals, not wrapped Euler differences. Amber gyro values
+and dashed plot lines identify limit exceedances. Flight totals freeze at
+terminal contact; motor-off settling remains a separate procedure.
+
 Set position, world velocity, attitude, body FRD angular rates, initial rotor
 speed, seed, controller, disturbances, and battery parameters. Wind/gusts,
 sensor noise and center-of-mass offset are independent checkboxes and can be

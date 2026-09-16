@@ -73,6 +73,7 @@ class VehicleState:
     battery_energy_step_wh: Tensor | None = None  # integrated electrical work during this control interval
     propulsive_delta_v_step: Tensor | None = None  # integral |F_propulsion|/mass dt, m/s
     excess_rotation_cost_step_s: Tensor | None = None  # bounded soft rate exceedance integrated at physics dt
+    rotation_peak_rate_rad_s: Tensor | None = None  # whole-flight per-axis peak |p,q,r| at physics rate
     mission_ready_to_land: Tensor | None = None
     mission_progress_step: Tensor | None = None
     waypoint_completion_step: Tensor | None = None

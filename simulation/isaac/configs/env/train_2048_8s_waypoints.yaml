@@ -5,14 +5,19 @@
 # Phase progression is mission state, not a controller. Real contact is required.
 # Landing early cannot collect landing rewards or count as mission success.
 # Inverted airborne states are allowed; contact tilt/speed/rate gates unchanged.
-# 480Hz combined gyro/body midpoint, TGS external force once; 30Hz policy.
-# Test18: native explicit body p^2+q^2 grew 114x at 40rad/s; corrected <1.01x.
+# 480Hz gyro/body midpoint with inverse PhysX momentum projection and paired
+# free-flight Cayley attitude drift; TGS external force once; 30Hz policy.
+# Test18: native transverse rates squared grew 114x at 40rad/s. Final tests
+# at p=q=6.28, r=+/-40, rotor .9/0, 480/960Hz: energy drift below .14%/2s.
 # Potential shaping is gamma*Phi(next)-Phi(previous), Phi=-remaining route
 # length, zero only at absorbing terminations. Gamma must equal PPO gamma.
-# Reward budget: at most 120 rotation + 120 path + ~233 electrical + 186
+# Reward budget: at most 600 rotation + 120 path + ~233 electrical + 186
 # propulsive impulse + 57 attitude + 13 servo + 8 time costs over 120s
-# in the stated 3500W/15.5m/s2 envelope, versus -1000 crash / +2200 landing.
-# Hard contact penalty exceeds the +1200 partial landing rewards.
+# in the stated 3500W/15.5m/s2 envelope: <=1217 total step cost versus
+# -1600 failure / +2700 soft landing including whole-flight rate quality.
+# Diagnostic: the first 43D run stayed at stage 2 for 120.85M transitions
+# (6.84% rolling success), after changing spawn size and waypoint semantics
+# together. The stages below isolate those dimensions before combining them.
 # Full eval uses the uncurricularized 25-100m, +/-100m XY, inverted-inclusive
 # attitude box, +/-360deg/s roll/pitch and +/-720deg/s yaw initial rates.
 # These extreme starts are research coverage, not a claim all are recoverable.
@@ -87,14 +92,15 @@ task:
     control_rate: -0.0005
     vertical_speed_shaping: 0.0
     landing_descent_tracking: 0.0
-    excess_rotation_cost: -1.0
+    excess_rotation_cost: -5.0
+    rotation_quality: 500.0
     mission_progress: 3.0
     waypoint_completion: 20.0
     path_tracking_cost: -1.0
-    premature_landing_penalty: -1000.0
-    crash_penalty: -1000.0
-    off_pad_landing_penalty: -1000.0
-    hard_landing_penalty: -1400.0
+    premature_landing_penalty: -1600.0
+    crash_penalty: -1600.0
+    off_pad_landing_penalty: -1600.0
+    hard_landing_penalty: -2000.0
     touchdown_softness: 200.0
     pad_accuracy: 1000.0
     landing_success: 1000.0
@@ -132,6 +138,10 @@ task:
     - 0
     - 3
     waypoint_spread_m: 8
+    waypoint_kind: mixed
+    waypoint_hover_hold_s: 2.0
+    waypoint_radius_m: 1.0
+    waypoint_speed_m_s: 3.0
     curriculum:
       enabled: true
       mode: staged
@@ -172,7 +182,7 @@ task:
         waypoint_spread_m: 0
         min_steps: 1000000
         max_steps: 0
-        advance_success_fraction: 0.7
+        advance_success_fraction: 0.6
         min_terminations: 1024
       - position_range:
         - - -3
@@ -205,11 +215,135 @@ task:
         initial_motor_omega_fraction: 0.84
         waypoint_count_range:
         - 0
+        - 0
+        waypoint_spread_m: 0
+        min_steps: 2000000
+        max_steps: 0
+        advance_success_fraction: 0.6
+        min_terminations: 1024
+      # Introduce one semantic at a time.  These remain PPO tasks: the
+      # reference changes reward/observation only and never overrides actions.
+      - position_range:
+        - - -3
+          - -3
+          - 8
+        - - 3
+          - 3
+          - 15
+        velocity_range:
+        - - -0.5
+          - -0.5
+          - -1.0
+        - - 0.5
+          - 0.5
+          - 0.25
+        attitude_range:
+        - - -0.15
+          - -0.15
+          - -3.141592653589793
+        - - 0.15
+          - 0.15
+          - 3.141592653589793
+        angular_velocity_range:
+        - - -0.2
+          - -0.2
+          - -0.4
+        - - 0.2
+          - 0.2
+          - 0.4
+        initial_motor_omega_fraction: 0.84
+        waypoint_count_range:
+        - 1
         - 1
         waypoint_spread_m: 1
-        min_steps: 1000000
+        waypoint_kind: flypass
+        waypoint_radius_m: 1.5
+        waypoint_speed_m_s: 2.0
+        min_steps: 2000000
         max_steps: 0
-        advance_success_fraction: 0.7
+        advance_success_fraction: 0.5
+        min_terminations: 1024
+      - position_range:
+        - - -3
+          - -3
+          - 8
+        - - 3
+          - 3
+          - 15
+        velocity_range:
+        - - -0.5
+          - -0.5
+          - -1.0
+        - - 0.5
+          - 0.5
+          - 0.25
+        attitude_range:
+        - - -0.15
+          - -0.15
+          - -3.141592653589793
+        - - 0.15
+          - 0.15
+          - 3.141592653589793
+        angular_velocity_range:
+        - - -0.2
+          - -0.2
+          - -0.4
+        - - 0.2
+          - 0.2
+          - 0.4
+        initial_motor_omega_fraction: 0.84
+        waypoint_count_range:
+        - 1
+        - 1
+        waypoint_spread_m: 1
+        waypoint_kind: hover
+        waypoint_hover_hold_s: 0.5
+        waypoint_radius_m: 1.5
+        waypoint_speed_m_s: 2.0
+        min_steps: 2000000
+        max_steps: 0
+        advance_success_fraction: 0.5
+        min_terminations: 1024
+      - position_range:
+        - - -3
+          - -3
+          - 8
+        - - 3
+          - 3
+          - 15
+        velocity_range:
+        - - -0.5
+          - -0.5
+          - -1.0
+        - - 0.5
+          - 0.5
+          - 0.25
+        attitude_range:
+        - - -0.15
+          - -0.15
+          - -3.141592653589793
+        - - 0.15
+          - 0.15
+          - 3.141592653589793
+        angular_velocity_range:
+        - - -0.2
+          - -0.2
+          - -0.4
+        - - 0.2
+          - 0.2
+          - 0.4
+        initial_motor_omega_fraction: 0.84
+        waypoint_count_range:
+        - 1
+        - 1
+        waypoint_spread_m: 1
+        waypoint_kind: hover
+        waypoint_hover_hold_s: 2.0
+        waypoint_radius_m: 1.5
+        waypoint_speed_m_s: 2.0
+        min_steps: 2000000
+        max_steps: 0
+        advance_success_fraction: 0.5
         min_terminations: 1024
       - position_range:
         - - -6
@@ -242,11 +376,11 @@ task:
         initial_motor_omega_fraction: 0.84
         waypoint_count_range:
         - 0
-        - 2
+        - 1
         waypoint_spread_m: 2
-        min_steps: 1000000
+        min_steps: 3000000
         max_steps: 0
-        advance_success_fraction: 0.7
+        advance_success_fraction: 0.5
         min_terminations: 1024
       - position_range:
         - - -15
@@ -281,9 +415,9 @@ task:
         - 0
         - 3
         waypoint_spread_m: 4
-        min_steps: 1000000
+        min_steps: 3000000
         max_steps: 0
-        advance_success_fraction: 0.7
+        advance_success_fraction: 0.5
         min_terminations: 1024
       - position_range:
         - - -25
@@ -318,9 +452,9 @@ task:
         - 0
         - 3
         waypoint_spread_m: 5
-        min_steps: 1000000
+        min_steps: 4000000
         max_steps: 0
-        advance_success_fraction: 0.7
+        advance_success_fraction: 0.4
         min_terminations: 1024
       - position_range:
         - - -40
@@ -355,9 +489,9 @@ task:
         - 0
         - 3
         waypoint_spread_m: 6
-        min_steps: 1000000
+        min_steps: 4000000
         max_steps: 0
-        advance_success_fraction: 0.7
+        advance_success_fraction: 0.35
         min_terminations: 1024
       - position_range:
         - - -60
@@ -392,9 +526,9 @@ task:
         - 0
         - 3
         waypoint_spread_m: 8
-        min_steps: 1000000
+        min_steps: 5000000
         max_steps: 0
-        advance_success_fraction: 0.7
+        advance_success_fraction: 0.25
         min_terminations: 1024
       - position_range: *id001
         velocity_range: *id002
@@ -403,7 +537,7 @@ task:
         initial_motor_omega_fraction: 0.0
         waypoint_count_range: *id005
         waypoint_spread_m: 8
-        min_steps: 1000000
+        min_steps: 5000000
         max_steps: 0
         advance_success_fraction: 1.0
         min_terminations: 1024
@@ -431,6 +565,8 @@ task:
     radius_m: 1.0
     hover_hold_s: 2.0
     speed_m_s: 3.0
+    hover_braking_time_s: 2.0
+    observation_distance_scale_m: 25.0
     shaping_gamma: 0.999
 physics:
   enable_gyroscopic_forces: true

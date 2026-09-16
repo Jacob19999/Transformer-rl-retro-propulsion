@@ -12,7 +12,7 @@ from runner_safety import WallClockWatchdog, force_process_exit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from mission_control.models import validate_mission, battery_config, hardware_overrides, disturbance_config, policy_paths
+from mission_control.models import validate_mission, battery_config, hardware_overrides, disturbance_config, policy_paths, training_envelope_violations
 
 
 def atomic_json(path, value):
@@ -40,7 +40,9 @@ def main():
         status.update(values, wall_time_s=round(time.time() - started, 2))
         atomic_json(output / 'status.json', status)
     update()
-    watchdog = WallClockWatchdog(480, label='Mission control simulation')
+    # 480 Hz physics and up to 180 simulated seconds can exceed the old
+    # fixed 8-minute watchdog. Keep an explicit finite allowance per request.
+    watchdog = WallClockWatchdog(max(480, request['duration_s'] * 45), label='Mission control simulation')
     watchdog.start()
     env = app = None
     try:
@@ -145,7 +147,9 @@ def main():
                         body_rate_command=None,
                         terminal_procedure='After LANDED: zero fin/throttle commands for 2 seconds; record actual spool-down and verify final settling. This procedure is outside the PPO episode.',
                         telemetry_notes='Fin command rate is servo target motion per control interval; body-rate targets are not commanded by these policies.',
-                        initial_conditions_outside_training=(request['controller'] in policies and request['controller'] != 'ppo_radial') or request['position'][2] < 16 or request['position'][2] > 20 or request['battery']['initial_soc'] != 1.,
+                        initial_conditions_outside_training=bool(training_envelope_violations(request, saved)) if saved else False,
+                        training_envelope_violations=training_envelope_violations(request, saved) if saved else [],
+                        experimental_policy=request['controller']=='ppo_mission',
                         source_hashes={str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                                        for folder in ('apps', 'tvc_env', 'configs') for p in (ROOT / folder).rglob('*')
                                        if p.suffix in ('.py', '.yaml')})
@@ -259,7 +263,8 @@ def main():
                                      and landing_frame['pad_distance'] <= .5
                                      and (landing_frame['mission'] is None or landing_frame['mission']['ready_to_land']))
         success = landing_event_success and latest['impact_speed'] <= .25 and latest['pad_distance'] <= .5 and settled_after_shutdown is True
-        outcome = ('CANCELLED' if cancelled else 'POST_LANDING_FAILURE' if landed and not settled_after_shutdown
+        premature = landed and latest['mission'] is not None and not latest['mission']['ready_to_land']
+        outcome = ('CANCELLED' if cancelled else 'PREMATURE_LANDING' if premature else 'POST_LANDING_FAILURE' if landed and not settled_after_shutdown
                    else 'LANDED' if landed else 'CRASHED' if bool(terminated[0]) else 'TIMEOUT')
         summary = dict(outcome=outcome, success=success, duration_s=latest['t'], frames=frames,
                        landing_duration_s=landing_frame['t'] if landing_frame else None,

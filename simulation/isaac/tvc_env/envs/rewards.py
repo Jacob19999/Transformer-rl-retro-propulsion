@@ -115,6 +115,32 @@ def compute_excess_rotation_cost(env_state, config: dict) -> Tensor:
     return cost
 
 
+def compute_rotation_quality_reward(env_state, config: dict) -> Tensor:
+    """Terminal soft-landing reward for respecting whole-flight rate limits.
+
+    The score is one when every recorded peak stays within its configured
+    soft limit and falls smoothly as any axis exceeds its limit.  It is paid
+    only on a successful landing, so it cannot reward hovering indefinitely.
+
+    Diagnostic basis: the 132.12M-transition waypoint run landed with mean
+    successful-flight yaw peaks of 1574 deg/s against the 180 deg/s soft
+    limit while the old integrated rotation term contributed less than one
+    reward unit per flight.  This bounded terminal term gives PPO a useful
+    whole-trajectory comparison without imposing a hard termination gate.
+    """
+    peak = getattr(env_state, 'rotation_peak_rate_rad_s', None)
+    if peak is None:
+        raise ValueError('rotation_quality requires physics-substep peak-rate tracking')
+    limits_deg_s = config.get('task', config).get('rotation', {}).get(
+        'soft_limits_deg_s', [90.0, 90.0, 180.0])
+    limits = torch.as_tensor(limits_deg_s, device=peak.device, dtype=peak.dtype) * (
+        torch.pi / 180.0)
+    # The worst axis defines whole-flight quality. clamp(min=limit) makes the
+    # score exactly one inside the envelope and limit/peak outside it.
+    quality = (limits / peak.clamp(min=limits)).amin(dim=-1)
+    return quality * compute_landing_success_reward(env_state, config)
+
+
 def compute_control_rate_reward(env_state, config: dict) -> Tensor:
     """Negative reward for fin deflection rate (control aggressiveness).
 

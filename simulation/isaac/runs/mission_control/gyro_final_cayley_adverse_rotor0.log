@@ -1,0 +1,16 @@
+=== Isaac Sim Validation Test: test_18_gyro_conservation ===
+Bootstrapping Isaac Sim...
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: C:\Transformer-rl-retro-propulsion\IsaacLab\apps\isaaclab.python.headless.kit
+Isaac Sim ready.
+
+[36m===================================================================================================================[0m
+[36m[1m[INFO][IsaacLab]: Logging to file: C:\Users\tngzj\AppData\Local\Temp\isaaclab\logs\isaaclab_2026-09-15_21-48-49.log[0m
+[36m===================================================================================================================[0m
+
+[33m21:48:49 [simulation_context.py] WARNING: The `enable_external_forces_every_iteration` parameter in the PhysxCfg is set to False. If you are experiencing noisy velocities, consider enabling this flag. You may need to slightly increase the number of velocity iterations (setting it to 1 or 2 rather than 0), together with this flag, to improve the accuracy of velocity updates.[0m
+{"physics_dt": 0.0020833333333333333, "duration_s": 2.0, "stress": true, "spin_rad_s": 40.0, "method": "production_cayley", "rotor_fraction": 0.0, "first_rates": [[6.28000020980835, 6.28000020980835, 3.5925935559788513e-09], [6.58617639541626, 5.958137035369873, 39.99997329711914], [5.958136558532715, 6.586176872253418, -39.999969482421875], [6.30352258682251, 6.25639009475708, 3.000000238418579]], "every_iteration": false, "roll_rad_s": 6.28, "pitch_rad_s": 6.28, "rotational_energy_ratio": [1.0001771450042725, 0.9995930194854736, 0.9996011853218079, 1.0008728504180908], "transverse_rate_squared_ratio": [1.0001771450042725, 1.0046889781951904, 1.0047070980072021, 1.0008747577667236], "world_momentum_relative_error": [9.017399861477315e-05, 0.0005259549943730235, 0.000521895766723901, 0.00046173721784725785], "world_momentum_absolute_error_Nms": [4.004294169135392e-05, 0.0004812393453903496, 0.0004775252309627831, 0.00020690362725872546], "world_momentum_component_scaled_error": [9.017399861477315e-05, 0.0005259549943730235, 0.000521895766723901, 0.00046173721784725785], "initial_rates": [[6.28000020980835, 6.28000020980835, -0.0], [6.28000020980835, 6.28000020980835, 40.0], [6.28000020980835, 6.28000020980835, -40.0], [6.28000020980835, 6.28000020980835, 3.0]], "final_rates": [[6.280928134918213, 6.280184745788574, 0.00011559065023902804], [-8.856546401977539, 0.8990249633789062, 39.97929382324219], [0.8996257781982422, -8.856566429138184, -39.97943115234375], [-8.422982215881348, -2.8282814025878906, 3.001249074935913]]}
+
+PASS: test_18_gyro_conservation
+Closing Isaac Sim...
+Isaac Sim fast shutdown requested.

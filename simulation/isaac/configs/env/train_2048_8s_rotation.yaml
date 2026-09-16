@@ -3,7 +3,8 @@
 # Diagnostic: 12.058M warm 16-20m evaluation peaked at 33-36 rad/s; full
 # cold task still 0% success. Test18 also found native articulation explicit
 # Coriolis amplified transverse rate squared 114x in 2s at +/-40 rad/s.
-# Coupled midpoint, external forces once, 480Hz resolves this amplification;
+# Coupled midpoint + inverse PhysX projection + free-flight Cayley drift,
+# external forces once, 480Hz resolves this amplification (test18 <.14% energy drift);
 # policy remains 30Hz, real contact dwell remains .125s. See Sept15 journal.
 # Transfer actor only: reward/physics changed, so critic/optimizer reset.
 # No rate clamp, scripted trajectory, PID wrapper, throttle floor, or reduced H.

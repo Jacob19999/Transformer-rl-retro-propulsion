@@ -142,7 +142,7 @@ def run():
         print(json.dumps(report),flush=True)
         path=Path('runs/mission_control/gyro_conservation_latest.json')
         path.write_text(json.dumps(report,indent=2),encoding='utf-8')
-        path.with_name(f'gyro_conservation_{hz}hz_stress{int(stress)}_spin{spin:g}_rotor{rotor_fraction:g}_{method}_every{int(every_iteration)}.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
+        path.with_name(f'gyro_conservation_{hz}hz_stress{int(stress)}_p{roll:g}_q{pitch:g}_spin{spin:g}_rotor{rotor_fraction:g}_{method}_every{int(every_iteration)}.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
         assert torch.all((after/before-1).abs()<.03),report
         assert torch.all(h_scaled_error<.002),report
         if stress:

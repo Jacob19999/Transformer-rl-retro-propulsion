@@ -1,0 +1,8 @@
+{
+  "checkpoint": "runs/ppo_8s_waypoint_recovery/ppo_landing_seed0_20260915_215055/ppo_step_262144.pt",
+  "status": "experimental",
+  "validated": false,
+  "note": "Experimental latest completed save from this run only; current curriculum and full-task evaluation must be checked. Recovery, rotation and waypoints remain unqualified.",
+  "training_run": "runs/ppo_8s_waypoint_recovery/ppo_landing_seed0_20260915_215055",
+  "follow_training_run": true
+}

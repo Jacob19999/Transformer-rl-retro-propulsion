@@ -71,7 +71,7 @@ export function createMissionPlanner(root,{readInitial,writeInitial,onChange}){
 }
 
 export function samplePlannerSpline(start,waypoints){
-  const points=[start,...waypoints.map(w=>w.position),[0,0,.34]],result=[];
+  const points=[start,...waypoints.map(w=>w.position),[0,0,0]],result=[];
   for(let leg=0;leg<points.length-1;leg++){
     const a=points[Math.max(0,leg-1)],b=points[leg],c=points[leg+1],d=points[Math.min(points.length-1,leg+2)];
     for(let j=0;j<=48;j++){const t=j/48;result.push([0,1,2].map(i=>.5*(2*b[i]+(-a[i]+c[i])*t+(2*a[i]-5*b[i]+4*c[i]-d[i])*t*t+(-a[i]+3*b[i]-3*c[i]+d[i])*t*t*t)));}

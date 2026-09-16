@@ -32,6 +32,28 @@ def test_hover_requires_continuous_slow_hold_then_switches_to_landing():
     assert nav.observation(torch.tensor([[1.,0,0,0]]*2)).shape==(2,15)
 
 
+def test_curriculum_can_isolate_waypoint_kind_and_hover_braking_reference():
+    cfg={'task':{'spawn':{'waypoint_count_range':[1,1], 'waypoint_kind':'hover',
+                         'waypoint_hover_hold_s':.5, 'waypoint_radius_m':1.5,
+                         'waypoint_speed_m_s':2.},
+                 'navigation':{'enabled':True, 'shaping_gamma':.999,
+                               'hover_braking_time_s':2.,
+                               'observation_distance_scale_m':25.}}}
+    nav=WaypointMission(2,'cpu',cfg,torch.zeros(2,3),torch.zeros(2,3))
+    start=torch.tensor([[0.,0,10.]]*2)
+    nav.reset(torch.arange(2),start)
+    assert nav.count.tolist()==[1,1]
+    assert nav.kinds[:,0].tolist()==[1,1]
+    assert nav.holds[:,0].tolist()==pytest.approx([.5,.5])
+    assert nav.radii[:,0].tolist()==pytest.approx([1.5,1.5])
+    before=nav.positions[:,0].clone(); before[:,0]-=2
+    after=nav.positions[:,0].clone(); after[:,0]-=1
+    nav.advance(before,after,torch.tensor([[.5,0,0.]]*2),.1,torch.ones(2,dtype=torch.bool))
+    # At 1 m range and a 2 s braking horizon, desired speed is 0.5 m/s,
+    # so velocity mismatch contributes zero and only cross-track can remain.
+    assert torch.all(nav.step_path_cost < .051)
+
+
 def test_flypass_catches_swept_sphere_and_does_not_accept_reverse_pass():
     nav,start=mission('flypass')
     after=torch.tensor([[2.,0,5],[-1.,0,5]])

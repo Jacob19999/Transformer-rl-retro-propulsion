@@ -647,6 +647,7 @@ class TVCDirectRLEnv(TVCEnvBase):
             battery_energy_step_wh=self._battery_energy_step_wh,
             propulsive_delta_v_step=self._propulsive_delta_v_step,
             excess_rotation_cost_step_s=self._rotation.step_cost_s,
+            rotation_peak_rate_rad_s=self._rotation.peak_rate_rad_s,
             mission_ready_to_land=self._navigation.ready_to_land if self._navigation else None,
             mission_progress_step=self._navigation.step_progress if self._navigation else None,
             waypoint_completion_step=self._navigation.step_completed if self._navigation else None,

@@ -19,3 +19,12 @@ def test_explicit_actuator_coordinate_transfer_preserves_parent_function():
         torch.testing.assert_close(value,child.critic.state_dict()[key])
     child.actor(extended).sum().backward()
     assert child.actor[0].weight.grad[:,24:].abs().sum() > 0
+
+
+def test_transferred_actor_exploration_can_be_reinitialized():
+    model = ActorCritic(43)
+    mean_before = {key: value.clone() for key, value in model.actor.state_dict().items()}
+    model.initialize_exploration(-2.3, -1.7)
+    torch.testing.assert_close(model.log_std, torch.tensor([-2.3] * 4 + [-1.7]))
+    for key, value in mean_before.items():
+        torch.testing.assert_close(value, model.actor.state_dict()[key])

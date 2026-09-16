@@ -107,6 +107,18 @@ def read_json(path, default=None):
         return default
 
 
+def recorded_request(path):
+    """Restore diagnostic requests from their recorded, resolved parameters."""
+    metadata = read_json(path / 'metadata.json', {}) or {}
+    resolved = dict(metadata.get('request') or {})
+    supplied = read_json(path / 'request.json', {}) or {}
+    battery = {**resolved.get('battery', {}), **supplied.get('battery', {})}
+    resolved.update(supplied)
+    if battery:
+        resolved['battery'] = battery
+    return resolved
+
+
 def directory(mid):
     if not re.fullmatch(r'[a-f0-9]{12}', mid):
         raise HTTPException(404, 'Mission not found')
@@ -132,7 +144,7 @@ def config():
     if 'ppo_radial' in policy_paths():
         policies = {'ppo_radial': 'PPO · radial 8S / battery aware', **policies}
     if 'ppo_mission' in policy_paths():
-        policies = {'ppo_mission': 'EXPERIMENTAL PPO · recovery + waypoints', **policies}
+        policies = {'ppo_mission': 'EXPERIMENTAL PPO · latest recovery + waypoints', **policies}
     training = active_training_command()
     return dict(defaults=default_mission(), hardware=read_json(HERE / 'hardware.json'),
                 policies=policies,
@@ -143,7 +155,7 @@ def config():
 @app.get('/api/missions')
 def list_missions():
     ids = sorted((p for p in RUNS.iterdir() if p.is_dir() and re.fullmatch(r'[a-f0-9]{12}', p.name)), key=lambda p: p.stat().st_mtime, reverse=True)
-    return [dict(status(p.name), request=read_json(p / 'request.json', {}),
+    return [dict(status(p.name), request=recorded_request(p),
                  hinge_layout=read_json(p / 'metadata.json', {}).get('hinge_layout')) for p in ids[:100]]
 
 
@@ -175,7 +187,7 @@ async def start(request: Request):
 @app.get('/api/missions/{mid}')
 def mission(mid: str):
     p = directory(mid)
-    return dict(status(mid), metadata=read_json(p / 'metadata.json'), request=read_json(p / 'request.json'), video=(p / 'landing.webm').exists())
+    return dict(status(mid), metadata=read_json(p / 'metadata.json'), request=recorded_request(p), video=(p / 'landing.webm').exists())
 
 
 @app.get('/api/missions/{mid}/frames')

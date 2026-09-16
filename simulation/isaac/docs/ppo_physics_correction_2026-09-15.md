@@ -70,7 +70,7 @@ passed the integrated battery/jet/gyro test, moving-fin flow test, and real
 soft contact at 0.122625 m/s with 0.125 s dwell. Its log is
 `runs/mission_control/momentum_midpoint_regression.log`.
 
-## Active training definition
+## Earlier training definition
 
 `configs/env/train_2048_8s_wrench_v2.yaml` introduces explicit rotor-state
 curriculum stages: 6–10 m at 84% RPM, then the full 16–20 m spawn at 84%,
@@ -102,3 +102,82 @@ The planned 8S hardware is still unpurchased/unspecified. Rotor inertia,
 fan maps, residual swirl, airframe inertia and pack impedance remain estimates;
 these numerical fixes do not turn the reduced-order model into calibrated
 hardware or CFD.
+
+## Adverse-rate correction and waypoint restart
+
+The small-rate rotor-only midpoint test was insufficient. With body yaw at
+±40 rad/s, the native explicit articulation Euler term amplified transverse
+rate squared 114× in two seconds even with the rotor stopped; the rotor-only
+split reached 1301× in the counter-rotating case. Increasing initial roll and
+pitch to 6.28 rad/s exposed a second error: combining midpoint torques while
+retaining PhysX's native orientation drift changed energy by +22%/−62%.
+
+`coupled_cayley` solves the body Euler and full rotor angular-momentum terms
+together with an implicit midpoint step. It inverts PhysX's subsequent scalar
+momentum projection, then pairs the velocity step with a Cayley orientation
+step in free flight. The orientation correction preserves body COM position,
+COM linear velocity and measured body angular velocity. It has no preferred
+attitude or landing target. Contacting articulations retain PhysX contact
+integration and impulses. TGS external forces are applied once per step.
+The four lightweight moving fins remain in PhysX; their split from the
+body/virtual-rotor preconditioner leaves a small measurable numerical error.
+
+Final two-second unforced Isaac tests use p=q=6.28 rad/s and four yaw cases
+(0, +40, −40, +3 rad/s):
+
+| Physics clock / rotor fraction | Maximum body rotational-energy drift | Maximum absolute world momentum error |
+|---|---:|---:|
+| 480 Hz / 0.9 | 0.129% | 0.001160 N·m·s |
+| 960 Hz / 0.9 | 0.119% | 0.000952 N·m·s |
+| 480 Hz / 0 | 0.0873% | 0.000481 N·m·s |
+
+Logs: `runs/mission_control/gyro_final_cayley_adverse_480.log`,
+`gyro_final_cayley_adverse_960.log`, and `gyro_final_cayley_adverse_rotor0.log`.
+Near cancellation of body and rotor momentum makes relative-to-net momentum
+ill-conditioned; reports include absolute error, net-relative error and error
+scaled by the sum of component magnitudes. No rate clipping or damping is
+used in these conservation checks. Isaac tests 15, 16, 17 and 19 pass on the
+new plant: coupled jet/battery/physical touchdown, COM force, heading-covariant
+wrenches/spool reaction, and 43-input inverted-start/waypoint event handling.
+All 235 unit tests pass, including ideal energy/world-momentum invariants and
+the solver-default merge regression. These short tests establish numerical
+regression coverage, not full-flight or hardware accuracy.
+
+The active run is
+`runs/ppo_8s_waypoint_recovery/ppo_landing_seed0_20260915_215055`, targeting
+200 million transitions with no wall-time cutoff. It transfers only the actor
+from the stopped 17,825,792-step continuation; critic, optimizer and curriculum
+start fresh. `train_2048_8s_waypoints.yaml` explicitly defines eight stages,
+2,048 environments, 480 Hz physics, 30 Hz actions and 120-second episodes.
+Final evaluation includes ±100 m X/Y, 25–100 m altitude, roll through ±180°,
+pitch through ±90°, roll/pitch rates through ±360°/s, yaw rates through
+±720°/s and cold-rotor starts. Some combinations may be unrecoverable.
+Intermediate stages require 70% rolling mission success before advancing.
+
+Fifteen navigation inputs extend the battery-aware 28-input actor to 43:
+phase, reference speed, acceptance radius, remaining hover time, body-frame
+path error/tangent and next-goal displacement. New input weights start at
+zero. Catmull–Rom paths use continuous projection onto sampled segments;
+fly-through arrival uses a swept segment and forward movement, while hover
+requires continuous position acceptance and speed ≤0.4 m/s for the requested
+duration (default 2 s). Final landing remains real physical contact. Premature
+landing cannot collect a mission-success reward. Potential shaping uses the
+same γ=0.999 as PPO and absorbing-terminal potential zero. Reward arithmetic
+and the unchanged contact safety gates are recorded in the task YAML.
+
+Rotation telemetry integrates true FRD rates at every physics step: peaks,
+total angular travel (including reversals), excess angular travel and time
+above 90/90/180°/s. A bounded per-second excess cost is included in training.
+The first rollout completed 1,035 easy-stage episodes, with 691 successful
+landings (66.8%); successful episodes still had mean peak yaw around
+1,302°/s. This is a diagnosis to track, not an acceptable rotation result or
+evidence of adverse-condition mastery. Independent full-task evaluation and
+efficiency comparisons remain required.
+
+The first one-episode-per-environment evaluation at 262,144 steps measured
+62.35% easy-stage mission success over 2,048 trials, 20.07% crashes and no
+timeouts. The remaining episodes landed outside the soft/on-pad success gates.
+Successful episodes averaged 2.8945 Wh, 41.945 m/s propulsive impulse/mass and
+4.300 seconds. Full adverse evaluation had 0/2,048 successes and 2,048 crashes.
+These results are preserved in `curriculum_eval.jsonl` and `eval_log.jsonl`;
+they establish a baseline for subsequent training, not an efficiency gain.

@@ -8,16 +8,22 @@ const deg = 180 / Math.PI;
 const finNames = ['FWD', 'RIGHT', 'AFT', 'LEFT'];
 const linkNames = ['FwdFin', 'RightFin', 'AftFin', 'LeftFin'];
 const colors = ['#7ef5d2', '#72b9fa', '#e7bc79'];
-const state = { id: null, frames: [], metadata: null, time: 0, playing: false, live: true, busy: false, recording: false, result: null, training:false };
+const state = { id: null, frames: [], metadata: null, time: 0, playing: false, live: true, busy: false, recording: false, result: null, training:false, requestError:null };
 let config, previousPosition = new THREE.Vector3(), orbitInitialized = false;
 const fmt = (n, d = 1) => Number.isFinite(n) ? n.toFixed(d) : '—';
 const clock = t => `T+ ${String(Math.floor(t / 60)).padStart(2, '0')}:${(t % 60).toFixed(2).padStart(5, '0')}`;
 const text = (id, value) => { $(id).textContent = value; };
 function message(value, error = false) { text('runMessage', value); $('runMessage').style.color = error ? '#ffa78e' : ''; }
 function updateTraining(c){
+  const choice=$('controller').value;
+  const choices=Object.entries(c.policies);
+  if(JSON.stringify([...$('controller').options].map(o=>[o.value,o.text]))!==JSON.stringify(choices)){
+    $('controller').replaceChildren(...choices.map(([key,name])=>new Option(name,key)));
+    $('controller').value=choice in c.policies?choice:c.defaults.controller;
+  }
   state.training=!!c.training;text('connection',state.training?'PPO TRAINING / REPLAY READY':'ISAAC SERVICE ONLINE');
   const m=c.training_metrics;$('trainingStatus').hidden=!state.training;
-  text('trainingStatus',m?.step!=null?`PPO TRAINING · ${fmt(m.step/1e6,2)}M transitions · Spawn stage ${m.stage+1}/${m.stages} · Recent stage success ${fmt(m.stage_success*100,1)}% · Full-height evaluation ${m.full_success==null?'pending':fmt(m.full_success*100,1)+'% success at '+fmt(m.full_eval_step/1e6,2)+'M'}${m.success_energy_wh==null?'':' · Successful full-height landings: '+fmt(m.success_energy_wh,2)+' Wh / '+fmt(m.success_delta_v,1)+' m/s Δv'}`:'PPO TRAINING · Starting simulator and restoring checkpoint');
+  text('trainingStatus',m?.step!=null?`PPO TRAINING · ${fmt(m.step/1e6,2)}M transitions · Spawn stage ${m.stage+1}/${m.stages} · Recent stage success ${fmt(m.stage_success*100,1)}% · Full-task evaluation ${m.full_success==null?'pending':fmt(m.full_success*100,1)+'% success at '+fmt(m.full_eval_step/1e6,2)+'M'}${m.success_energy_wh==null?'':' · Successful full-task landings: '+fmt(m.success_energy_wh,2)+' Wh / '+fmt(m.success_delta_v,1)+' m/s Δv'}`:'PPO TRAINING · Starting simulator and restoring checkpoint');
   $('run').disabled=state.busy||state.recording||state.training;
 }
 async function api(path, body) {
@@ -73,7 +79,14 @@ for (const angle of [0,Math.PI/2]) { const line = new THREE.Mesh(new THREE.Plane
 const groundObjects = scene.children.filter(object=>object.isMesh||object===grid);
 const trajectory = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({color:0x498785,transparent:true,opacity:.6})); scene.add(trajectory);
 const plannedRoute=new THREE.Line(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:0x85aaff,transparent:true,opacity:.65}));scene.add(plannedRoute);
-function updatePlannedRoute(){plannedRoute.geometry.dispose();plannedRoute.geometry=new THREE.BufferGeometry().setFromPoints(samplePlannerSpline(readPlannerInitial().position,planner.getWaypoints()).map(v=>new THREE.Vector3(...v)));}
+function updatePlannedRoute(){
+  // Replay cameras show the recorded plan; editing a new draft only changes
+  // the planner canvases, never the reference displayed in exported footage.
+  const initial=state.frames[0]?.position??readPlannerInitial().position;
+  const waypoints=state.frames.length?(state.metadata?.request?.waypoints??[]):planner.getWaypoints();
+  const points=waypoints.length?samplePlannerSpline(initial,waypoints):[];
+  plannedRoute.geometry.dispose();plannedRoute.geometry=new THREE.BufferGeometry().setFromPoints(points.map(v=>new THREE.Vector3(...v)));
+}
 const thrustVector = new THREE.ArrowHelper(new THREE.Vector3(0,0,1),new THREE.Vector3(),.4,0x7ef5d2,.05,.025);scene.add(thrustVector);
 const cameras = Array.from({length:4},()=> {const c = new THREE.PerspectiveCamera(40,1,.008,300);c.up.set(0,0,1);return c;});
 cameras[3] = new THREE.OrthographicCamera(-.18,.18,.10,-.10,.001,5);
@@ -145,6 +158,8 @@ function drawBottomLabels(ctx,width,height,sample){
 function updateTelemetry() {
   const sample=sampleAt(state.time),f=sample?.a;if(!f)return;
   text('clock',clock(state.time));text('hudAlt',`${fmt(f.position[2],2)} m`);text('hudVz',`${fmt(f.velocity[2],2)} m/s`);text('hudPad',`${fmt(f.pad_distance,2)} m`);
+  const mission=f.mission;
+  text('waypointStatus',mission?mission.ready_to_land?`LAND · ${mission.waypoint_count} waypoints completed · Soft contact required`:`${mission.phase} · Waypoint ${mission.waypoint_index+1}/${mission.waypoint_count} · Cross-track ${fmt(mission.cross_track_error_m,2)} m${mission.phase==='HOVER'?' · Hold '+fmt(mission.hold_elapsed_s,1)+' / '+fmt(mission.waypoints[mission.waypoint_index].hold_s,1)+' s':''}`:'Waypoint telemetry was not recorded in this replay.');
   text('thrust',fmt(f.thrust_n,1));text('throttle',fmt(f.throttle*100,1));text('rpm',fmt(f.rotor_rpm,0));$('thrustBar').style.width=`${Math.min(100,f.thrust_n/(state.metadata?.physics_parameters?.edf.max_thrust??48)*100)}%`;
   finNames.forEach((_,i)=>{text(`fc${i}`,fmt(f.fin_commands[i]*deg,2));text(`fa${i}`,fmt(THREE.MathUtils.lerp(f.fin_angles[i],sample.b.fin_angles[i],sample.alpha)*deg,2));text(`fcr${i}`,fmt(f.fin_command_rates[i]*deg,1));text(`far${i}`,fmt(f.fin_rates[i]*deg,1));});
   const rotationLimits=f.rotation?.soft_limits_deg_s??[90,90,180];
@@ -196,7 +211,7 @@ function updateEvents(){
 
 async function refreshHistory(){const missions=await api('/api/missions');const current=$('history').value;$('history').replaceChildren(new Option('Select a recorded mission',''),...missions.map(m=>new Option(`${m.request?.name??m.id} · ${m.summary?.success?'SUCCESS':m.phase??m.state}`,m.id)));$('history').value=current;return missions;}
 async function selectMission(id){
-  state.id=id;state.frames=[];state.metadata=null;state.time=0;state.result=null;state.playing=false;state.live=true;orbitInitialized=false;
+  state.requestError=null;state.id=id;state.frames=[];state.metadata=null;state.time=0;state.result=null;state.playing=false;state.live=true;orbitInitialized=false;
   const mission=await poll();if(mission)fillMissionForm(mission.request);$('history').value=id;
   const url=new URL(location.href);url.searchParams.set('mission',id);history.replaceState({},'',url);
 }
@@ -204,15 +219,15 @@ async function poll(){
   if(!state.id)return;const id=state.id;
   const [m,data]=await Promise.all([api(`/api/missions/${id}`),api(`/api/missions/${id}/frames?after=${state.frames.length}`)]);if(id!==state.id)return;
   state.metadata=m.metadata;state.frames.push(...data.frames);state.result=m.summary;state.busy=['starting','running'].includes(m.state);
-  if(data.frames.length){if(state.live)state.time=state.frames.at(-1).t;updateTrajectory();drawPlots();}
+  if(data.frames.length){if(state.live)state.time=state.frames.at(-1).t;updateTrajectory();updatePlannedRoute();drawPlots();}
   updateEvents();
   text('missionTitle',m.request.name);text('flightStatus',m.summary?.success?'LANDED / PASS':m.summary?.outcome==='LANDED'?'LANDED / FAIL':m.summary?.outcome??m.state.toUpperCase());
   $('flightStatus').style.color=m.state==='failed'||(m.summary&&!m.summary.success)?'#ffa78e':'';
   $('run').disabled=state.busy||state.recording||state.training;$('stop').disabled=!state.busy;$('export').disabled=state.busy||state.frames.length<2||state.recording;
   const profile=m.request.hardware_profile==='planned_8s'?'8S PLANNED':'6S LEGACY';text('footerProfile',`${profile} · 3.104 kg${m.metadata?.physics_dt?' · '+fmt(1/m.metadata.physics_dt,0)+' Hz PHYSICS':''}`);
   const recordedPolicy=m.metadata?.policy;
-  text('notice',`${profile} · ${m.request.battery.enabled?'LiPo coupled to EDF':'Ideal voltage, battery disabled'}${m.metadata?.hinge_layout==='radial_span_v1'?' · Radial hinges':' · ARCHIVE: OLD HINGE AXES'}${recordedPolicy?.step?' · Recorded PPO '+fmt(recordedPolicy.step/1e6,2)+'M / '+recordedPolicy.action_mode:''}${recordedPolicy?.diagnostic_checkpoint_override?' · Experimental replay; full-task qualification pending':''} · Hardware calibration pending${m.metadata?.initial_conditions_outside_training?' · Outside full training envelope':''}`);
-  message(m.error??(state.busy?`${m.phase} · ${m.frames??0} samples received`:m.summary?`${m.summary.outcome} · impact ${fmt(m.summary.impact_speed,3)} m/s · pad error ${fmt(m.summary.pad_distance,3)} m`:'Mission loaded'),!!m.error);
+  text('notice',`${profile} · ${m.request.battery.enabled?'LiPo coupled to EDF':'Ideal voltage, battery disabled'}${m.metadata?.hinge_layout==='radial_span_v1'?' · Radial hinges':' · ARCHIVE: OLD HINGE AXES'}${recordedPolicy?.step?' · Recorded PPO '+fmt(recordedPolicy.step/1e6,2)+'M / '+recordedPolicy.action_mode:''}${recordedPolicy?.diagnostic_checkpoint_override||m.metadata?.experimental_policy?' · Experimental replay; full-task qualification pending':''} · Hardware calibration pending${m.metadata?.initial_conditions_outside_training?' · Outside checkpoint training bounds':''}`);
+  message(state.requestError??m.error??(state.busy?`${m.phase} · ${m.frames??0} samples received`:m.summary?`${m.summary.outcome} · impact ${fmt(m.summary.impact_speed,3)} m/s · pad error ${fmt(m.summary.pad_distance,3)} m`:'Mission loaded'),!!(state.requestError||m.error));
   $('jsonDownload').hidden=!state.frames.length;$('jsonDownload').href=`/api/missions/${id}/download`;
   $('videoDownload').hidden=!m.video;$('videoDownload').href=`/api/missions/${id}/video`;
   if(state.frames.length)updateTelemetry();
@@ -240,7 +255,7 @@ function missionRequest(){
   result.battery={enabled:$('battery_enabled').checked};for(const key of ['capacity_ah','c_rating','max_current_a'])result.battery[key]=Number($(key).value);
   result.battery.initial_soc=Number($('initial_soc').value)/100;result.battery.cell_resistance_ohm=Number($('cell_resistance_ohm').value)/1000;return result;
 }
-$('missionForm').addEventListener('submit',async e=>{e.preventDefault();$('run').disabled=true;message('Launching Isaac Sim…');try{const m=await api('/api/missions',missionRequest());await refreshHistory();await selectMission(m.id);}catch(error){message(error.message,true);$('run').disabled=false;}});
+$('missionForm').addEventListener('submit',async e=>{e.preventDefault();state.requestError=null;$('run').disabled=true;message('Launching Isaac Sim…');try{const m=await api('/api/missions',missionRequest());await refreshHistory();await selectMission(m.id);}catch(error){state.requestError=error.message;message(error.message,true);$('run').disabled=state.training||state.busy;}});
 $('stop').onclick=async()=>{try{await api(`/api/missions/${state.id}/stop`,{});message('Stop requested; Isaac will finish the current control interval.');$('stop').disabled=true;}catch(e){message(e.message,true);}};
 $('history').onchange=()=>{if($('history').value)selectMission($('history').value).catch(e=>message(e.message,true));};
 $('play').onclick=()=>{if(!state.frames.length)return;state.live=false;if(state.time>=state.frames.at(-1).t)state.time=0;state.playing=!state.playing;};

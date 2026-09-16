@@ -26,6 +26,32 @@ def finite(value, low, high, name):
     return float(value)
 
 
+def validate_spline_clearance(start, waypoints):
+    """Reject underground path references by checking cubic extrema.
+
+    The final landing leg is unconstrained descent; preceding waypoint legs
+    must leave body-origin clearance above the plane. This changes no actions.
+    """
+    heights = [start[2], *(wp['position'][2] for wp in waypoints), 0.]
+    for leg in range(len(waypoints)):
+        p0, p1, p2, p3 = (heights[max(0,leg-1)], heights[leg], heights[leg+1], heights[leg+2])
+        a = .5*(-p0+3*p1-3*p2+p3)
+        b = .5*(2*p0-5*p1+4*p2-p3)
+        c = .5*(-p0+p2)
+        candidates = [0.,1.]
+        if abs(a)<1e-12:
+            if abs(b)>1e-12:
+                candidates.append(-c/(2*b))
+        else:
+            discriminant = 4*b*b-12*a*c
+            if discriminant>=0:
+                candidates.extend(((-2*b+math.sqrt(discriminant))/(6*a),
+                                   (-2*b-math.sqrt(discriminant))/(6*a)))
+        minimum = min(((a*t+b)*t+c)*t+p1 for t in candidates if 0<=t<=1)
+        if minimum < .34-1e-6:
+            raise ValueError(f'Spline before waypoint {leg+1} drops below ground clearance; raise or reposition its neighboring waypoints')
+
+
 def validate_mission(value):
     if not isinstance(value, dict) or set(value) - set(DEFAULTS):
         raise ValueError('Unknown mission fields')
@@ -74,6 +100,9 @@ def validate_mission(value):
             radius_m=finite(item.get('radius_m',1.),.1,10,'Waypoint radius'),
             speed_m_s=finite(item.get('speed_m_s',3.),.1,15,'Path reference speed')))
     result['waypoints']=waypoints
+    validate_spline_clearance(result['position'], waypoints)
+    if waypoints and result['controller'] != 'ppo_mission':
+        raise ValueError('Waypoints require the experimental recovery + waypoints policy; legacy policies do not observe route targets')
     result['initial_motor_fraction'] = finite(result['initial_motor_fraction'], 0, 1, 'Initial motor fraction')
     b = copy.deepcopy(DEFAULTS['battery'])
     if not isinstance(result['battery'], dict) or set(result['battery']) - set(b):
@@ -85,7 +114,7 @@ def validate_mission(value):
                       ('cell_resistance_ohm', .0001, .05), ('max_current_a', 5, 120)]:
         b[k] = finite(b[k], lo, hi, k)
     result['battery'] = b
-    if result['controller'] == 'ppo_radial' and (result['hardware_profile'] != 'planned_8s' or not b['enabled']):
+    if result['controller'] in ('ppo_radial', 'ppo_mission') and (result['hardware_profile'] != 'planned_8s' or not b['enabled']):
         raise ValueError('The radial 8S policy requires the 8S hardware profile and coupled battery observations')
     return result
 
@@ -97,6 +126,39 @@ def battery_config(mission):
     c.update(mission['battery'])
     c['max_current_a'] = min(c['max_current_a'], c['capacity_ah'] * c['c_rating'], 120.)
     return c
+
+
+def training_envelope_violations(mission, saved):
+    """Compare against the checkpoint's current curriculum, not a fixed 18 m box.
+
+    Being within these bounds is not proof the policy has mastered them.
+    Explicit routes can differ from random training routes even with equal count.
+    """
+    task = saved.get('task_config', {}).get('task', {})
+    spawn = dict(task.get('spawn', {}))
+    curriculum = saved.get('curriculum') or {}
+    stages = spawn.get('curriculum', {}).get('stages', [])
+    stage = curriculum.get('stage_index')
+    if stage is not None and 0 <= stage < len(stages):
+        spawn.update(stages[stage])
+    violations = []
+    for field, key, scale in (('position', 'position_range', 1.),
+            ('velocity', 'velocity_range', 1.), ('attitude_deg', 'attitude_range', math.pi/180),
+            ('angular_rate_deg_s', 'angular_velocity_range', math.pi/180)):
+        limits = spawn.get(key)
+        if limits and any(not low-1e-5 <= value*scale <= high+1e-5
+                          for value, low, high in zip(mission[field], *limits)):
+            violations.append(field)
+    rpm = spawn.get('initial_motor_omega_fraction')
+    if rpm is not None and abs(mission['initial_motor_fraction']-rpm)>1e-5:
+        violations.append('initial_motor_fraction')
+    count = spawn.get('waypoint_count_range', task.get('navigation', {}).get('count_range', [0,0]))
+    if not count[0] <= len(mission.get('waypoints', [])) <= count[1]:
+        violations.append('waypoint_count')
+    soc = saved.get('task_config', {}).get('battery', {}).get('initial_soc')
+    if soc is not None and abs(mission['battery']['initial_soc']-soc)>1e-5:
+        violations.append('initial_soc')
+    return violations
 
 
 def hardware_overrides(mission):
@@ -144,6 +206,17 @@ def policy_paths():
     if mission_registry.exists():
         record = json.loads(mission_registry.read_text())
         path = (ROOT / record['checkpoint']).resolve()
+        # Explicitly experimental, opt-in tracking of completed atomic saves.
+        # Each mission still records the exact file and SHA256 it loaded.
+        if record.get('follow_training_run') and record.get('training_run'):
+            run = (ROOT / record['training_run']).resolve()
+            if run.is_relative_to((ROOT/'runs').resolve()) and run.is_dir():
+                candidates = [p for p in run.glob('ppo_step_*.pt')
+                              if p.stem.removeprefix('ppo_step_').isdigit()]
+                if (run/'ppo_final.pt').is_file():
+                    candidates.append(run/'ppo_final.pt')
+                if candidates:
+                    path = max(candidates, key=lambda p: p.stat().st_mtime).resolve()
         if path.is_relative_to((ROOT/'runs').resolve()) and path.suffix=='.pt' and path.is_file():
             result['ppo_mission'] = str(path.relative_to(ROOT))
     return result

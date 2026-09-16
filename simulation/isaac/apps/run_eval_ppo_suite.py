@@ -66,7 +66,8 @@ def main():
         # check the recorded states before publishing paired efficiency gains.
         for episode, old in before.items():
             for field in ('reset_seed', 'batch_env', 'spawn_position', 'spawn_quaternion',
-                          'spawn_body_velocity', 'spawn_motor_fraction'):
+                          'spawn_body_velocity', 'spawn_body_rates', 'spawn_motor_fraction',
+                          'waypoints'):
                 if old[field] != after[episode][field]:
                     raise ValueError(f'Comparison trial {episode} differs in {field}')
         common = [i for i in before if before[i]['success'] and after[i]['success']]

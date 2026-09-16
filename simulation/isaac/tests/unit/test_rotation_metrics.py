@@ -6,7 +6,8 @@ import pytest
 import torch
 
 from tvc_env.envs.rotation_metrics import RotationTracker
-from tvc_env.envs.rewards import compute_excess_rotation_cost
+from tvc_env.envs.rewards import compute_excess_rotation_cost, compute_rotation_quality_reward
+from tvc_env.common.constants import ContactState
 
 
 def rates(*values):
@@ -43,6 +44,20 @@ def test_substep_peak_is_retained_when_control_step_ends_at_zero():
     assert tracker.record()['peak_rate_deg_s'][2] == pytest.approx(720)
     assert tracker.record()['angular_travel_deg'][2] == pytest.approx(7.2)
     assert tracker.step_cost_s.item() > 0
+
+
+def test_terminal_rotation_quality_uses_worst_whole_flight_axis():
+    peak = rates(45, 90, 720).expand(2, 3)
+    state = SimpleNamespace(
+        rotation_peak_rate_rad_s=peak,
+        contact_state=torch.tensor([ContactState.LANDED, ContactState.AIRBORNE]),
+        position=torch.zeros(2, 3),
+        touchdown_speed=torch.zeros(2),
+        mission_ready_to_land=torch.ones(2, dtype=torch.bool),
+    )
+    score = compute_rotation_quality_reward(state, {'task': {'rotation': {
+        'soft_limits_deg_s': [90, 90, 180]}}})
+    assert score.tolist() == pytest.approx([.25, 0.])
 
 
 def test_pre_reset_snapshot_is_independent_and_post_terminal_updates_are_masked():

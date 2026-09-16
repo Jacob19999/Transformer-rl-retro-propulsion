@@ -125,7 +125,7 @@ class ActorCritic(nn.Module):
         """Initialize a new task without a runtime action wrapper.
 
         Optional channel permutation is an explicit physical actuator-coordinate
-        change. Extra battery-input columns start at zero, preserving the
+        change. Extra battery/waypoint input columns start at zero, preserving the
         parent's response initially while allowing PPO to learn their weights.
         Critic, optimizer and training counters are intentionally not copied.
         """
@@ -166,6 +166,22 @@ class ActorCritic(nn.Module):
         with torch.no_grad():
             self.actor[-1].weight[4].zero_()
             self.actor[-1].bias[4] = math.atanh(2*duty-1)
+
+    def initialize_exploration(self, fin_log_std: float, throttle_log_std: float):
+        """Reset transferred actor variance while preserving its mean policy.
+
+        The 132.12M waypoint run inherited/learned latent sigmas of only
+        0.039 on fins and 0.070 on throttle, then remained at 6.8% stage
+        success for 120.85M transitions.  A fresh task needs enough action
+        support to discover waypoint capture and yaw cancellation.  This is
+        an initialization prior; PPO continues training every log-std value.
+        """
+        values = (float(fin_log_std), float(throttle_log_std))
+        if any(not math.isfinite(value) or value < -8.0 or value > 1.0 for value in values):
+            raise ValueError('Initial log standard deviations must be finite and within [-8, 1]')
+        with torch.no_grad():
+            self.log_std[:4].fill_(values[0])
+            self.log_std[4] = values[1]
 
     def act(self, obs, mode='deterministic'):
         """Inference with an explicit, recorded action-distribution mode."""

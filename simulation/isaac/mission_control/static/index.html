@@ -9,7 +9,7 @@
 <div class="workspace">
 <aside class="setup panel"><div class="panel-title">01 / FLIGHT SETUP</div><form id="missionForm">
 <label>MISSION NAME<input id="name" maxlength="80" value="8S landing test" required></label>
-<label>CONTROLLER<select id="controller"><option value="ppo">PPO 26M · stochastic</option><option value="ppo_deterministic">PPO 34M · deterministic</option><option value="pid">PID · landing guidance</option></select></label>
+<label>NEXT RUN CONTROLLER<select id="controller"><option value="ppo">PPO 26M · stochastic</option><option value="ppo_deterministic">PPO 34M · deterministic</option><option value="pid">PID · landing guidance</option></select></label>
 <label>HARDWARE PROFILE<select id="hardware_profile"><option value="planned_8s">Planned 8S / 48 N estimate</option><option value="legacy_6s">Legacy 6S / 39.2 N estimate</option></select></label>
 <div class="section-label">INITIAL STATE <span>WORLD / Z UP</span></div>
 <div id="vectors"></div>
@@ -29,6 +29,7 @@
 </form><label class="history-label">MISSION ARCHIVE<select id="history"><option value="">Select a recorded mission</option></select></label></aside>
 <section class="flight-column">
 <div id="missionPlanner" class="planner panel"></div>
+<div class="panel" style="padding:12px"><span class="section-label">RECORDED MISSION PHASE</span><div id="waypointStatus" class="hint">No waypoint telemetry loaded.</div></div>
 <div class="viewer panel"><div class="viewer-bar"><span>02 / CAMERA ARRAY</span><span id="sourceBadge">PHYSX POSES · WEBGL RENDER</span></div><div id="views"><canvas id="scene" aria-label="Four synchronized camera views of the Isaac drone"></canvas><div class="camera-tag main-tag">CAM 01 <b>ORBIT / DRAG TO ROTATE</b></div><div class="camera-tag ground-tag">CAM 02 <b>GROUND TRACK</b></div><div class="camera-tag top-tag">CAM 03 <b>OVERHEAD</b></div><div class="camera-tag fin-tag">CAM 04 <b>TVC CUTAWAY</b></div><div class="view-hud"><div>ALTITUDE<strong id="hudAlt">—<small>m</small></strong></div><div>VERTICAL SPEED<strong id="hudVz">—<small>m/s</small></strong></div><div>PAD ERROR<strong id="hudPad">—<small>m</small></strong></div></div><span id="renderNote">CAD GEOMETRY / METRES · FIN VIEW HIDES BODY</span></div>
 <div class="transport"><button id="play" aria-label="Play replay">▶</button><input id="timeline" aria-label="Replay time" type="range" min="0" max="1" step="0.001" value="0"><span id="elapsed">0.00 / 0.00 s</span><select id="speed" aria-label="Playback speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select><button id="live">LIVE</button></div></div>
 <div class="plots panel"><div class="panel-title">03 / FLIGHT HISTORY <span>RECORDED SAMPLES</span></div><canvas id="plots" aria-label="Altitude, thrust and body rate time histories"></canvas></div>

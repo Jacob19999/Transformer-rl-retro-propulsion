@@ -236,3 +236,23 @@ def test_evaluation_restores_full_spawn_after_easy_warm_rotor_stage():
     assert config['task']['spawn']['initial_motor_omega_fraction'] == .934
     apply_spawn_stage(config, final_spawn, None)
     assert config['task']['spawn'] == final_spawn
+
+
+def test_stage_applies_and_restores_waypoint_semantics():
+    from copy import deepcopy
+    from tvc_env.envs.curriculum import apply_spawn_stage
+    config = _staged_landing_config()
+    spawn = config['task']['spawn']
+    spawn.update(waypoint_count_range=[0,3], waypoint_spread_m=8,
+                 waypoint_kind='mixed', waypoint_hover_hold_s=2.,
+                 waypoint_radius_m=1., waypoint_speed_m_s=3.)
+    final_spawn = deepcopy(spawn)
+    stage = dict(position_range=[[0,0,6],[0,0,10]], waypoint_count_range=[1,1],
+                 waypoint_spread_m=1, waypoint_kind='hover',
+                 waypoint_hover_hold_s=.5, waypoint_radius_m=1.5,
+                 waypoint_speed_m_s=2.)
+    apply_spawn_stage(config, final_spawn, stage)
+    assert spawn['waypoint_kind'] == 'hover'
+    assert spawn['waypoint_hover_hold_s'] == .5
+    apply_spawn_stage(config, final_spawn, None)
+    assert spawn == final_spawn

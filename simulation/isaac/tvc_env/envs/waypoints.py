@@ -83,6 +83,10 @@ class WaypointMission:
             bounds = spawn.get('waypoint_count_range', nav.get('count_range',[0,3]))
             self.count[env_ids] = torch.randint(int(bounds[0]), int(bounds[1])+1, (m,), device=self.device)
             spread = float(spawn.get('waypoint_spread_m', nav.get('spread_m',5.)))
+            kind_mode = str(spawn.get('waypoint_kind', nav.get('kind','mixed'))).lower()
+            radius = float(spawn.get('waypoint_radius_m', nav.get('radius_m',1.)))
+            hold_s = float(spawn.get('waypoint_hover_hold_s', nav.get('hover_hold_s',2.)))
+            speed_m_s = float(spawn.get('waypoint_speed_m_s', nav.get('speed_m_s',2.)))
             for j in range(MAX_WAYPOINTS):
                 fraction = (j+1)/(self.count[env_ids].float()+1)
                 endpoint = self.landing_target[env_ids].clone(); endpoint[:,2] += 4.
@@ -91,11 +95,16 @@ class WaypointMission:
                 goal[:,2] = torch.maximum(goal[:,2], self.origins[env_ids,2]+3.)
                 valid = j < self.count[env_ids]
                 self.positions[env_ids,j] = torch.where(valid[:,None], goal, self.landing_target[env_ids])
-                kind = torch.where(torch.rand(m,device=self.device)<.5,HOVER,FLYPASS)
+                if kind_mode == 'hover':
+                    kind = torch.full((m,), HOVER, device=self.device, dtype=torch.long)
+                elif kind_mode == 'flypass':
+                    kind = torch.full((m,), FLYPASS, device=self.device, dtype=torch.long)
+                else:
+                    kind = torch.where(torch.rand(m,device=self.device)<.5,HOVER,FLYPASS)
                 self.kinds[env_ids,j] = torch.where(valid, kind, LAND)
-                self.radii[env_ids,j] = float(nav.get('radius_m',1.))
-                self.holds[env_ids,j] = float(nav.get('hover_hold_s',2.))
-                self.speeds[env_ids,j] = float(nav.get('speed_m_s',2.))
+                self.radii[env_ids,j] = radius
+                self.holds[env_ids,j] = hold_s
+                self.speeds[env_ids,j] = speed_m_s
         self._refresh_curves(env_ids)
         self.update_features(position)
         self.last_potential[env_ids] = self.potential(position)[env_ids]
@@ -158,7 +167,18 @@ class WaypointMission:
         cross_error = self.path_error.norm(dim=-1)
         # User-facing reference speed is an explicit task preference. Hover
         # capture requires zero speed; fly-through keeps positive tangent speed.
-        desired_speed = torch.where((kind==HOVER)&stable,torch.zeros_like(radius),self.speeds[self.ids,self.index])
+        cruise_speed = self.speeds[self.ids,self.index]
+        distance_to_goal = (after-goal).norm(dim=-1)
+        braking_time = float(self.config.get('task', {}).get('navigation', {}).get(
+            'hover_braking_time_s', 2.0))
+        # A hover waypoint publishes a smooth speed reference that reaches
+        # zero at the capture point.  The previous 3 -> 0 m/s discontinuity
+        # occurred only after the vehicle was already inside the dwell gate,
+        # making stable capture needlessly sparse.  This remains a reward/path
+        # reference: it never modifies the policy action.
+        hover_speed = torch.minimum(cruise_speed, distance_to_goal/max(braking_time, 1e-3))
+        hover_speed = torch.where(stable, torch.zeros_like(hover_speed), hover_speed)
+        desired_speed = torch.where(kind==HOVER, hover_speed, cruise_speed)
         velocity_error = (velocity-self.tangent*desired_speed[:,None]).norm(dim=-1)
         self.step_path_cost = .5*(cross_error/(1+cross_error)+velocity_error/(1+velocity_error))*dt*active*~self.ready_to_land
         self.index = self.index + complete.long()
@@ -183,10 +203,13 @@ class WaypointMission:
         next_goal = self.positions[self.ids,(self.index+1).clamp(max=MAX_WAYPOINTS)]
         # 3 kind + 1 speed + 1 radius + 1 remaining hold + 3 path error +
         # 3 tangent + 3 next goal relative to active goal = 15 extra channels.
+        distance_scale = float(self.config.get('task', {}).get('navigation', {}).get(
+            'observation_distance_scale_m', 25.0))
         return torch.cat((onehot, self.speeds[self.ids,self.index,None]/10,
             self.radii[self.ids,self.index,None]/10,
             (self.holds[self.ids,self.index]-self.hold_elapsed).clamp(min=0)[:,None]/10,
-            body(self.path_error)/100,body(self.tangent),body(next_goal-self.goal)/100),dim=-1)
+            body(self.path_error)/distance_scale,body(self.tangent),
+            body(next_goal-self.goal)/distance_scale),dim=-1)
 
     def record(self, env_id=0):
         i, count = int(self.index[env_id]), int(self.count[env_id])
