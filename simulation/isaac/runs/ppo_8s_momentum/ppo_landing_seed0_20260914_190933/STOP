@@ -1,1 +1,0 @@
-Scale vectorization from 512 to 2048 after stage 0 passed; preserve checkpoint and optimizer.

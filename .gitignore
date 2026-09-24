@@ -1,10 +1,12 @@
-# pytest cache
-simulation/test_cache/
-.pytest_cache/
-
-# python bytecode
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+simulation/test_cache/
 
 # Python virtual environments
 env_isaaclab/
@@ -12,9 +14,53 @@ v.env/
 .venv/
 venv/
 
-# Isaac Sim / Omniverse caches (large, machine-specific)
+# ---------------------------------------------------------------------------
+# Isaac Sim / Isaac Lab
+# ---------------------------------------------------------------------------
+# Omniverse caches (large, machine-specific)
 **/omniverse_cache*/
 **/isaacsim*/extscache*/
 
 # Isaac Lab source clone (keep as external dependency)
 IsaacLab/
+
+# ---------------------------------------------------------------------------
+# Simulation / training outputs (regenerable, large; never commit)
+# Source assets (simulation/isaac/assets/usd, configs, tests/goldens) stay tracked.
+# ---------------------------------------------------------------------------
+# Run directories: checkpoints, train/eval logs, traces, mission recordings
+/runs/
+simulation/runs/
+simulation/isaac/logs/
+simulation/isaac/runs/*
+# Small reference results cited by docs / tools
+!simulation/isaac/runs/validated_landing_ppo/
+!simulation/isaac/runs/landing_reference/
+
+# Model checkpoints and weights
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.safetensors
+
+# Logs and run control files, wherever they are written
+*.log
+*.err
+*.out
+events.out.tfevents.*
+**/STOP
+status.tmp
+source_snapshot.zip
+
+# Rendered videos / captures
+*.webm
+*.mp4
+
+# ---------------------------------------------------------------------------
+# Editor / tooling scratch
+# ---------------------------------------------------------------------------
+.claude/settings.local.json
+.claude/worktrees/
+*.blend1
+test_latex*.png
