@@ -1,3 +1,4 @@
+import pytest
 import torch
 from torch.distributions import Normal, TransformedDistribution, TanhTransform
 
@@ -96,3 +97,21 @@ def test_inference_sampling_uses_checkpoint_variance_and_deterministic_default()
         torch.testing.assert_close(model.act(obs), mean.tanh())
         samples = torch.atanh(model.act(obs, 'stochastic')) - mean
         torch.testing.assert_close(samples.std(0), model.log_std.exp(), atol=.003, rtol=0)
+
+
+def test_popart_update_preserves_denormalized_predictions():
+    import torch
+    from tvc_env.controllers.ppo_model import ActorCritic, PopArtValueNormalizer
+    torch.manual_seed(0)
+    model = ActorCritic(51, 5)
+    norm = PopArtValueNormalizer(model.critic[-1], beta=0.5)
+    obs = torch.randn(64, 51)
+    for returns in (torch.randn(512) * 300 - 100, torch.randn(512) * 20 + 250, torch.randn(512)):
+        before = norm.denormalize(model(obs)[1]).detach()
+        norm.update(returns)
+        after = norm.denormalize(model(obs)[1]).detach()
+        assert torch.allclose(before, after, atol=1e-3, rtol=1e-4)
+    state = norm.state_dict()
+    other = PopArtValueNormalizer(model.critic[-1])
+    other.load_state_dict(state)
+    assert float(other.std) == pytest.approx(float(norm.std))

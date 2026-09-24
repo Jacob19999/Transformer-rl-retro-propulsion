@@ -21,6 +21,13 @@ def parse_args():
     parser = argparse.ArgumentParser(description="PPO training for TVC environment")
     parser.add_argument("--task", default="hover", choices=["hover", "landing"])
     parser.add_argument("--env-config", default="configs/env/train_128.yaml")
+    parser.add_argument("--num-envs", type=int, default=None,
+                        help=("Override env.num_envs from the task YAML. Simulation here is "
+                              "latency-bound on the serial PhysX substep chain, so throughput "
+                              "scales almost linearly with parallel environments: measured "
+                              "4344/8015/16384 env-steps per second at 2048/4096/8192 envs on "
+                              "one RTX 5070 (5.7 GB at 8192). Halve --rollout-steps and keep "
+                              "batch = num_envs * rollout_steps constant when raising this."))
     parser.add_argument("--disturbance", default="configs/disturbances/nominal.yaml")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--total-steps", type=int, default=250_000)
@@ -273,16 +280,19 @@ def main():
         torch.manual_seed(args.seed)
 
         overrides = None
+        if args.num_envs is not None:
+            if args.num_envs < 1:
+                raise ValueError("--num-envs must be positive")
+            overrides = {"env": {"num_envs": int(args.num_envs)}}
         if args.fixed_hover_spawn:
-            overrides = {
-                "task": {
+            overrides = overrides or {}
+            overrides["task"] = {
                     "spawn": {
                         "position_range": [[0.0, 0.0, 5.0], [0.0, 0.0, 5.0]],
                         "velocity_range": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
                         "attitude_range": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
                         "curriculum": {"enabled": False},
                     }
-                }
             }
 
         config = BaseEnvConfig(
@@ -853,6 +863,7 @@ def main():
         loss_plateau_count = 0
         loss_plateau_delta = float("inf")
         stop_for_loss_plateau = False
+        _needs_controller_reset = bool(args.residual_pid) or train_guidance is not None
         train_pid = PIDController(num_envs=num_envs, device=device, dt=rl_dt,
                                   throttle_hover=hover_throttle_init)
         train_pid.reset()
@@ -897,6 +908,14 @@ def main():
             stage_termination_count = 0
             rollout_landed_count = rollout_crashed_count = rollout_timeout_count = 0
             rollout_waypoints_completed = rollout_premature_landings = 0
+            # Host synchronisation, not GPU maths, is this loop's throughput
+            # limit: PhysX advances 16 substeps per policy step, and every
+            # .item() / .any() / boolean-mask index drains the CUDA queue so the
+            # CPU cannot run ahead and enqueue the next step. Tally on device and
+            # synchronise once per rollout instead of ~10 times per step.
+            counters_t = torch.zeros(7, dtype=torch.long, device=device)
+            outcome_success_buf = torch.zeros(rollout_steps, num_envs, dtype=torch.bool, device=device)
+            outcome_done_buf = torch.zeros(rollout_steps, num_envs, dtype=torch.bool, device=device)
             from tvc_env.envs.rotation_metrics import RotationSummary
             rollout_rotation = RotationSummary(env._rotation)
             rollout_success_rotation = RotationSummary(env._rotation)
@@ -916,17 +935,24 @@ def main():
                 obs_dict, reward, terminated, truncated, info = env.step(env_action)
                 done = terminated | truncated
                 next_obs = obs_dict["policy"]
-                reset_ids = done.nonzero(as_tuple=False).squeeze(-1)
-                if len(reset_ids) > 0:
-                    train_pid.reset(reset_ids)
-                    if train_guidance is not None:
-                        train_guidance.reset(obs=next_obs, env_ids=reset_ids)
+                # raw_to_env_action ignores the PID unless --residual-pid is
+                # set, so with direct actions this reset is dead work whose
+                # .nonzero()/len() pair costs a synchronisation every step.
+                if _needs_controller_reset:
+                    reset_ids = done.nonzero(as_tuple=False).squeeze(-1)
+                    if len(reset_ids) > 0:
+                        train_pid.reset(reset_ids)
+                        if train_guidance is not None:
+                            train_guidance.reset(obs=next_obs, env_ids=reset_ids)
                 reward_buf[t] = reward * args.reward_scale
-                if truncated.any():
-                    with torch.no_grad():
-                        terminal_obs = policy_observation(info["observation_pre_reset"])
-                        _terminal_mean, terminal_value = model(terminal_obs)
-                    reward_buf[t] += args.gamma * terminal_value * truncated.float()
+                # Identical to the previous `if truncated.any()` guard: the
+                # bootstrap is masked by truncated.float(), so it contributes
+                # zero on non-truncated envs. Computing it unconditionally adds
+                # one small no-grad forward and removes a per-step sync.
+                with torch.no_grad():
+                    terminal_obs = policy_observation(info["observation_pre_reset"])
+                    _terminal_mean, terminal_value = model(terminal_obs)
+                reward_buf[t] += args.gamma * terminal_value * truncated.float()
                 done_buf[t] = done.float()
 
                 # Tally terminal events for the staged-curriculum tracker.
@@ -945,18 +971,23 @@ def main():
                         success = landed & on_pad & soft & info['mission_ready_to_land_pre_reset']
                     else:
                         success = landed & on_pad & info['mission_ready_to_land_pre_reset']
-                    stage_success_count += int(success.sum().item())
-                    stage_termination_count += int(done.sum().item())
-                    rollout_landed_count += int(landed.sum().item())
-                    rollout_crashed_count += int((terminated & ~landed).sum().item())
-                    rollout_timeout_count += int(truncated.sum().item())
-                    rollout_waypoints_completed += int(info['waypoints_completed_pre_reset'][done].sum().item())
-                    rollout_premature_landings += int((landed & ~info['mission_ready_to_land_pre_reset']).sum().item())
+                    # x[done] is itself a sync (the result shape is data
+                    # dependent), so the waypoint tally uses a multiply and the
+                    # curriculum outcomes are stacked here and extracted once
+                    # after the loop, which preserves their observed order.
+                    counters_t[0] += success.sum()
+                    counters_t[1] += done.sum()
+                    counters_t[2] += landed.sum()
+                    counters_t[3] += (terminated & ~landed).sum()
+                    counters_t[4] += truncated.sum()
+                    counters_t[5] += (info['waypoints_completed_pre_reset'] * done).sum()
+                    counters_t[6] += (landed & ~info['mission_ready_to_land_pre_reset']).sum()
                     stage_env_steps += num_envs
                     rollout_rotation.add(info['rotation_pre_reset'], done)
                     rollout_success_rotation.add(info['rotation_pre_reset'], done & success)
                     if staged_tracker is not None:
-                        staged_tracker.record_outcomes(num_envs, success[done].tolist())
+                        outcome_success_buf[t] = success
+                        outcome_done_buf[t] = done
 
                 obs = next_obs
                 env.render()
@@ -965,6 +996,17 @@ def main():
             # counts into the tracker, then advance if the success threshold
             # for the current stage has been crossed (or the stage budget is
             # exhausted).
+            if is_landing:
+                # The one host synchronisation for the whole rollout.
+                (stage_success_count, stage_termination_count, rollout_landed_count,
+                 rollout_crashed_count, rollout_timeout_count,
+                 rollout_waypoints_completed, rollout_premature_landings) = (
+                    int(v) for v in counters_t.tolist())
+                if staged_tracker is not None:
+                    staged_tracker.record_outcomes(
+                        stage_env_steps,
+                        outcome_success_buf[outcome_done_buf].tolist())
+
             stage_advanced = False
             stage_success_before_advance = staged_tracker.success_fraction() if staged_tracker else None
             completed_stage = _stage_index()

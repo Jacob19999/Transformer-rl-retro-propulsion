@@ -96,6 +96,9 @@ class ResetManager:
         self._servo_state = None
         self._omega_state = None
         self._omega_prev = None
+        # Physics-derived level-hover rotor fraction, set by the environment.
+        # Used by spawn.initial_motor_omega_fraction: hover.
+        self.hover_omega_fraction = None
 
     def initialize(self, num_envs: int, device: torch.device) -> None:
         """Initialize actuator state tensors."""
@@ -138,11 +141,10 @@ class ResetManager:
             zeros = self._servo_state[env_ids]
             self._body.write_fin_joint_state(zeros, torch.zeros_like(zeros), env_ids=env_ids)
             self._body.set_fin_joint_targets(zeros, env_ids=env_ids)
+        task = self._task_config.get("task", self._task_config)
+        spawn = task.get("spawn", {})
         if self._omega_state is not None:
-            task = self._task_config.get("task", self._task_config)
-            spawn = task.get("spawn", {})
-            omega_fraction = float(spawn.get("initial_motor_omega_fraction", 0.0))
-            omega_fraction = max(0.0, min(omega_fraction, 1.0))
+            omega_fraction = self._initial_rotor_fraction(spawn, len(env_ids), device)
             initial_omega = omega_fraction * float(self._edf.omega_max)
             self._omega_state[env_ids] = initial_omega
             self._omega_prev[env_ids] = initial_omega
@@ -151,12 +153,49 @@ class ResetManager:
         self._contacts.reset(env_ids)
         if self._wind_model is not None:
             self._wind_model.reset(env_ids)
+            if "wind_speed_range" in spawn:
+                # Per-episode steady horizontal wind, uniform direction. The
+                # waypoint task varies it by curriculum stage; gusts remain a
+                # disturbance-config option.
+                low, high = (float(v) for v in spawn["wind_speed_range"])
+                speed = low + torch.rand(len(env_ids), device=device) * (high - low)
+                azimuth = torch.rand(len(env_ids), device=device) * (2 * torch.pi)
+                wind = torch.stack((speed * azimuth.cos(), speed * azimuth.sin(), torch.zeros_like(speed)), -1)
+                self._wind_model._steady_wind[env_ids] = wind
         if self._battery_model is not None:
             self._battery_model.reset(env_ids)
+            if "initial_soc_range" in spawn:
+                low, high = (float(v) for v in spawn["initial_soc_range"])
+                if not 0.0 <= low <= high <= 1.0:
+                    raise ValueError("initial_soc_range must lie within [0, 1]")
+                battery = self._battery_model
+                battery.soc[env_ids] = low + torch.rand(len(env_ids), device=device) * (high - low)
+                battery.voltage_v[env_ids] = battery.ocv()[env_ids]
 
         # Isaac Lab requires reset() after state writers so actuator caches and
         # wrench composers cannot carry state across the episode boundary.
         self._body.reset_buffers(env_ids)
+
+    def _initial_rotor_fraction(self, spawn: dict, count: int, device) -> Tensor:
+        """Spawn rotor speed as a fraction of omega_max.
+
+        ``hover`` spawns with the rotor already at level-hover speed, i.e. the
+        angular momentum of a vehicle that spooled up on the pad (legs hold the
+        body) and then took off. Spooling 0 -> hover in the air instead hands
+        the body I_rotor*omega/I_zz ~ 40 rad/s of yaw (2e-4*0.85*4650/0.02),
+        which the old recovery stages demanded be cancelled after the fact.
+        Optional ``initial_motor_omega_jitter`` adds a uniform +/- offset.
+        """
+        value = spawn.get("initial_motor_omega_fraction", 0.0)
+        if isinstance(value, str):
+            if value != "hover":
+                raise ValueError("initial_motor_omega_fraction must be a number or 'hover'")
+            if self.hover_omega_fraction is None:
+                raise ValueError("Hover rotor spawn requires the environment's hover fraction")
+            value = self.hover_omega_fraction
+        jitter = float(spawn.get("initial_motor_omega_jitter", 0.0))
+        fraction = float(value) + (torch.rand(count, device=device) * 2 - 1) * jitter
+        return fraction.clamp(0.0, 1.0)
 
     @property
     def servo_state(self) -> Tensor:

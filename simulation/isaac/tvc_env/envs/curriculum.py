@@ -279,12 +279,17 @@ class StagedCurriculumTracker:
                     successes=list(self._successes), stages=deepcopy(self.stages),
                     success_window_size=self.success_window_size)
 
-    def load_state_dict(self, state: dict[str, Any]) -> None:
-        if state['stages'] != self.stages or state['success_window_size'] != self.success_window_size:
-            raise ValueError('Checkpoint curriculum differs from the configured curriculum')
+    def load_state_dict(self, state: dict[str, Any], allow_future_changes: bool = False) -> None:
+        """Restore progress. ``allow_future_changes`` accepts a curriculum whose
+        stages after the checkpoint's current stage were revised; the stages
+        already trained on (0..stage_index) must be identical."""
         index = int(state['stage_index'])
         if not 0 <= index < self.num_stages:
             raise ValueError('Invalid checkpoint stage index')
+        trained = slice(0, index + 1) if allow_future_changes else slice(None)
+        if (state['stages'][trained] != self.stages[trained]
+                or state['success_window_size'] != self.success_window_size):
+            raise ValueError('Checkpoint curriculum differs from the configured curriculum')
         self.stage_index = index
         self.steps_in_stage = int(state['steps_in_stage'])
         self._successes.clear()

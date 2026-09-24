@@ -123,3 +123,46 @@ def test_spline_rejects_underground_overshoot_between_positive_waypoints():
     with pytest.raises(ValueError, match='ground clearance'):
         validate_spline_clearance([0,0,100], [dict(position=[i,0,z]) for i,z in enumerate([1,1,100])])
     validate_spline_clearance([0,0,100], [dict(position=[i,0,z]) for i,z in enumerate([75,50,25])])
+
+
+def _waypoint_run(root, name='ppo_waypoint_flight_seed0_20260924_022647'):
+    import json
+    run = root / 'runs' / 'waypoint_flight' / name
+    run.mkdir(parents=True)
+    (run / 'args.json').write_text('{"num_envs": 8192}')
+    (run / 'task_config.json').write_text(json.dumps({'task': {'waypoint_flight': {'curriculum': {
+        'stages': [{'name': 'hold_position'}, {'name': 'hold_fine'}, {'name': 'full_task'}]}}}}))
+    records = [dict(type='train_update', global_step=step, stage_index=1, stage_name='hold_fine',
+                    stage_success_fraction=.25, rollout_success_fraction=.2, mean_peak_yaw_deg_s=250.,
+                    explained_variance=.9, throttle_mean=.8, reward_mean=-.5, sps=15000.,
+                    outcomes={'SUCCESS': 1, 'SPIN': 3, 'CRASH': 0}) for step in range(1000, 31000, 1000)]
+    (run / 'train_log.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in records) + '{"global_step":')
+    (run / 'eval_latest.json').write_text('{"success_fraction": 0.0, "success_mean_energy_wh": NaN}')
+    (run / 'ppo_step_20000.pt').write_bytes(b'x')
+    return run
+
+
+def test_waypoint_trainer_is_detected_and_summarised(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, 'ROOT', tmp_path)
+    _waypoint_run(tmp_path)
+    result = server.training_snapshot(['python', 'apps/run_train_waypoints.py', '--num-envs', '8192'])
+    assert result['task'] == 'waypoint_flight' and result['step'] == 30000
+    assert result['stage'] == 1 and result['stages'] == 3 and result['stage_name'] == 'hold_fine'
+    assert result['full_success'] is None
+
+
+def test_models_api_lists_runs_and_downsampled_history(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, 'MODEL_RUNS', tmp_path / 'runs' / 'waypoint_flight')
+    monkeypatch.setattr(server, 'active_training_command', lambda: None)
+    run = _waypoint_run(tmp_path)
+    client = TestClient(server.app)
+    data = client.get('/api/models').json()
+    summary = data['runs'][0]
+    assert summary['run'] == run.name and summary['stages'] == ['hold_position', 'hold_fine', 'full_task']
+    assert summary['outcomes'] == {'SUCCESS': .25, 'SPIN': .75, 'CRASH': 0.}
+    assert summary['evaluation']['success_mean_energy_wh'] is None
+    assert [c['step'] for c in summary['checkpoints']] == [20000]
+    history = client.get(f'/api/models/{run.name}/history?points=10').json()
+    assert history['series'][0]['step'] == 1000 and history['series'][-1]['step'] == 30000
+    assert len(history['series']) <= 11 and history['series'][0]['spin'] == .75
+    assert client.get('/api/models/..%5C..%5Cetc/history').status_code == 404

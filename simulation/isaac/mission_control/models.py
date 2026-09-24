@@ -6,11 +6,13 @@ import json
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-POLICIES = {
-    'ppo': 'runs/ppo_exploration_anneal/ppo_landing_seed0_20260911_184222/ppo_step_26034176.pt',
-    'ppo_deterministic': 'runs/ppo_kl_consolidation/ppo_landing_seed0_20260913_205810/ppo_best.pt',
-}
-DEFAULTS = dict(name='Landing test', controller='ppo', seed=2026, duration_s=30.,
+# The 26M and 34M landing policies were trained before the radial fin hinge
+# correction (tools/fix_radial_fin_hinges.py), so their learned fin mapping does
+# not match the vehicle this simulation now flies. They were retired from the
+# mission choices on 2026-09-17; the checkpoints remain in git history under
+# runs/ppo_exploration_anneal and runs/ppo_kl_consolidation for reference.
+POLICIES: dict[str, str] = {}
+DEFAULTS = dict(name='Landing test', controller='pid', seed=2026, duration_s=30.,
                 hardware_profile='planned_8s',
                 position=[-.28, .82, 18.], velocity=[0., 0., -1.],
                 attitude_deg=[0., 0., 0.], angular_rate_deg_s=[0., 0., 0.],
@@ -222,10 +224,11 @@ def policy_paths():
     return result
 
 
-def default_mission():
+def default_mission(paths=None):
+    paths = policy_paths() if paths is None else paths
     result = copy.deepcopy(DEFAULTS)
-    if 'ppo_radial' in policy_paths():
+    if 'ppo_radial' in paths:
         result['controller'] = 'ppo_radial'
-    if 'ppo_mission' in policy_paths():
+    if 'ppo_mission' in paths:
         result['controller'] = 'ppo_mission'
     return result

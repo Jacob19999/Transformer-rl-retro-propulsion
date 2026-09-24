@@ -116,17 +116,35 @@ def compute_excess_rotation_cost(env_state, config: dict) -> Tensor:
 
 
 def compute_rotation_quality_reward(env_state, config: dict) -> Tensor:
-    """Terminal soft-landing reward for respecting whole-flight rate limits.
+    """Terminal contact reward for respecting whole-flight rate limits.
 
     The score is one when every recorded peak stays within its configured
     soft limit and falls smoothly as any axis exceeds its limit.  It is paid
-    only on a successful landing, so it cannot reward hovering indefinitely.
+    on any physical contact termination (LANDED or CRASHED), so it cannot
+    reward hovering indefinitely -- a timeout makes no contact and collects
+    nothing.
 
     Diagnostic basis: the 132.12M-transition waypoint run landed with mean
     successful-flight yaw peaks of 1574 deg/s against the 180 deg/s soft
     limit while the old integrated rotation term contributed less than one
     reward unit per flight.  This bounded terminal term gives PPO a useful
     whole-trajectory comparison without imposing a hard termination gate.
+
+    Success gating removed 2026-09-17.  ppo_waypoints_staged_v2
+    curriculum_eval.jsonl stage 1 at 4,194,304 steps: quality 0.110 (peak
+    yaw 1623 deg/s against the 180 deg/s limit) with success_fraction
+    0.108, so the success-gated term was worth 0.108 * 0.110 * 500 ~= 6 of
+    a possible 500 reward units per episode.  Worse, 60.4% of episodes
+    ended CRASHED -- overwhelmingly because peak yaw must decelerate ~9.4x
+    to clear the 3.0 rad/s contact gate -- and those episodes received
+    exactly zero gradient from the one term meant to discourage the spin
+    that caused them.  Over the following 72.09M transitions at that stage
+    mean peak yaw did not move (1623 -> 1601 deg/s) while crashes rose to
+    69.9%, which is what an inert term looks like.  Paying on contact
+    exposes the peak-rate gradient on ~100% of terminations instead of
+    11%.  A clean-rotation crash is -1600 + 500 = -1100 against +2700 for
+    a clean-rotation soft landing, so contact outcomes stay correctly
+    ordered and a timeout still collects nothing.
     """
     peak = getattr(env_state, 'rotation_peak_rate_rad_s', None)
     if peak is None:
@@ -138,7 +156,9 @@ def compute_rotation_quality_reward(env_state, config: dict) -> Tensor:
     # The worst axis defines whole-flight quality. clamp(min=limit) makes the
     # score exactly one inside the envelope and limit/peak outside it.
     quality = (limits / peak.clamp(min=limits)).amin(dim=-1)
-    return quality * compute_landing_success_reward(env_state, config)
+    contact = (env_state.contact_state == ContactState.LANDED) | (
+        env_state.contact_state == ContactState.CRASHED)
+    return quality * contact.float()
 
 
 def compute_control_rate_reward(env_state, config: dict) -> Tensor:

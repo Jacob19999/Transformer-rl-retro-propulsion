@@ -108,7 +108,7 @@ def main():
                                checkpoint_sha256=hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
                                body_frame_position_error=saved['args'].get('body_frame_position_error', False),
                                observation_dim=obs_dim,
-                               action_mode=args.action_mode or ('deterministic' if request['controller'] == 'ppo_deterministic' else 'stochastic'))
+                               action_mode=args.action_mode or 'stochastic')
         else:
             from tvc_env.controllers.pid_adapter import PIDController
             from tvc_env.controllers.landing_guidance import LandingGuidance
@@ -142,7 +142,7 @@ def main():
                         dynamics=config.config.get('dynamics', {}),
                         physics=config.config.get('physics', {}),
                         coordinate_frame='World XYZ, Z up; body rates FRD; quaternion wxyz',
-                        source='Isaac Sim / PhysX', model_asset='drone.glb',
+                        source='Isaac Sim / PhysX', model_asset='drone_visual.glb',
                         battery_calibration='Estimated 1-RC LiPo model; voltage and power coupled to EDF',
                         body_rate_command=None,
                         terminal_procedure='After LANDED: zero fin/throttle commands for 2 seconds; record actual spool-down and verify final settling. This procedure is outside the PPO episode.',

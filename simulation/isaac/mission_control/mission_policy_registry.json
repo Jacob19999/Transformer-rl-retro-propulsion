@@ -1,8 +1,9 @@
 {
-  "checkpoint": "runs/ppo_8s_waypoint_recovery/ppo_landing_seed0_20260915_215055/ppo_step_262144.pt",
+  "checkpoint": "runs/ppo_waypoints_staged_v5/ppo_landing_seed0_20260917_132759/ppo_final.pt",
+  "sha256": "a3ebb6ef8871b23754159602c7da0771a23c7211be51fe12c0df4e15ac486f24",
   "status": "experimental",
   "validated": false,
-  "note": "Experimental latest completed save from this run only; current curriculum and full-task evaluation must be checked. Recovery, rotation and waypoints remain unqualified.",
-  "training_run": "runs/ppo_8s_waypoint_recovery/ppo_landing_seed0_20260915_215055",
-  "follow_training_run": true
+  "note": "Final save of the 200,278,016-transition staged waypoint run. Trained only through curriculum stage 1 (+/-3 m XY, 8-15 m altitude, +/-0.15 rad tilt, zero waypoints); that stage ended at 36.1% mission success, 60.0% landed, 0.412 m mean pad distance, 0.197 m/s mean touchdown. The uncurricularised full-task evaluation scored 0/8192 -- expected, since the policy never trained beyond stage 1. Whole-flight peak yaw stays near 1625 deg/s against a 180 deg/s soft limit and a 172 deg/s contact gate, which is the open defect driving the remaining 40% crash rate. Recovery, rotation quality and waypoint routes are all unqualified.",
+  "training_run": "runs/ppo_waypoints_staged_v5/ppo_landing_seed0_20260917_132759",
+  "follow_training_run": false
 }

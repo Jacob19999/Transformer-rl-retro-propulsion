@@ -11,6 +11,7 @@ Requires Isaac Lab 2.3.2 runtime.
 from __future__ import annotations
 import os
 import time
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
@@ -21,6 +22,36 @@ if TYPE_CHECKING:
 
 # Repo-relative root: simulation/isaac/ (two levels up from tvc_env/sim/)
 _SIM_ROOT = Path(__file__).parents[2].resolve()
+# Lateral reach a drone can have relative to its own environment origin.
+# The widest task spawn box in configs/env is +/-100 m, so the ground must
+# extend at least that far past the grid, plus room to drift while landing.
+DEFAULT_GROUND_MARGIN_M = 150.0
+
+# configs/physics/physx_train.yaml sizes the PhysX GPU buffers for this many
+# environments. They are hard capacities: exceeding one silently degrades
+# broad-phase pairs and contact patches rather than raising, which shows up as
+# missed landings that look like control failures. Scale them with num_envs so
+# raising --num-envs cannot quietly corrupt contact handling.
+GPU_BUFFER_REFERENCE_ENVS = 2048
+_GPU_BUFFER_FIELDS = (
+    "gpu_temp_buffer_capacity",
+    "gpu_max_rigid_contact_count",
+    "gpu_max_rigid_patch_count",
+    "gpu_found_lost_pairs_capacity",
+)
+
+
+def scale_gpu_buffer(value: int | None, num_envs: int, reference_envs: int = GPU_BUFFER_REFERENCE_ENVS) -> int | None:
+    """Scale a PhysX GPU capacity from its reference environment count.
+
+    Never scales down: a task YAML that already asks for a larger buffer than
+    the environment count implies keeps its own value.
+    """
+    if value is None:
+        return None
+    factor = max(1.0, float(num_envs) / float(max(reference_envs, 1)))
+    return int(max(int(value), math.ceil(int(value) * factor)))
+
 _DRONE_USD      = str(_SIM_ROOT / "assets/usd/drone_v2_physics.usd")
 _LANDING_PAD_USD = str(_SIM_ROOT / "assets/usd/landing_pad.usd")
 _METADATA_YAML  = str(_SIM_ROOT / "assets/metadata/edf_drone_v2.asset.yaml")
@@ -56,17 +87,32 @@ class SceneConfig:
     rest_offset: float | None = None
     enable_gyroscopic_forces: bool | None = None
     max_angular_velocity_deg_s: float = 100.0
+    # Half-width of the square ground plane, metres. None auto-sizes it to
+    # ``grid_half_extent_m + DEFAULT_GROUND_MARGIN_M``. A fixed 100 m half-extent
+    # (the old hard-coded 200x200 m cuboid) silently left
+    # environments with no ground beneath them once the grid or the spawn box
+    # grew past it; those drones free-fall and terminate on altitude error,
+    # which reads as a control failure but is a missing collider.
+    ground_half_extent_m: float | None = None
 
     # Asset paths — absolute, resolved from this file's location
     drone_usd_path: str = _DRONE_USD
     landing_pad_usd_path: str = _LANDING_PAD_USD
     metadata_yaml_path: str = _METADATA_YAML
 
+    @property
+    def grid_half_extent_m(self) -> float:
+        """Half-width spanned by the Isaac Lab square environment grid."""
+        columns = math.ceil(math.sqrt(max(int(self.num_envs), 1)))
+        return (columns - 1) * float(self.env_spacing) / 2.0
+
     @classmethod
     def from_yaml(cls, env_config: dict[str, Any]) -> "SceneConfig":
         """Create SceneConfig from a parsed env YAML dict."""
         env = env_config.get("env", env_config)
         physics = env_config.get("physics", {})
+        _num_envs = env.get("num_envs", 1)
+        _reference_envs = int(physics.get("gpu_buffer_reference_envs", GPU_BUFFER_REFERENCE_ENVS))
         return cls(
             num_envs=env.get("num_envs", 1),
             env_spacing=env.get("env_spacing", 4.0),
@@ -87,14 +133,19 @@ class SceneConfig:
             enable_external_forces_every_iteration=physics.get(
                 "enable_external_forces_every_iteration", True
             ),
-            gpu_temp_buffer_capacity=physics.get("gpu_temp_buffer_capacity"),
-            gpu_max_rigid_contact_count=physics.get("gpu_max_rigid_contact_count"),
-            gpu_max_rigid_patch_count=physics.get("gpu_max_rigid_patch_count"),
-            gpu_found_lost_pairs_capacity=physics.get("gpu_found_lost_pairs_capacity"),
+            gpu_temp_buffer_capacity=scale_gpu_buffer(
+                physics.get("gpu_temp_buffer_capacity"), _num_envs, _reference_envs),
+            gpu_max_rigid_contact_count=scale_gpu_buffer(
+                physics.get("gpu_max_rigid_contact_count"), _num_envs, _reference_envs),
+            gpu_max_rigid_patch_count=scale_gpu_buffer(
+                physics.get("gpu_max_rigid_patch_count"), _num_envs, _reference_envs),
+            gpu_found_lost_pairs_capacity=scale_gpu_buffer(
+                physics.get("gpu_found_lost_pairs_capacity"), _num_envs, _reference_envs),
             contact_offset=physics.get("contact_offset"),
             rest_offset=physics.get("rest_offset"),
             enable_gyroscopic_forces=physics.get('enable_gyroscopic_forces'),
             max_angular_velocity_deg_s=physics.get('max_angular_velocity_deg_s', 100.0),
+            ground_half_extent_m=env.get('ground_half_extent_m'),
         )
 
 
@@ -284,8 +335,15 @@ def _warmup_viewport(sim: "SimulationContext") -> None:
             break
 
 
-def _create_scene_cfg(config: SceneConfig):
+def _create_scene_cfg(config: SceneConfig, ground_half_extent_m: float | None = None):
     """Create InteractiveSceneCfg from SceneConfig."""
+    _ground_half = float(
+        ground_half_extent_m
+        if ground_half_extent_m is not None
+        else (config.ground_half_extent_m
+              if config.ground_half_extent_m is not None
+              else config.grid_half_extent_m + DEFAULT_GROUND_MARGIN_M)
+    )
     try:
         from isaaclab.scene import InteractiveSceneCfg
         from isaaclab.assets import ArticulationCfg, AssetBaseCfg
@@ -302,7 +360,7 @@ def _create_scene_cfg(config: SceneConfig):
             prim_path="/World/GroundPlane",
             init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -0.05)),
             spawn=sim_utils.CuboidCfg(
-                size=(200.0, 200.0, 0.1),
+                size=(2.0 * _ground_half, 2.0 * _ground_half, 0.1),
                 collision_props=sim_utils.CollisionPropertiesCfg(
                     collision_enabled=True,
                     contact_offset=config.contact_offset,

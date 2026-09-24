@@ -6,6 +6,52 @@ For first-time dependencies run that Python with `-m pip install -r
 simulation/isaac/mission_control/requirements.txt`. The launcher installs the
 locked browser dependencies and builds the frontend. No cloud service is used.
 
+## Console layout (2026-09-24)
+
+The console is split into four pages, reached from the tab row or keys 1–4
+(the URL hash, e.g. `#telemetry`, is bookmarkable):
+
+1. **Flight.** Mission archive and export bar, the camera array with the
+   webcast band, four key charts and the vehicle column.
+2. **Mission plan.** Launch card (name, controller, hardware, seed, duration,
+   run), the route planner, and initial-state, disturbance and LiPo cards.
+   Launching switches to Flight.
+3. **Telemetry.** All eight strip charts, flight rotation totals, fin motion
+   rates, power system readouts and the event log.
+4. **Flight software.** Registered policy, latest training runs, and the
+   selected run's history, curriculum, evaluation and checkpoints.
+
+The header, clock and GO/NO-GO board stay on every page. The panels are:
+
+- **Header and GO/NO-GO board.** Mission clock; Isaac, trainer, next
+  controller, telemetry, vehicle and power states. Each state shows a glyph
+  and a word; colour is never the only signal.
+- **Camera array** with a webcast band:
+  - Speed, altitude, thrust and LiPo gauges.
+  - A mission timeline of recorded milestones (start, waypoint captures,
+    contact, landed/crashed, motor off, outcome).
+- **Vehicle telemetry column:**
+  - Attitude indicator: ZYX Euler from the recorded quaternion, plus tilt.
+  - Altitude, vertical and ground speed, pad error, thrust and thrust-to-weight.
+  - Fin deflection bars against the servo limit (bar is actual, tick is command).
+  - Gyro bars spanning ±2× each soft limit, with dashed limit markers.
+- **Telemetry strip charts.** Eight charts on one time axis: altitude, velocity,
+  distance, thrust, body rates, fin angles, bus voltage and pack current. Hover
+  to read values; click or drag to seek. Dashed lines are limits; vertical
+  hairlines are the timeline milestones. Space plays or pauses the replay;
+  ←/→ step 0.5 s (Shift: 5 s).
+- **Flight software panel.**
+  - Lists the registered mission-flyable policy.
+  - Lists the latest `runs/waypoint_flight` training runs from their logs:
+    curriculum stage, stage success, outcome mix, peak yaw, checkpoints, and
+    a history plot. Nothing is loaded from the checkpoints.
+  - These 54-channel `waypoint_flight_v1` checkpoints are listed for inspection
+    only. `run_mission.py` does not yet build explicit waypoint missions for
+    them.
+
+Both `run_train_ppo.py` and `run_train_waypoints.py` are recognised as trainers
+that own Isaac. Mission launches are refused while either runs.
+
 ## Draggable mission planner and experimental recovery policy
 
 Use the top **X/Y** and side **X/Z** canvases to drag the cyan starting diamond
@@ -28,23 +74,37 @@ Routes whose waypoint splines dip below ground clearance between control
 points are rejected; raising the neighboring points can remove the overshoot.
 
 Waypoint missions require the **EXPERIMENTAL PPO · latest recovery + waypoints**
-choice registered in `mission_policy_registry.json`. This explicitly
-experimental choice follows completed checkpoint saves in the designated run;
-it does not qualify them or alter archived recordings. Each new mission logs
-the exact checkpoint file and hash. The initial saved model has only easy-stage
-training; the initial full adverse evaluation had 0/2,048 successes.
-Old policies do not observe waypoint targets and are rejected for such
-requests. The wider recovery policy is still training; inverted starts and
-long routes are not qualified capabilities. Training status shows current
-stage and independent full-task evaluation separately. Simulation launch is
-disabled while the trainer owns Isaac; editing plans and replay remain usable.
+choice registered in `mission_policy_registry.json`, which is pinned by path and
+SHA256 to one checkpoint. Registering it does not qualify it or alter archived
+recordings, and each new mission logs the exact checkpoint file and hash it
+loaded.
+
+The deployed save is the final one from the 200,278,016-transition staged
+waypoint run (`runs/ppo_waypoints_staged_v5`). It trained only through
+curriculum stage 1 — ±3 m XY, 8–15 m altitude, ±0.15 rad tilt and **zero
+waypoints** — and never advanced, so route following, recovery and inverted
+starts have had no training at all and are not capabilities of this model.
+At that stage it reached 36.1% mission success, 60.0% landed, 0.412 m mean pad
+distance and 0.197 m/s mean touchdown speed. The uncurricularised full-task
+evaluation scored 0/8,192, which is the expected result for a stage-1 policy
+rather than a measurement of the approach. Whole-flight peak yaw stays near
+1,625°/s against a 180°/s soft limit and a 172°/s contact gate; that unresolved
+spin drives the remaining 40% crash rate.
+
+The legacy 26M and 34M landing policies were retired on 2026-09-17. They were
+trained before the radial fin hinge correction, so their fin mapping does not
+match the vehicle this simulation flies, and they never observed waypoint
+targets. **PID · radial hinges** remains available for non-waypoint missions.
+Training status shows current stage and independent full-task evaluation
+separately. Simulation launch is disabled while the trainer owns Isaac; editing
+plans and replay remain usable.
 
 To test interactively before a long training run finishes, create a file named
 `STOP` inside its run directory. The trainer finishes its current rollout or
 evaluation, saves `ppo_final.pt`, and releases Isaac. Wait for the training
 banner to clear before launching a mission. The browser's **STOP RUN** button
 only stops a mission, not PPO training. The active run and exact launch options
-are recorded in `runs/ppo_8s_waypoint_recovery/*/args.json`.
+are recorded in `runs/ppo_waypoints_staged_v5/*/args.json`.
 
 The recorded mission phase displays the active waypoint, cross-track error
 and hover timer. Editing a draft does not alter the reference route in replay
@@ -70,9 +130,15 @@ Four synchronized views show the actual USD body and fin poses: orbit, ground
 tracking, overhead and an orthographic bottom view. The bottom view shows the
 four measured fin angles beside their fins, with FWD at the top. Looking up
 from below puts the vehicle's RIGHT fin on the left of the image. The body
-and ground overlays are hidden in this view. The body CAD is reduced from 691,680 to
-60,000 triangles for rendering. Fin meshes are the existing simplified Isaac
-geometry. Camera images use Three.js/WebGL; they are **not Isaac RTX renders**.
+and ground overlays are hidden in this view. The rendered vehicle is the
+textured CAD/Blender model (`CAD/EDF Drone v1/Blender/usd_v2.blend`) with its
+Inventor materials, reduced from 691,680 to about 152,000 triangles by
+`mission_control/export_visual_model.py`. Poses still come from the physics USD
+links; the export refuses to write if any link's mesh bounds differ from
+`geometry.json` by more than 1 mm. Fin plates are coloured to match their
+bottom-view labels. Regenerate after a CAD change with
+`blender -b "CAD/EDF Drone v1/Blender/usd_v2.blend" --python simulation/isaac/mission_control/export_visual_model.py`.
+Camera images use Three.js/WebGL; they are **not Isaac RTX renders**.
 The ground presentation and thrust arrow are visual overlays. Physics, contact,
 fin articulation and trajectory all come from Isaac, not browser animation rules.
 

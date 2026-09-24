@@ -71,6 +71,60 @@ def value_loss(values, returns, old_values=None, clip_range=None):
     return .5 * error.mean()
 
 
+class PopArtValueNormalizer:
+    """Running return statistics with output-preserving critic rescaling.
+
+    The critic predicts standardized returns; values in return units are
+    ``normalized * std + mean``. When the statistics move, the final linear
+    layer is rescaled so every prediction in return units is unchanged
+    (van Hasselt et al. 2016, "Learning values across many orders of
+    magnitude"), so only the regression target changes, never the fit.
+
+    Diagnostic: waypoint_flight run 20260923_143257 held explained variance
+    at 0.0000-0.0003 for 25 updates (6.6M transitions) with v_loss ~2300
+    against +/-400 terminals; a fresh tanh critic under Adam moves its output
+    only ~lr per step, so advantages were nearly pure reward noise.
+    """
+
+    def __init__(self, layer: nn.Linear, beta: float = 0.01, min_std: float = 1e-2):
+        self.layer, self.beta, self.min_std = layer, float(beta), float(min_std)
+        self.mean = torch.zeros((), device=layer.weight.device)
+        self.mean_sq = torch.ones((), device=layer.weight.device)
+        self.initialized = False
+
+    @property
+    def std(self):
+        return (self.mean_sq - self.mean.square()).clamp(min=self.min_std ** 2).sqrt()
+
+    def denormalize(self, value):
+        return value * self.std + self.mean
+
+    def normalize(self, value):
+        return (value - self.mean) / self.std
+
+    @torch.no_grad()
+    def update(self, returns):
+        old_mean, old_std = self.mean.clone(), self.std.clone()
+        batch_mean, batch_sq = returns.mean(), returns.square().mean()
+        if self.initialized:
+            self.mean = (1 - self.beta) * self.mean + self.beta * batch_mean
+            self.mean_sq = (1 - self.beta) * self.mean_sq + self.beta * batch_sq
+        else:
+            self.mean, self.mean_sq, self.initialized = batch_mean, batch_sq, True
+        new_std = self.std
+        self.layer.weight.mul_(old_std / new_std)
+        self.layer.bias.mul_(old_std).add_(old_mean - self.mean).div_(new_std)
+
+    def state_dict(self):
+        return dict(mean=float(self.mean), mean_sq=float(self.mean_sq), initialized=self.initialized,
+                    beta=self.beta, min_std=self.min_std)
+
+    def load_state_dict(self, state):
+        self.mean = torch.tensor(state['mean'], device=self.layer.weight.device)
+        self.mean_sq = torch.tensor(state['mean_sq'], device=self.layer.weight.device)
+        self.initialized = bool(state['initialized'])
+
+
 def make_optimizer(model, actor_lr, critic_lr=None, saved_state=None):
     """Independent actor/critic learning rates, preserving legacy Adam moments.
 

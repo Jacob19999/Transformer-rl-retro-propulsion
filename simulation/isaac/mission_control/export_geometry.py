@@ -1,4 +1,9 @@
-"""Export actual Isaac USD meshes in each rigid link's local coordinates."""
+"""Export each rigid link's frame and mesh bounds from the Isaac physics USD.
+
+geometry.json is the kinematic manifest the viewer poses links from; the
+rendered mesh is the detailed CAD model written by export_visual_model.py,
+which is checked against these bounds.
+"""
 from pathlib import Path
 import hashlib
 import json
@@ -15,7 +20,6 @@ def main():
     dest.mkdir(parents=True, exist_ok=True)
     stage = Usd.Stage.Open(str(source))
     cache = UsdGeom.XformCache()
-    scene = trimesh.Scene()
     records = []
     for prim in stage.Traverse():
         if not prim.IsA(UsdGeom.Mesh):
@@ -39,18 +43,12 @@ def main():
         relative = cache.GetLocalToWorldTransform(prim) * cache.GetLocalToWorldTransform(link_prim).GetInverse()
         geometry.apply_transform(np.asarray(relative).T)
         bounds = geometry.bounds.tolist()
-        original_faces = len(geometry.faces)
-        if original_faces > 60000:
-            geometry = geometry.simplify_quadric_decimation(face_count=60000)
-        geometry.visual = trimesh.visual.ColorVisuals(geometry, face_colors=[170, 184, 192, 255] if link == 'Body' else [110, 245, 220, 255])
-        scene.add_geometry(geometry, node_name=link, geom_name=link)
         world = cache.GetLocalToWorldTransform(link_prim)
         q = world.ExtractRotationQuat()
-        records.append(dict(name=link, source_prim=str(prim.GetPath()), source_faces=original_faces,
-                            rendered_faces=len(geometry.faces), local_bounds=bounds,
+        records.append(dict(name=link, source_prim=str(prim.GetPath()), source_faces=len(geometry.faces),
+                            local_bounds=bounds,
                             neutral_position=list(world.ExtractTranslation()),
                             neutral_quaternion=[q.GetReal(), *q.GetImaginary()]))
-    (dest / 'drone.glb').write_bytes(scene.export(file_type='glb'))
     manifest = dict(source=str(source.relative_to(ROOT)), source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
                     coordinate_frame='USD Z up, metres; geometry local to each rigid link', links=records)
     (dest / 'geometry.json').write_text(json.dumps(manifest, indent=2))

@@ -9,7 +9,7 @@ try {
     if (!(Test-Path -LiteralPath 'node_modules')) { npm ci; if ($LASTEXITCODE) { throw 'npm ci failed' } }
     npm run build
     if ($LASTEXITCODE) { throw 'Web build failed' }
-    if (!(Test-Path -LiteralPath 'static/drone.glb')) {
+    if (!(Test-Path -LiteralPath 'static/geometry.json')) {
         & $isaacPython export_geometry.py
         if ($LASTEXITCODE) { throw 'USD geometry export failed' }
     }

@@ -9,6 +9,7 @@ from tvc_env.envs.rewards import (
     compute_landing_success_reward,
     compute_off_pad_landing_penalty,
     compute_pad_accuracy_reward,
+    compute_rotation_quality_reward,
     compute_touchdown_softness_reward,
 )
 
@@ -223,3 +224,37 @@ def test_off_pad_landing_penalty_only_flags_landed_outside_pad():
     )
 
     assert torch.allclose(penalty, torch.tensor([0.0, 1.0, 0.0, 0.0]))
+
+
+def test_rotation_quality_pays_on_any_contact_not_only_gated_success():
+    """The spin that causes a crash must be penalised on the crash itself.
+
+    ppo_waypoints_staged_v2 stage 1 (4,194,304 steps) ended 60.4% of
+    episodes CRASHED with peak yaw 1623 deg/s against a 172 deg/s contact
+    gate.  While this term was gated on landing success it paid nothing on
+    exactly those episodes, so it could not discourage the spin.
+    """
+    limit = torch.tensor([90.0, 90.0, 180.0]) * torch.pi / 180.0
+    peak = torch.stack([limit * 0.5, limit * 1.0, limit * 4.0, limit * 4.0, limit * 0.5])
+    contact = torch.tensor([
+        ContactState.LANDED,
+        ContactState.LANDED,
+        ContactState.CRASHED,
+        ContactState.LANDED,
+        ContactState.AIRBORNE,
+    ])
+    state = SimpleNamespace(
+        position=torch.zeros(5, 3),
+        contact_state=contact,
+        rotation_peak_rate_rad_s=peak,
+    )
+    config = {"task": {"rotation": {"soft_limits_deg_s": [90.0, 90.0, 180.0]}}}
+
+    quality = compute_rotation_quality_reward(state, config)
+
+    # Inside the envelope scores exactly 1.0; 4x over scores 0.25.
+    assert torch.allclose(quality, torch.tensor([1.0, 1.0, 0.25, 0.25, 0.0]), atol=1e-6)
+    # A spinning crash is strictly worse than a clean crash.
+    assert quality[2] < quality[1]
+    # Hovering to a timeout never makes contact and so collects nothing.
+    assert quality[4] == 0.0
