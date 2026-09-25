@@ -44,13 +44,13 @@ def test_bounce_does_not_erase_earlier_impact_speed():
     env = SimpleNamespace(
         _contact_sm=ContactStateMachine(1, dwell_frames=3),
         _touchdown_speed=torch.zeros(1),
-        _body_iface=SimpleNamespace(get_angular_velocity_body_frd=lambda: torch.zeros(1, 3),
-                                   get_root_quaternion_wxyz=lambda: torch.tensor([[1., 0., 0., 0.]])),
+        _airborne_frames=torch.full((1,), 1 << 30, dtype=torch.int32),
+        _body_iface=SimpleNamespace(get_root_quaternion_wxyz=lambda: torch.tensor([[1., 0., 0., 0.]])),
         _crash_detector=SimpleNamespace(check_impact_speed=false, check_tilt_at_contact=false,
                                          check_angular_rate_at_contact=false, check_excessive_tilt=false),
     )
     update = lambda force, speed: TVCDirectRLEnv._update_contact_state(
-        env, torch.tensor([force]), torch.tensor([False]), torch.tensor([speed]))
+        env, torch.tensor([force]), torch.tensor([False]), torch.tensor([speed]), torch.zeros(1, 3))
     update(20., 1.5)
     update(0., 0.)  # leave contact
     update(20., .01)  # gentle re-contact cannot erase the hard arrival
@@ -58,6 +58,35 @@ def test_bounce_does_not_erase_earlier_impact_speed():
     update(0., 0.)
     update(20., 2.)  # a worse subsequent impact must also count
     assert env._touchdown_speed.item() == 2.
+
+
+def test_angular_rate_gate_judges_arrival_from_flight_not_contact_impulse():
+    # Run 20260925_010435 replay: the post-step rate on the impact frame (the
+    # one-leg-first contact impulse) crashed 0.4-0.66 m/s touchdowns whose
+    # pre-contact rates were <= 34 deg/s. The gate reads the pre-step rate at
+    # the first contact after >= dwell_frames of flight.
+    from tvc_env.envs.direct_rl_env import TVCDirectRLEnv
+    from tvc_env.sim.crash_logic import CrashDetector
+    env = SimpleNamespace(
+        _contact_sm=ContactStateMachine(1, dwell_frames=3),
+        _touchdown_speed=torch.zeros(1),
+        _airborne_frames=torch.full((1,), 1 << 30, dtype=torch.int32),
+        _body_iface=SimpleNamespace(get_root_quaternion_wxyz=lambda: torch.tensor([[1., 0., 0., 0.]])),
+        _crash_detector=CrashDetector(max_angular_rate_at_contact=3.0),
+    )
+
+    def update(force, rate):
+        TVCDirectRLEnv._update_contact_state(env, torch.tensor([force]), torch.tensor([False]),
+                                             torch.tensor([0.3]), torch.tensor([[0.0, rate, 0.0]]))
+        return int(env._contact_sm.state[0])
+
+    candidate, airborne = int(ContactState.GROUND_CONTACT_CANDIDATE), int(ContactState.AIRBORNE)
+    assert update(20., 0.1) == candidate   # calm arrival
+    assert update(0., 4.0) == airborne     # the impulse rocks the body into a short bounce
+    assert update(20., 4.0) == candidate   # re-contact after 1 airborne frame is not an arrival
+    for _ in range(3):
+        update(0., 4.0)                    # dwell_frames of real flight, still tumbling
+    assert update(20., 4.0) == int(ContactState.CRASHED)
 
 
 def test_pid_pure_vertical_descent_does_not_command_lateral_translation():

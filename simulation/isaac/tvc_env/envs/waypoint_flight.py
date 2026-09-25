@@ -11,7 +11,8 @@ Task definition (versioned in configs/tasks/waypoint_flight.yaml):
   path and speed. There is no reference trajectory, speed profile, mixer or
   action override; the mission planner composes manoeuvres from waypoints.
 * Reward is dense route progress and hover settle/hold terms (undiscounted
-  differences, not refunded at termination), capture and mission bonuses, a time/energy cost weighted toward
+  differences, not refunded at termination), a per-step hover-tracking bonus,
+  capture and mission bonuses, a time/energy cost weighted toward
   energy, a yaw-weighted body-rate cost and a small action-rate cost, plus one
   failure penalty. ``reward_budget`` checks the CLAUDE.md rule-2 magnitudes.
 
@@ -52,10 +53,10 @@ OUTCOMES = ('RUNNING', 'SUCCESS', 'CRASH', 'TILT', 'ALTITUDE', 'SPIN', 'GEOFENCE
 (RUNNING, SUCCESS, CRASH, TILT, ALTITUDE, SPIN, GEOFENCE,
  PREMATURE_LANDING, BAD_LANDING, TIMEOUT) = range(len(OUTCOMES))
 
-REWARD_TERMS = ('progress', 'hover_settle', 'hover_hold', 'waypoint_capture', 'mission_success',
-                'landing_quality', 'failure', 'time', 'energy', 'body_rate', 'action_rate')
-_BONUS_TERMS = ('progress', 'hover_settle', 'hover_hold', 'waypoint_capture', 'mission_success',
-                'landing_quality')
+REWARD_TERMS = ('progress', 'hover_settle', 'hover_hold', 'hover_track', 'waypoint_capture',
+                'mission_success', 'landing_quality', 'failure', 'time', 'energy', 'body_rate', 'action_rate')
+_BONUS_TERMS = ('progress', 'hover_settle', 'hover_hold', 'hover_track', 'waypoint_capture',
+                'mission_success', 'landing_quality')
 # Dense difference terms: Psi(s') - Psi(s), undiscounted and NOT refunded at
 # termination (drone-racing style progress; CLAUDE.md rule 3 non-PBS terms).
 _POTENTIAL_TERMS = ('progress', 'hover_settle', 'hover_hold')
@@ -168,13 +169,14 @@ def parse_mission(waypoints: list[dict], touchdown_height: float, min_clearance:
 def apply_stage(config: dict, final_task: dict, stage: dict | None) -> None:
     """Install a curriculum stage (or the full task when ``stage`` is None).
 
-    Stages override only reset sampling (spawn, mission generator) and the
-    episode length. Rewards, gates, observations and physics never change,
-    and absent fields always come from the immutable final task definition.
+    Stages override reset sampling (spawn, mission generator), the episode
+    length and the hover/touchdown capture gates (relaxed early, final in the
+    last stages). Rewards, observations and physics never change, and absent
+    fields always come from the immutable final task definition.
     """
     task = config['task']
     stage = stage or {}
-    unknown = sorted(set(stage) - {'spawn', 'generator', 'hover_capture', 'episode_length_s',
+    unknown = sorted(set(stage) - {'spawn', 'generator', 'hover_capture', 'landing_gates', 'episode_length_s',
                                    'min_steps', 'max_steps',
                                    'advance_success_fraction', 'min_terminations', 'name'})
     if unknown:
@@ -184,6 +186,8 @@ def apply_stage(config: dict, final_task: dict, stage: dict | None) -> None:
     task['waypoint_flight']['generator'] = validate_generator(generator)
     task['waypoint_flight']['hover_capture'] = deep_merge(final_task['waypoint_flight']['hover_capture'],
                                                           stage.get('hover_capture', {}))
+    task['waypoint_flight']['landing_gates'] = deep_merge(final_task['waypoint_flight']['landing_gates'],
+                                                          stage.get('landing_gates', {}))
     task['episode_length_s'] = float(stage.get('episode_length_s', final_task['episode_length_s']))
 
 
@@ -238,6 +242,12 @@ def reward_budget(config: dict, hover_fraction: float, max_episode_s: float | No
     if -weights['failure'] <= worst_episode or weights['mission_success'] <= worst_episode:
         raise ValueError(f'Rule-2 violation: integrated step cost {worst_episode:.1f} is not dominated '
                          f'by failure {weights["failure"]} / success {weights["mission_success"]}')
+    # hover_track is a per-second bonus: loitering beside a hover target for a
+    # whole episode must stay worth less than completing the mission.
+    result['max_hover_track_bonus'] = weights['hover_track'] * max_episode_s
+    if result['max_hover_track_bonus'] >= weights['mission_success']:
+        raise ValueError(f'Rule-2 violation: hover_track can accrue {result["max_hover_track_bonus"]:.1f} '
+                         f'per episode, not dominated by success {weights["mission_success"]}')
     return result
 
 
@@ -456,15 +466,36 @@ class WaypointFlightTask:
         to 10% as throttle drifted up into geofence climbs.
         """
         on_hover = (self.kinds[self.ids, self.index] == HOVER).float()
+        hold = self.holds[self.ids, self.index]
+        return dict(progress=self.potential(position),
+                    hover_settle=self.banked['hover_settle'] + self.hover_stillness(position),
+                    hover_hold=self.banked['hover_hold']
+                    + on_hover * (self.hold_elapsed / hold.clamp(min=self.dt)).clamp(max=1.0))
+
+    def hover_stillness(self, position: Tensor) -> Tensor:
+        """exp(-d/scale - |v|/v_ref - |w|/w_ref) on HOVER legs, else 0; 1 = still on target."""
+        on_hover = (self.kinds[self.ids, self.index] == HOVER).float()
         distance = (self.positions[self.ids, self.index] - position).norm(dim=-1)
         motion = (self.velocity.norm(dim=-1) / self.settle_speed_ref
                   + self.rates.norm(dim=-1) / self.settle_rate_ref)
-        hold = self.holds[self.ids, self.index]
-        return dict(progress=self.potential(position),
-                    hover_settle=self.banked['hover_settle']
-                    + on_hover * torch.exp(-distance / self.settle_distance - motion),
-                    hover_hold=self.banked['hover_hold']
-                    + on_hover * (self.hold_elapsed / hold.clamp(min=self.dt)).clamp(max=1.0))
+        return on_hover * torch.exp(-distance / self.settle_distance - motion)
+
+    def track_stillness(self, position: Tensor) -> Tensor:
+        """hover_track shape on HOVER and LAND legs (LAND: distance to the pad point).
+
+        Replay of run 20260924_151720's final (400M) checkpoint on LAND
+        missions from 10 m: on every LAND leg the vehicle climbed to 15-17 m
+        and circled there for 40 s (deterministic and stochastic alike); full-
+        task evaluations at 300M and 400M had 0% land-mission success. LAND
+        legs only had the telescoping progress term, so staying high cost at
+        most the ~15 m of lost progress against a -400 risk at touchdown.
+        """
+        kind = self.kinds[self.ids, self.index]
+        on_target = ((kind == HOVER) | (kind == LAND)).float()
+        distance = (self.positions[self.ids, self.index] - position).norm(dim=-1)
+        motion = (self.velocity.norm(dim=-1) / self.settle_speed_ref
+                  + self.rates.norm(dim=-1) / self.settle_rate_ref)
+        return on_target * torch.exp(-distance / self.settle_distance - motion)
 
     def potential(self, position: Tensor) -> Tensor:
         """Phi = -(distance to the active waypoint + remaining route legs), m."""
@@ -496,7 +527,9 @@ class WaypointFlightTask:
         hover = (kind == HOVER) & (self.hold_elapsed >= self.holds[ids, index] - 1e-6)
         pad_distance = (after[:, :2] - goal[:, :2]).norm(dim=-1)
         at_pad = (kind == LAND) & landed
-        land = at_pad & (pad_distance <= radius) & (touchdown_speed <= self.touchdown_gate)
+        # Read live like the hover gate: the curriculum may relax the touchdown gate.
+        touchdown_gate = float(self.config['task']['waypoint_flight']['landing_gates']['max_touchdown_speed_m_s'])
+        land = at_pad & (pad_distance <= radius) & (touchdown_speed <= touchdown_gate)
         captured = fly | hover | land
         final = index >= self.count - 1
 
@@ -524,7 +557,7 @@ class WaypointFlightTask:
         # Graded touchdown quality at the pad (also for failed gates) so a
         # hard or off-centre landing still reports which way to improve.
         self.landing_quality_now = torch.where(
-            at_pad, torch.exp(-touchdown_speed / self.touchdown_gate) * torch.exp(-pad_distance / radius),
+            at_pad, torch.exp(-touchdown_speed / touchdown_gate) * torch.exp(-pad_distance / radius),
             torch.zeros_like(pad_distance))
         ep = self.episode
         ep['energy_wh'] += energy_wh
@@ -549,6 +582,8 @@ class WaypointFlightTask:
             self.last_potential[name] = value
         values = dict(
             **shaped,
+            # Per-step (not differenced) station-keeping bonus; see the YAML weight.
+            hover_track=self.track_stillness(position) * self.dt,
             waypoint_capture=self.captured_now.float(),
             mission_success=self.success_now.float(),
             landing_quality=self.landing_quality_now,
@@ -673,6 +708,87 @@ def policy_to_env_action(raw: Tensor, max_fin_angle: float, throttle_center: flo
     fins = raw[:, :4] * max_fin_angle
     throttle = (throttle_center + throttle_span * raw[:, 4:5]).clamp(0.0, 1.0)
     return torch.cat((fins, throttle), dim=-1)
+
+
+class StartCohortOutcomes:
+    """Release finished-episode outcomes in episode-start order, unbiased.
+
+    Every env resets together when a stage is installed, so successes (short
+    episodes) finish first and a window of the most recent finished episodes
+    fills with them before the timeouts of the same cohort arrive. Runs
+    20260924_120313..151720 advanced landing at 0.505, long_legs at 0.972 and
+    routes at 0.898 this way, while one-episode-per-env evaluations measured
+    0% land-mission success. Outcomes are released only once every episode
+    that started at the same step or earlier must have ended (episodes last
+    at most ``horizon_steps``), so each release is a complete start cohort.
+    """
+
+    def __init__(self, num_envs: int, device):
+        self.device = device
+        self.start = torch.zeros(num_envs, dtype=torch.long, device=device)
+        self.step = 0
+        self._pending: list[tuple[Tensor, Tensor, Tensor]] = []
+
+    def restart(self) -> None:
+        """All envs were just reset (stage install, evaluation): drop in-flight episodes."""
+        self.start.fill_(self.step)
+        self._pending.clear()
+
+    def observe(self, done: Tensor, success: Tensor, group: Tensor) -> None:
+        """Call once after every env.step with that step's done/success/group masks."""
+        ids = torch.nonzero(done).flatten()
+        if len(ids):
+            self._pending.append((self.start[ids].clone(), success[ids].clone(), group[ids].clone()))
+            self.start[ids] = self.step + 1
+        self.step += 1
+
+    def release(self, horizon_steps: int) -> tuple[list[bool], list[int]]:
+        if not self._pending:
+            return [], []
+        start, success, group = (torch.cat(parts) for parts in zip(*self._pending))
+        ready = start <= self.step - int(horizon_steps)
+        self._pending = [(start[~ready], success[~ready], group[~ready])] if bool((~ready).any()) else []
+        order = torch.argsort(start[ready], stable=True)
+        return success[ready][order].tolist(), group[ready][order].tolist()
+
+
+def policy_to_env_rate_action(raw: Tensor, max_fin_angle: float) -> Tensor:
+    """Decode the throttle-rate contract (``throttle_command.mode: rate``).
+
+    Vanes as in :func:`policy_to_env_action`; channel 4 stays the normalized
+    throttle-rate command in [-1, 1], which the env integrates with
+    :func:`integrate_throttle` (the flight computer does the same).
+    """
+    return torch.cat((raw[:, :4] * max_fin_angle, raw[:, 4:5].clamp(-1.0, 1.0)), dim=-1)
+
+
+def integrate_throttle(duty: Tensor, rate_command: Tensor, max_rate_per_s: float, dt: float) -> Tensor:
+    """One policy step of the throttle-rate contract: duty += rate * max_rate * dt."""
+    return (duty + rate_command.clamp(-1.0, 1.0) * max_rate_per_s * dt).clamp(0.0, 1.0)
+
+
+def apply_yaw_damper(fins: Tensor, yaw_rate_frd: Tensor, gain: float, max_angle: float,
+                     remove_policy_common_mode: bool = False) -> Tensor:
+    """Fixed flight-computer yaw-rate damper (``yaw_damper`` in the task YAML).
+
+    Adds the common-mode deflection -gain * r to all four vane commands;
+    +deflection on every vane is +yaw torque (FRD), so this opposes the yaw
+    rate. With ``remove_policy_common_mode`` the policy's own common mode
+    (the mean of its four commands, i.e. its yaw torque request) is removed
+    first, so the flight computer alone commands yaw; the differential part
+    (roll/pitch authority) passes through unchanged.
+    """
+    if remove_policy_common_mode:
+        fins = fins - fins.mean(dim=-1, keepdim=True)
+    return (fins - gain * yaw_rate_frd[:, None]).clamp(-max_angle, max_angle)
+
+
+def holding_duty(rotor_fraction: Tensor, bus_voltage: Tensor, reference_voltage: float) -> Tensor:
+    """Duty whose voltage-scaled rotor target equals ``rotor_fraction``.
+
+    Inverse of ``BatteryLiPo.update_motor``: rotor target = duty * bus / reference.
+    """
+    return (rotor_fraction * reference_voltage / bus_voltage.clamp(min=1e-3)).clamp(0.0, 1.0)
 
 
 def final_task_snapshot(config: dict) -> dict:

@@ -25,6 +25,63 @@ task:
       max_body_rate_deg_s: 60.0
     landing_gates:
       max_touchdown_speed_m_s: 0.25  # unchanged soft-landing gate
+    # Throttle action contract. mode 'rate': the policy commands a duty rate,
+    # duty += tanh(z) * max_rate_per_s * rl_dt (clamped to [0, 1]), and each
+    # episode starts from the duty that holds the spawned rotor speed.
+    # Evidence (runs 20260923_213439, _233017, 20260924_022647): with the
+    # direct duty contract no run learned altitude feedback. Replays sank at
+    # a near-constant 0.76-0.80 duty while vertical speed grew from -0.5 to
+    # -1.7 m/s. Direct-duty exploration had to stay at ~0.025 duty sd, since
+    # rotor speed changes yaw the body at 46.5 rad/s per unit rotor fraction;
+    # i.i.d. noise that small moves vertical speed ~0.02 m/s per step, too
+    # little for PPO to learn from, while the energy cost falls immediately
+    # with throttle. A rate command makes exploration a random walk with
+    # lasting altitude effects and bounds the momentum-exchange yaw torque:
+    #   I_rotor * omega_max * (V_bus / V_ref) * rate = 2e-4 * 4650 * 1.08 * rate
+    # Vane yaw authority at hover is +/-0.30 N m (+/-15 deg, CoupledJet), so
+    # full cancellation needs rate <= 0.30 /s; 0.25 /s uses 83% of it. At
+    # 0.25 /s, hover (0.78) to full duty takes 0.9 s, and the 0.15 s spool lag
+    # already bounds rotor response on that time scale.
+    throttle_command:
+      mode: rate
+      max_rate_per_s: 0.25
+    # Fixed flight-computer yaw-rate damper (explicit part of the actuator
+    # interface, approved 2026-09-24; runs on the hardware too). Every vane
+    # command gets -gain * r (FRD yaw rate, rad/s) added before clamping; the
+    # policy still commands all four vanes and the throttle rate. Heading is
+    # irrelevant to this axisymmetric vehicle and to the task.
+    # Evidence: run 20260924_084402 (v14) drifted into a constant +1.5..2.5
+    # deg common-mode vane bias during micro_hops; yaw ramped 0 -> 340 deg/s
+    # in ~3.5 s at constant throttle and every episode ended in SPIN, despite
+    # the body-rate cost and the -400 failure. Earlier runs lost hover gates
+    # and stability to yaw in every stage that required motion.
+    # Gain: common-mode yaw authority ~0.30 N m at 15 deg (1.15 N m/rad at
+    # hover) and I_zz ~0.02 kg m^2 give tau = I_zz / (1.15 * gain) = 0.25 s at
+    # 0.07. Isaac open-loop check (scratchpad diag_yaw_damper.py): spawned at
+    # r = +3 rad/s with zero policy action, r fell to +0.05 rad/s in 0.5 s
+    # (2.98 rad/s without the damper). The 1 deg servo deadband leaves up to
+    # 0.017 / 0.07 = 0.24 rad/s (14 deg/s) undamped, inside every hover gate.
+    # Raised to 0.15 after run 20260924_095229 (v15): with 0.07 it passed
+    # micro_hops..two_legs, then short_legs (2-8 m) stayed at ~1% success
+    # for 67M transitions, almost all TIMEOUT. Replay of its 140M checkpoint:
+    # the policy keeps a ~-1 deg common-mode vane bias (it steers with single
+    # vanes), which the 0.07 damper balances at r ~ -15 deg/s; the vehicle
+    # orbited its target at ~6 m radius with a ~24 s period, the same rate,
+    # because a body-frame lateral bias rotates with the body. At 0.15 the
+    # same bias leaves ~7 deg/s (deadband residual 0.11 rad/s). Isaac
+    # open-loop check from r = +3 rad/s: 0.15 settles to 0.03 rad/s by 1.5 s
+    # (15% overshoot from servo slew); 0.2 behaves alike.
+    # remove_policy_common_mode (approved 2026-09-24): the flight computer
+    # removes the mean of the policy's four vane commands before adding the
+    # damper, so it alone commands yaw; the policy keeps the differential
+    # (roll/pitch) part. Evidence: run 20260924_211857 (v19, landing stage,
+    # 440M checkpoint) orbited the pad at ~4 m radius, 3-11 m altitude, with a
+    # steady -20..-40 deg/s yaw rate matching the ~10 s orbit period; holding
+    # that against the 0.15 damper needs a ~4.5 deg policy common mode. The
+    # policy grew a larger bias each time the gain was raised (0.07 -> 0.15).
+    yaw_damper:
+      gain_rad_per_rad_s: 0.15
+      remove_policy_common_mode: true
     # Quadratic body-rate cost reference (roll, pitch, yaw FRD). Yaw is the
     # tighter axis: it carries the rotor angular-momentum exchange.
     rate_soft_limits_deg_s: [180.0, 180.0, 90.0]
@@ -33,7 +90,9 @@ task:
     # (hover-biased tanh-Gaussian throttle, no yaw feedback, 60 s): throttle
     # log-std -2.0 peaks at median 124 / p99 169 deg/s and never reaches the
     # limit, whereas the old -1.0 prior exceeded it in 96% of episodes. The
-    # trainer's initialization prior and this limit are set together.
+    # trainer's initialization prior and this limit are set together. (Under
+    # the rate contract below, -1.0 is a rate prior: an uncorrected random
+    # walk needs ~50 s to reach this limit.)
     max_body_rate_deg_s: [360.0, 360.0, 360.0]
     # Potential-based hover shaping (see WaypointFlightTask.potentials):
     #   settle = exp(-d/scale - |v|/speed_ref - |w|/rate_ref), hover legs only (1 = still on target)
@@ -76,16 +135,19 @@ task:
     # Feedback-driven curriculum (CLAUDE.md rule 5). A stage advances when the
     # rolling mission-success fraction over finished episodes (timeouts and
     # failures count as unsuccessful) reaches advance_success_fraction.
+    # Since 2026-09-24 the trainer feeds complete start cohorts only and takes
+    # the minimum over hover- and land-ending missions: finish-order windows
+    # after synchronized resets let landing pass at 0.505 with no landings.
     curriculum:
       enabled: true
       success_window_size: 2048
       stages:
         - name: hold_position
           # Altitude/position hold as its own skill: the target is the spawn
-          # point and must be held for 2-3 s. Every run up to 20260923_152010
+          # point and must be held for 2-4 s. Every run up to 20260923_152010
           # learned "more throttle" from early sinking crashes and then climbed
           # away from targets instead of holding altitude.
-          episode_length_s: 10.0
+          episode_length_s: 12.0
           hover_capture:
             max_body_rate_deg_s: 240.0
           spawn:
@@ -104,8 +166,12 @@ task:
             vertical_leg_probability: 0.0
             min_leg_m: 0.0
             altitude_m: [3.0, 9.0]
-            hover_radius_m: [1.0, 1.0]
-            hover_hold_s: [2.0, 3.0]
+            hover_radius_m: [0.75, 1.0]
+            hover_hold_s: [2.0, 4.0]
+            # Radius and hold span a wider slice of the final ranges (0.3-1.0 m,
+            # 0.5-5 s): run 20260924_032643 entered hold_fine (then 0.5 m, 5-8 s,
+            # hold-left inputs never seen in this stage) and 299 of its first 359
+            # episodes ended in SPIN at up to 347 deg/s.
           min_steps: 2000000
           max_steps: 0
           advance_success_fraction: 0.7
@@ -118,7 +184,7 @@ task:
           # failures ended at ground level (min altitude 0.32 m) with throttle
           # ~0.80. A 1 m radius held for 2-3 s (hold_position) is met while
           # sinking at up to ~0.3 m/s, so altitude feedback was never
-          # required. A 0.5 m radius held 5-8 s allows < ~0.1 m/s of drift.
+          # required. A 0.5 m radius held 4-5 s allows ~0.1 m/s of drift.
           episode_length_s: 15.0
           hover_capture:
             max_body_rate_deg_s: 240.0
@@ -138,8 +204,44 @@ task:
             vertical_leg_probability: 0.0
             min_leg_m: 0.0
             altitude_m: [3.0, 9.0]
-            hover_radius_m: [0.5, 0.5]
-            hover_hold_s: [5.0, 8.0]
+            hover_radius_m: [0.4, 0.6]
+            hover_hold_s: [4.0, 5.0]
+          min_steps: 3000000
+          max_steps: 0
+          advance_success_fraction: 0.6
+          min_terminations: 1024
+        - name: micro_hops
+          # Step responses before hops. Run 20260924_042543 (v13) passed
+          # hold_fine at 1.000 but then spent ~60M transitions in hover_hold
+          # (1.5-3 m) at 0 success, ~85% timeouts. Deterministic replay of
+          # its 120M checkpoint: underdamped loops around the target -- it
+          # reached target altitude still climbing at ~1 m/s, overshot by
+          # ~2 m, fell ~4 m below, and swung ~7 m horizontally on a ~9 s
+          # period, 16/16 TIMEOUT. The grid replay of its stage-0 checkpoint
+          # already overshot a target 1 m above to 8.9 m (0/4) while holding
+          # targets 1 m below (4/4). Offsets of 0.75-1.5 m sit at that
+          # capability edge; the radius keeps every target outside at spawn.
+          episode_length_s: 15.0
+          hover_capture:
+            max_body_rate_deg_s: 240.0
+          spawn:
+            position_range: [[-2.0, -2.0, 4.0], [2.0, 2.0, 8.0]]
+            velocity_range: [[-0.3, -0.3, -0.3], [0.3, 0.3, 0.3]]
+            attitude_range: [[-0.05, -0.05, -3.141592653589793], [0.05, 0.05, 3.141592653589793]]
+            angular_velocity_range: [[-0.1, -0.1, -0.1], [0.1, 0.1, 0.1]]
+            initial_motor_omega_jitter: 0.02
+            initial_soc_range: [0.9, 1.0]
+            wind_speed_range: [0.0, 0.0]
+          generator:
+            count_range: [1, 1]
+            final_land_probability: 0.0
+            leg_horizontal_m: [0.0, 1.5]
+            leg_vertical_m: [-1.0, 1.0]
+            vertical_leg_probability: 0.2
+            min_leg_m: 0.75
+            altitude_m: [3.0, 9.0]
+            hover_radius_m: [0.4, 0.5]
+            hover_hold_s: [1.5, 3.0]
           min_steps: 3000000
           max_steps: 0
           advance_success_fraction: 0.6
@@ -280,10 +382,143 @@ task:
           max_steps: 0
           advance_success_fraction: 0.5
           min_terminations: 1024
+        - name: touchdown
+          # Flare and touchdown from just above the pad. Every earlier stage
+          # ends an episode at -400 on ground contact (PREMATURE_LANDING or
+          # CRASH), and runs v18-v21 never produced a LANDED contact on any
+          # LAND mission: v21 kept 0 land successes and 0 BAD_LANDING over
+          # ~37M transitions even with the 1.0 m/s gate. Open-loop check
+          # (scratchpad diag_touchdown.py): slow throttle-rate descents from
+          # 1.5 m reached LANDED (BAD_LANDING at 1.5-2.4 m/s), so the pad and
+          # detector work and touchdowns only need to be sampled.
+          # Spawning at rest 0.5-1.7 m above the pad was not enough: run
+          # 20260925_002532 (v22) climbed away in ~25M transitions with 0
+          # touchdowns (throttle 0.79-0.82 vs 0.777 hover). The vehicle now
+          # spawns already descending at 0.3-1.0 m/s, 0.3-1.2 m above the pad;
+          # spool lag and the 0.25 /s throttle-rate limit make most episodes
+          # touch down inside the 1.0 m/s gate, so landing outcomes are sampled.
+          # That still failed: run 20260925_005354 (v23) arrested 8188 of 8196
+          # spawned descents (8 CRASH, 0 LANDED), and a replay of v22 held a
+          # ~1 m floor above the ground while drifting 4 m off the pad. Reverse
+          # curriculum (Florensa et al. 2017): spawn from resting on the pad to
+          # 0.5 m above it, with +/-6% rotor jitter so about half the spawns
+          # start below hover thrust and settle to LANDED unless the policy
+          # climbs away. Later stages move the start away from the goal.
+          # With the pre-fix contact-rate gate, v24 (20260925_010435) reached
+          # 13% touchdown success in 40M transitions; with the fix, v25
+          # (20260925_021617) passed this stage at 632M (land 0.49). But the
+          # LAND-only near-ground stages erased flight: diag_stage_eval.py on
+          # the landing stage (1024 envs, deterministic) gave hover 0.816 /
+          # land 0.0 for v21's 540M checkpoint and hover 0.0 / land 0.0 for
+          # v25's 630M (364/539 LAND missions CRASH from altitude), and v25
+          # then stalled 75M transitions at ~0 success in landing. So every
+          # stage of the landing ladder now mixes HOVER missions (rehearsal;
+          # the grouped tracker needs both groups >= 0.5). Here they are
+          # take-off-and-hover targets 1-3 m up. Spawns start 0.4 m up (rest
+          # height ~0.32 m) so a HOVER mission cannot begin already in
+          # contact and become a PREMATURE_LANDING the policy cannot prevent.
+          hover_capture:
+            max_body_rate_deg_s: 90.0
+          landing_gates:
+            max_touchdown_speed_m_s: 1.0
+          episode_length_s: 12.0
+          spawn:
+            position_range: [[-3.0, -3.0, 0.4], [3.0, 3.0, 0.8]]
+            velocity_range: [[-0.1, -0.1, -0.3], [0.1, 0.1, 0.0]]
+            attitude_range: [[-0.05, -0.05, -3.141592653589793], [0.05, 0.05, 3.141592653589793]]
+            angular_velocity_range: [[-0.1, -0.1, -0.1], [0.1, 0.1, 0.1]]
+            initial_motor_omega_jitter: 0.06
+            initial_soc_range: [0.9, 1.0]
+            wind_speed_range: [0.0, 0.0]
+          generator:
+            count_range: [1, 1]
+            final_land_probability: 0.5
+            leg_horizontal_m: [0.0, 1.5]
+            leg_vertical_m: [0.5, 2.5]
+            min_leg_m: 0.75
+            altitude_m: [1.0, 3.0]
+            hover_radius_m: [0.5, 1.0]
+            hover_hold_s: [0.5, 2.0]
+            land_radius_m: [0.5, 0.5]
+            land_leg_horizontal_m: [0.0, 0.3]
+          min_steps: 3000000
+          max_steps: 0
+          advance_success_fraction: 0.5
+          min_terminations: 1024
+        - name: descent
+          # Reverse curriculum, second rung: start 0.8-3 m up and at most 1 m
+          # off the pad (one axis: start distance), HOVER targets up to 3 m away.
+          hover_capture:
+            max_body_rate_deg_s: 90.0
+          landing_gates:
+            max_touchdown_speed_m_s: 1.0
+          episode_length_s: 15.0
+          spawn:
+            position_range: [[-3.0, -3.0, 0.8], [3.0, 3.0, 3.0]]
+            velocity_range: [[-0.2, -0.2, -0.3], [0.2, 0.2, 0.1]]
+            attitude_range: [[-0.05, -0.05, -3.141592653589793], [0.05, 0.05, 3.141592653589793]]
+            angular_velocity_range: [[-0.1, -0.1, -0.1], [0.1, 0.1, 0.1]]
+            initial_motor_omega_jitter: 0.04
+            initial_soc_range: [0.9, 1.0]
+            wind_speed_range: [0.0, 0.0]
+          generator:
+            count_range: [1, 1]
+            final_land_probability: 0.5
+            leg_horizontal_m: [0.5, 3.0]
+            leg_vertical_m: [-1.5, 2.0]
+            min_leg_m: 0.75
+            altitude_m: [1.0, 5.0]
+            hover_radius_m: [0.5, 1.0]
+            hover_hold_s: [0.5, 2.0]
+            land_radius_m: [0.5, 0.5]
+            land_leg_horizontal_m: [0.0, 1.0]
+          min_steps: 3000000
+          max_steps: 0
+          advance_success_fraction: 0.5
+          min_terminations: 1024
+        - name: approach
+          # Third rung: the landing stage's start box, legs and pad offsets
+          # with one waypoint, no initial drift and no wind (landing adds those).
+          hover_capture:
+            max_body_rate_deg_s: 90.0
+          landing_gates:
+            max_touchdown_speed_m_s: 1.0
+          episode_length_s: 30.0
+          spawn:
+            position_range: [[-5.0, -5.0, 3.0], [5.0, 5.0, 10.0]]
+            velocity_range: [[-0.2, -0.2, -0.2], [0.2, 0.2, 0.2]]
+            attitude_range: [[-0.1, -0.1, -3.141592653589793], [0.1, 0.1, 3.141592653589793]]
+            angular_velocity_range: [[-0.2, -0.2, -0.2], [0.2, 0.2, 0.2]]
+            initial_motor_omega_jitter: 0.03
+            initial_soc_range: [0.8, 1.0]
+            wind_speed_range: [0.0, 0.0]
+          generator:
+            count_range: [1, 1]
+            final_land_probability: 0.5
+            leg_horizontal_m: [2.0, 8.0]
+            leg_vertical_m: [-3.0, 3.0]
+            altitude_m: [2.5, 8.0]
+            hover_radius_m: [0.5, 1.0]
+            hover_hold_s: [0.5, 2.0]
+            land_radius_m: [0.4, 0.5]
+            land_leg_horizontal_m: [0.0, 3.0]
+          min_steps: 3000000
+          max_steps: 0
+          advance_success_fraction: 0.5
+          min_terminations: 1024
         - name: landing
           hover_capture:
             max_body_rate_deg_s: 90.0
-          # Adds the LAND waypoint from low final approaches.
+          # Adds the LAND waypoint from low final approaches, with a relaxed
+          # touchdown gate (the final 0.25 m/s returns in landing_soft).
+          # Evidence: runs 20260924_151720..v20 never produced a LANDED
+          # contact on any LAND mission (0 BAD_LANDING, 0 PREMATURE_LANDING,
+          # 0% land success in every full-task evaluation); replays held
+          # >= 3 m above the pad. Any touchdown above 0.25 m/s was a -400
+          # BAD_LANDING, as costly as a crash, so no graded landing signal
+          # was ever sampled. Same pattern as the hover-gate curriculum.
+          landing_gates:
+            max_touchdown_speed_m_s: 1.0
           episode_length_s: 30.0
           spawn:
             position_range: [[-5.0, -5.0, 3.0], [5.0, 5.0, 10.0]]
@@ -305,6 +540,109 @@ task:
             land_radius_m: [0.4, 0.5]
             hover_hold_s: [0.5, 2.0]
             land_leg_horizontal_m: [0.0, 3.0]
+          min_steps: 4000000
+          max_steps: 0
+          advance_success_fraction: 0.5
+          min_terminations: 1024
+        - name: landing_soft
+          # landing with the final 0.25 m/s touchdown gate; nothing else changes.
+          hover_capture:
+            max_body_rate_deg_s: 90.0
+          episode_length_s: 30.0
+          spawn:
+            position_range: [[-5.0, -5.0, 3.0], [5.0, 5.0, 10.0]]
+            velocity_range: [[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]]
+            attitude_range: [[-0.1, -0.1, -3.141592653589793], [0.1, 0.1, 3.141592653589793]]
+            angular_velocity_range: [[-0.2, -0.2, -0.2], [0.2, 0.2, 0.2]]
+            initial_motor_omega_jitter: 0.03
+            initial_soc_range: [0.8, 1.0]
+            wind_speed_range: [0.0, 0.5]
+          generator:
+            count_range: [1, 2]
+            final_land_probability: 0.5
+            intermediate_hover_probability: 0.3
+            leg_horizontal_m: [2.0, 8.0]
+            leg_vertical_m: [-3.0, 3.0]
+            altitude_m: [2.5, 8.0]
+            flypass_radius_m: [1.0, 2.0]
+            hover_radius_m: [0.5, 1.0]
+            land_radius_m: [0.4, 0.5]
+            hover_hold_s: [0.5, 2.0]
+            land_leg_horizontal_m: [0.0, 3.0]
+          min_steps: 4000000
+          max_steps: 0
+          advance_success_fraction: 0.5
+          min_terminations: 1024
+        - name: long_legs
+          # Large position errors before multi-waypoint routes. Run
+          # 20260924_120313 (v16) passed landing at 0.505, then held 0 success
+          # in routes for ~45M transitions (mostly 60 s TIMEOUT, some
+          # GEOFENCE). Replay of its 210M checkpoint: one vehicle oscillated
+          # between 5 and 14 m altitude (+/-3.5 m/s, duty 0.64-0.97) around
+          # its target; two others held steady 4-6 m vertical offsets for 36 s
+          # and closed a 14 m leg at ~0.3 m/s. Every earlier stage kept
+          # vertical errors within ~3 m (the fine target channel saturates at
+          # 3 m); routes jumps to +/-6 m and 15 m legs together with 2-4
+          # waypoints and harder disturbances. This stage adds only distance.
+          hover_capture:
+            max_body_rate_deg_s: 90.0
+          episode_length_s: 45.0
+          spawn:
+            position_range: [[-5.0, -5.0, 3.0], [5.0, 5.0, 12.0]]
+            velocity_range: [[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]]
+            attitude_range: [[-0.1, -0.1, -3.141592653589793], [0.1, 0.1, 3.141592653589793]]
+            angular_velocity_range: [[-0.2, -0.2, -0.2], [0.2, 0.2, 0.2]]
+            initial_motor_omega_jitter: 0.03
+            initial_soc_range: [0.8, 1.0]
+            wind_speed_range: [0.0, 0.5]
+          generator:
+            count_range: [1, 2]
+            final_land_probability: 0.3
+            intermediate_hover_probability: 0.3
+            leg_horizontal_m: [4.0, 12.0]
+            leg_vertical_m: [-5.0, 5.0]
+            vertical_leg_probability: 0.1
+            altitude_m: [2.5, 15.0]
+            arena_half_width_m: 30.0
+            flypass_radius_m: [1.0, 2.0]
+            hover_radius_m: [0.5, 1.0]
+            land_radius_m: [0.4, 0.5]
+            hover_hold_s: [0.5, 2.0]
+            land_leg_horizontal_m: [0.0, 4.0]
+          min_steps: 4000000
+          max_steps: 0
+          advance_success_fraction: 0.5
+          min_terminations: 1024
+        - name: routes_calm
+          # Multi-waypoint routes only. Run 20260924_135531 (v17) passed
+          # long_legs at 0.972 in ~4M transitions, then stayed below 1% success
+          # in routes for ~46M (mostly TIMEOUT; its first update after the
+          # switch ended 1266 episodes in CRASH from the harsher spawn). Routes
+          # changed 2-4 waypoints, 60 s episodes, spawn velocity/attitude/SOC,
+          # wind, the 60 deg/s gate and the final hover radii/holds at once;
+          # this stage keeps long_legs' spawn, wind, gate and holds.
+          hover_capture:
+            max_body_rate_deg_s: 90.0
+          episode_length_s: 60.0
+          spawn:
+            position_range: [[-5.0, -5.0, 3.0], [5.0, 5.0, 12.0]]
+            velocity_range: [[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]]
+            attitude_range: [[-0.1, -0.1, -3.141592653589793], [0.1, 0.1, 3.141592653589793]]
+            angular_velocity_range: [[-0.2, -0.2, -0.2], [0.2, 0.2, 0.2]]
+            initial_motor_omega_jitter: 0.03
+            initial_soc_range: [0.8, 1.0]
+            wind_speed_range: [0.0, 0.5]
+          generator:
+            count_range: [2, 4]
+            leg_horizontal_m: [2.0, 15.0]
+            leg_vertical_m: [-6.0, 6.0]
+            altitude_m: [2.0, 20.0]
+            arena_half_width_m: 40.0
+            flypass_radius_m: [1.0, 2.0]
+            hover_radius_m: [0.5, 1.0]
+            land_radius_m: [0.4, 0.5]
+            hover_hold_s: [0.5, 2.0]
+            land_leg_horizontal_m: [0.0, 5.0]
           min_steps: 4000000
           max_steps: 0
           advance_success_fraction: 0.5
@@ -382,6 +720,23 @@ task:
     # a hold pays +50 in dense increments before the +10 capture.
     hover_settle: 30.0
     hover_hold: 50.0
+    # Per-second station-keeping bonus on HOVER legs, NOT differenced:
+    # hover_track * exp(-d/2 m - |v|/1 m/s - |w|/1 rad/s) * dt. The difference
+    # terms above telescope to Psi(end) - Psi(start), so holding for 4 s paid
+    # no more than a brief pass. Deterministic replays on hover targets
+    # 1.5-5 m away: run 20260924_032643's stage-0 checkpoint (rate contract)
+    # held from spawn for 2-3 s, then drifted > 10 m horizontally within
+    # 7-15 s (0/80 successes); run 20260923_233017's stage-1 checkpoint
+    # (duty contract) sank to the ground (5/80). hold_fine
+    # (0.5 m for 5-8 s) then stayed at 0 success for 30M (v11) and 11M (v12)
+    # transitions. Near the target the term's gradient is ~1 /s per metre and
+    # ~2 /s per m/s. Rule 2: at most 2 * 90 = 180 per episode, below the +400
+    # mission success, so loitering never beats completing (reward_budget checks).
+    # Also paid on LAND legs (distance to the pad point): run 20260924_151720's
+    # final checkpoint climbed to 15-17 m on every LAND leg (0% land-mission
+    # success at 300M/400M). HOVER and LAND legs are exclusive, so the 180
+    # per-episode bound is unchanged.
+    hover_track: 2.0
     waypoint_capture: 10.0
     mission_success: 400.0
     landing_quality: 50.0  # exp(-v_td/0.25) * exp(-pad_dist/radius) at pad contact

@@ -53,6 +53,26 @@ def test_rule_two_budget_and_energy_weighted_efficiency():
         wf.reward_budget(bad, hover_fraction=0.83)
 
 
+def test_hover_track_is_a_per_step_bonus_on_hover_legs_only():
+    missions = [[dict(position=[0, 0, 5], type='hover', radius_m=0.5, hold_s=60.0)],
+                [dict(position=[0, 0, 5], type='flypass', radius_m=0.5), dict(position=[9, 0, 5], type='hover')]]
+    cfg = config()
+    cfg['task']['reward'] = {k: (1.0 if k == 'hover_track' else 0.0) for k in wf.REWARD_TERMS}
+    flight, start = task(2, cfg, missions=missions, start=torch.tensor([[0., 0., 5.], [0., 0., 3.]]))
+    total = torch.zeros(2)
+    for _ in range(30):                                   # 1 s still on the hover target
+        terminated = step(flight, start, start)
+        total += flight.reward(start, torch.zeros(2, 3), terminated, torch.zeros(2, 5), torch.zeros(2))
+    assert total[0].item() == pytest.approx(1.0, rel=1e-5)  # accrues, unlike the telescoping terms
+    assert total[1].item() == 0.0                            # flypass leg
+    budget = wf.reward_budget(config(), hover_fraction=0.83)
+    assert budget['max_hover_track_bonus'] < budget['mission_success']
+    greedy = config()
+    greedy['task']['reward']['hover_track'] = 5.0            # 5 /s * 90 s > +400
+    with pytest.raises(ValueError, match='hover_track'):
+        wf.reward_budget(greedy, hover_fraction=0.83)
+
+
 def test_reward_sign_contract():
     cfg = config()
     cfg['task']['reward']['energy'] = 1.3
@@ -268,3 +288,106 @@ def test_throttle_action_is_centred_on_hover_duty():
     action = wf.policy_to_env_action(raw, 0.262, 0.78, 0.25)
     assert action[0, :4].tolist() == pytest.approx([0.262, -0.262, 0.131, 0.0])
     assert action[:, 4].tolist() == pytest.approx([0.78, 1.0, 0.53])   # 1.03 clamps to 1.0
+
+
+def test_throttle_rate_contract_integrates_and_clamps():
+    raw = torch.tensor([[1.0, -1.0, 0.5, 0.0, 0.4], [0.0, 0.0, 0.0, 0.0, -1.0]])
+    action = wf.policy_to_env_rate_action(raw, 0.262)
+    assert action[0, :4].tolist() == pytest.approx([0.262, -0.262, 0.131, 0.0])
+    assert action[:, 4].tolist() == pytest.approx([0.4, -1.0])        # rate command passes through
+    duty = torch.tensor([0.78, 0.005])
+    duty = wf.integrate_throttle(duty, action[:, 4], 0.25, DT)
+    assert duty.tolist() == pytest.approx([0.78 + 0.4 * 0.25 / 30, 0.0])   # floor clamps
+    assert wf.integrate_throttle(torch.tensor([0.999]), torch.tensor([1.0]), 0.25, DT).item() == 1.0
+
+
+def test_yaw_damper_opposes_yaw_rate_on_every_vane_and_clamps():
+    fins = torch.tensor([[0.05, -0.05, 0.0, 0.1], [0.25, 0.25, 0.25, 0.25]])
+    damped = wf.apply_yaw_damper(fins, torch.tensor([1.0, -2.0]), 0.07, 0.262)
+    # +deflection on every vane is +yaw torque, so r > 0 subtracts a common mode.
+    assert damped[0].tolist() == pytest.approx([-0.02, -0.12, -0.07, 0.03])
+    assert damped[1].tolist() == pytest.approx([0.262] * 4)                 # clamped at the linkage limit
+    cfg = config()
+    assert 0.05 <= cfg['task']['waypoint_flight']['yaw_damper']['gain_rad_per_rad_s'] <= 0.2
+
+
+def test_flight_computer_owns_yaw_when_policy_common_mode_is_removed():
+    fins = torch.tensor([[0.10, 0.02, 0.06, 0.02]])          # mean 0.05 = a yaw request
+    owned = wf.apply_yaw_damper(fins, torch.tensor([0.0]), 0.15, 0.262, remove_policy_common_mode=True)
+    assert float(owned.mean()) == pytest.approx(0.0, abs=1e-7)                 # no policy yaw torque left
+    assert (owned[0, 0] - owned[0, 2]).item() == pytest.approx(0.04)           # roll/pitch pairs intact
+    assert (owned[0, 1] - owned[0, 3]).item() == pytest.approx(0.0)
+    damped = wf.apply_yaw_damper(fins, torch.tensor([1.0]), 0.15, 0.262, remove_policy_common_mode=True)
+    assert float(damped.mean()) == pytest.approx(-0.15)                        # damper common mode only
+    assert config()['task']['waypoint_flight']['yaw_damper']['remove_policy_common_mode'] is True
+
+
+def test_holding_duty_inverts_the_voltage_scaled_rotor_target():
+    rotor, bus, reference = torch.tensor([0.84, 0.84]), torch.tensor([29.6, 27.0]), 29.6
+    duty = wf.holding_duty(rotor, bus, reference)
+    assert (duty * bus / reference).tolist() == pytest.approx(rotor.tolist())   # BatteryLiPo.update_motor
+    assert duty[1] > duty[0]                                                   # sagged pack needs more duty
+
+
+def test_throttle_rate_limit_stays_within_vane_yaw_authority():
+    cfg = config()
+    command = cfg['task']['waypoint_flight']['throttle_command']
+    assert command['mode'] == 'rate'
+    # Momentum-exchange yaw torque at the rate limit, with the hover duty-to-rotor
+    # gain V_bus / V_ref ~ 0.8409 / 0.7769, must stay below the +/-0.30 N m vane
+    # yaw authority at hover (scratchpad CoupledJet sweep, +/-15 deg vanes).
+    torque = 2e-4 * cfg['edf']['omega_max'] * (0.8409 / 0.7769) * command['max_rate_per_s']
+    assert torque < 0.30
+
+
+def test_start_cohorts_hold_back_successes_until_their_timeouts_finish():
+    cohorts = wf.StartCohortOutcomes(4, 'cpu')
+    group = torch.zeros(4, dtype=torch.long)
+    # Envs 0-1 succeed at step 2; envs 2-3 time out at step 9 (horizon 10).
+    for step in range(12):
+        done = torch.tensor([step == 2, step == 2, step == 9, step == 9])
+        cohorts.observe(done, done & torch.tensor([True, True, False, False]), group)
+    released, _ = cohorts.release(horizon_steps=10)
+    # The cohort that started at step 0 is complete: 2 successes AND 2 timeouts.
+    assert sorted(released) == [False, False, True, True]
+    # Episodes that restarted after step 2 have not completed a full horizon yet.
+    assert cohorts.release(horizon_steps=10) == ([], [])
+    cohorts.restart()
+    assert cohorts.release(horizon_steps=0) == ([], [])
+
+
+def test_grouped_curriculum_success_is_the_weakest_mission_type():
+    from tvc_env.envs.curriculum import StagedCurriculumTracker
+    stages = [dict(name='a', advance_success_fraction=0.5, min_terminations=4), dict(name='b')]
+    tracker = StagedCurriculumTracker(stages=stages, success_window_size=64, grouped=True, min_group_size=4)
+    tracker.record_outcomes(0, [True] * 8 + [False] * 8, ['hover'] * 8 + ['land'] * 8)
+    assert tracker.success_fraction() == 0.0                 # hover 100%, land 0%: not mastered
+    assert not tracker.should_advance()
+    tracker.record_outcomes(0, [True] * 8, ['land'] * 8)
+    assert tracker.success_fraction() == pytest.approx(0.5)
+    tracker.restart_at(1)
+    assert tracker.stage_index == 1 and tracker.group_success_fractions() == {}
+
+
+def test_track_bonus_also_pulls_toward_the_landing_pad():
+    missions = [[dict(position=[0, 0, 0], type='land', radius_m=0.5)]]
+    cfg = config()
+    cfg['task']['reward'] = {k: (1.0 if k == 'hover_track' else 0.0) for k in wf.REWARD_TERMS}
+    flight, _ = task(1, cfg, missions=missions, start=torch.tensor([[0., 0., 3.]]))
+    low, high = torch.tensor([[0., 0., 1.0]]), torch.tensor([[0., 0., 5.0]])
+    assert float(flight.track_stillness(low)[0]) > float(flight.track_stillness(high)[0]) > 0.0
+
+
+def test_curriculum_can_relax_the_touchdown_gate():
+    cfg = config()
+    final = wf.final_task_snapshot(cfg)
+    landing = next(s for s in cfg['task']['waypoint_flight']['curriculum']['stages'] if s['name'] == 'landing')
+    wf.apply_stage(cfg, final, landing)
+    assert cfg['task']['waypoint_flight']['landing_gates']['max_touchdown_speed_m_s'] == pytest.approx(1.0)
+    missions = [[dict(position=[0, 0, 0], type='land', radius_m=0.5)]] * 2
+    flight, _ = task(2, cfg, missions=missions, start=torch.tensor([[0., 0., 0.3125]] * 2))
+    pad = torch.tensor([[0., 0., 0.3125]] * 2)
+    step(flight, pad, pad, contact=torch.full((2,), int(ContactState.LANDED)), touchdown=torch.tensor([0.6, 1.4]))
+    assert flight.outcome.tolist() == [wf.SUCCESS, wf.BAD_LANDING]
+    wf.apply_stage(cfg, final, None)                          # the final task keeps 0.25 m/s
+    assert cfg['task']['waypoint_flight']['landing_gates']['max_touchdown_speed_m_s'] == pytest.approx(0.25)

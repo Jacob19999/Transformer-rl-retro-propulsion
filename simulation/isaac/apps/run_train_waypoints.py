@@ -69,8 +69,16 @@ def parse_args():
     # 360 deg/s spin limit at the old -1.0. Fin sigma keeps the old 0.75 deg.
     # Throttle is now hover duty + span * tanh(z) (waypoint_flight.policy_to_env_action),
     # so -2.0 gives a 0.25 * 0.135 = 0.034 duty sd, the same yaw-safe level.
+    # Rate contract (task.waypoint_flight.throttle_command.mode: rate): the
+    # throttle latent is a duty rate of 0.25 * tanh(z) /s, so i.i.d. noise
+    # integrates into a random walk. -1.0 gives ~0.092 /s sd: ~0.017 duty
+    # after 1 s, ~0.029 after 3 s (84 deg/s momentum-exchange yaw if never
+    # corrected) and ~1.5 m of altitude excursion by 3 s, which PPO can see;
+    # the 360 deg/s spin limit needs ~0.125 duty, ~50 s of uncorrected walk.
+    # The default is picked per contract when this is left unset.
     p.add_argument('--fin-log-std', type=float, default=-2.5)
-    p.add_argument('--throttle-log-std', type=float, default=-2.0)
+    p.add_argument('--throttle-log-std', type=float, default=None,
+                   help='Default -2.0 (duty contract) or -1.0 (rate contract).')
     p.add_argument('--throttle-span', type=float, default=0.25,
                    help='Throttle action = hover duty + span * tanh(z) (action contract).')
     # Exploration floors. Run 20260923_152010: throttle latent sd collapsed
@@ -78,7 +86,8 @@ def parse_args():
     # for 160M transitions; translation was never sampled. The floors keep a
     # minimum action support; the means and the sd above the floor all train.
     p.add_argument('--fin-log-std-floor', type=float, default=-3.0)
-    p.add_argument('--throttle-log-std-floor', type=float, default=-2.3)
+    p.add_argument('--throttle-log-std-floor', type=float, default=None,
+                   help='Default -2.3 (duty contract) or -2.0 (rate contract, ~0.034 /s sd).')
     # A full-task evaluation flies one episode per env (up to 90 s simulated,
     # ~2700 policy steps); the serial PhysX chain makes that ~20 min wall time.
     # Curriculum advancement uses rollout outcomes and never waits for it.
@@ -89,12 +98,28 @@ def parse_args():
     p.add_argument('--eval-action-mode', choices=['deterministic', 'stochastic', 'mean'], default='deterministic')
     p.add_argument('--output-dir', default='runs/waypoint_flight')
     p.add_argument('--resume', default=None, help='Resume a waypoint_flight checkpoint (optimizer, curriculum, steps).')
+    p.add_argument('--allow-config-diff', action='append', default=[], metavar='DOTTED.KEY',
+                   help='With --resume: warm-start across a change at this task-config key '
+                        '(e.g. task.waypoint_flight.yaw_damper). Repeatable; every other key must match.')
+    p.add_argument('--restart-stage', default=None, metavar='NAME',
+                   help='With --resume: re-enter the curriculum at this stage (empty stage statistics).')
     p.add_argument('--allow-future-curriculum-change', action='store_true',
                    help='With --resume: accept revised curriculum stages after the checkpoint stage; '
                         'everything else, including the stages already trained on, must match.')
     p.add_argument('--headless', action=argparse.BooleanOptionalAction, default=True)
     p.add_argument('--max-wall-time', type=float, default=None)
     return p.parse_args()
+
+
+def pop_dotted(config: dict, dotted: str):
+    """Remove and return ``config[a][b]...`` for 'a.b...' (None when absent)."""
+    *parents, leaf = dotted.split('.')
+    node = config
+    for key in parents:
+        node = node.get(key) if isinstance(node, dict) else None
+        if node is None:
+            return None
+    return node.pop(leaf, None) if isinstance(node, dict) else None
 
 
 def main():
@@ -157,8 +182,11 @@ def main():
             (output_dir / Path(name).name).write_bytes((sim_root / 'configs' / name).read_bytes())
 
         stages = flight_cfg['curriculum']['stages'] if flight_cfg['curriculum'].get('enabled') else [{}]
+        # Stage success = min over hover- and land-ending missions (grouped), fed
+        # by complete start cohorts (wf.StartCohortOutcomes).
         tracker = StagedCurriculumTracker(stages=copy.deepcopy(stages),
-                                          success_window_size=int(flight_cfg['curriculum'].get('success_window_size', 2048)))
+                                          success_window_size=int(flight_cfg['curriculum'].get('success_window_size', 2048)),
+                                          grouped=True)
 
         def install_stage():
             wf.apply_stage(config.config, final_task, stages[tracker.stage_index])
@@ -186,13 +214,45 @@ def main():
                                     / bc['motor_efficiency'] + bc['auxiliary_power_w'])
         voltage = battery.solve_load(requested)[0]
         hover_duty = min(0.98, hover_fraction * bc['reference_voltage_v'] / float(voltage.mean()))
-        # Throttle latent 0 decodes to hover duty (CLAUDE.md rule 4 prior).
+        # Throttle latent 0 decodes to hover duty (duty contract) or to a zero
+        # duty rate from the rotor-holding duty (rate contract); CLAUDE.md rule 4.
+        command = task_config['task']['waypoint_flight'].get('throttle_command') or {}
+        rate_mode = command.get('mode', 'duty') == 'rate'
+        if args.throttle_log_std is None:
+            args.throttle_log_std = -1.0 if rate_mode else -2.0
+        if args.throttle_log_std_floor is None:
+            args.throttle_log_std_floor = -2.0 if rate_mode else -2.3
+        (output_dir / 'args.json').write_text(json.dumps(vars(args), indent=2), encoding='utf-8')
         model = ActorCritic(obs_dim, act_dim, throttle_bias=0.0).to(device)
         model.initialize_exploration(args.fin_log_std, args.throttle_log_std)
         log_std_floor = torch.tensor([args.fin_log_std_floor] * 4 + [args.throttle_log_std_floor], device=device)
 
-        def to_env_action(raw):
-            return wf.policy_to_env_action(raw, max_angle, hover_duty, args.throttle_span)
+        if rate_mode:
+            max_rate = float(command['max_rate_per_s'])
+            action_contract = dict(fins='tanh(z) * max_command_angle rad, order +X,+Y,-X,-Y',
+                                   throttle='rate',
+                                   throttle_rate='duty = clamp(duty + max_rate_per_s * tanh(z) * rl_dt, 0, 1); '
+                                                 'episode starts at the duty holding the spawned rotor speed',
+                                   max_rate_per_s=max_rate, rl_dt=config.physics_dt * config.decimation)
+            damper = task_config['task']['waypoint_flight'].get('yaw_damper')
+            if damper:
+                action_contract['yaw_damper'] = ('fins -= gain_rad_per_rad_s * r_frd (all four vanes, '
+                                                 'before clamping)')
+                if damper.get('remove_policy_common_mode'):
+                    action_contract['yaw_damper'] = ('fins = fins - mean(fins) - gain_rad_per_rad_s * r_frd '
+                                                     '(policy common mode removed; before clamping)')
+                action_contract['yaw_remove_policy_common_mode'] = bool(damper.get('remove_policy_common_mode'))
+                action_contract['yaw_damper_gain_rad_per_rad_s'] = float(damper['gain_rad_per_rad_s'])
+
+            def to_env_action(raw):
+                return wf.policy_to_env_rate_action(raw, max_angle)
+        else:
+            action_contract = dict(fins='tanh(z) * max_command_angle rad, order +X,+Y,-X,-Y',
+                                   throttle='clamp(throttle_center + throttle_span * tanh(z), 0, 1)',
+                                   throttle_center=hover_duty, throttle_span=args.throttle_span)
+
+            def to_env_action(raw):
+                return wf.policy_to_env_action(raw, max_angle, hover_duty, args.throttle_span)
         optimizer = make_optimizer(model, args.learning_rate, args.critic_learning_rate)
         value_norm = PopArtValueNormalizer(model.critic[-1], beta=args.value_norm_beta)
         print(f'Hover rotor fraction {hover_fraction:.4f}, throttle prior duty {hover_duty:.4f}, '
@@ -209,35 +269,50 @@ def main():
                 raise ValueError('Resume requires a waypoint_flight_v1 checkpoint')
             previous = copy.deepcopy(saved['task_config'])
             previous['env']['num_envs'] = task_config['env']['num_envs']
+            names = [stage.get('name') for stage in stages]
+            if args.restart_stage and args.restart_stage not in names:
+                raise ValueError(f'--restart-stage {args.restart_stage!r} is not one of {names}')
+            restart_index = names.index(args.restart_stage) if args.restart_stage else None
             if previous != task_config:
                 index = int(saved['curriculum']['stage_index'])
+                if restart_index is not None:
+                    index = min(index, restart_index - 1)  # stages from the restart on may be revised
                 old, new = copy.deepcopy(previous), copy.deepcopy(task_config)
                 old_stages = old['task']['waypoint_flight']['curriculum'].pop('stages')
                 new_stages = new['task']['waypoint_flight']['curriculum'].pop('stages')
-                if (not args.allow_future_curriculum_change or old != new
-                        or old_stages[:index + 1] != new_stages[:index + 1]):
+                for dotted in args.allow_config_diff:
+                    before, after = pop_dotted(old, dotted), pop_dotted(new, dotted)
+                    if before != after:
+                        print(f'[resume] warm start across a config change at {dotted}: {before} -> {after}',
+                              flush=True)
+                if old != new:
                     raise ValueError('Resolved task/plant config differs from the checkpoint; start a new run')
-                print(f'[resume] curriculum stages after stage {index} revised: '
-                      f'{[s.get("name") for s in old_stages[index + 1:]]} -> '
-                      f'{[s.get("name") for s in new_stages[index + 1:]]}', flush=True)
+                if old_stages != new_stages:
+                    if (not args.allow_future_curriculum_change
+                            or old_stages[:index + 1] != new_stages[:index + 1]):
+                        raise ValueError('Checkpoint curriculum differs from the configured curriculum')
+                    print(f'[resume] curriculum stages after stage {index} revised: '
+                          f'{[s.get("name") for s in old_stages[index + 1:]]} -> '
+                          f'{[s.get("name") for s in new_stages[index + 1:]]}', flush=True)
             for key in ('gamma', 'gae_lambda', 'value_clip_range'):
                 if saved['args'].get(key) != getattr(args, key):
                     raise ValueError(f'Resume changes the learning definition: {key}')
             model.load_state_dict(saved['model'])
             optimizer = make_optimizer(model, args.learning_rate, args.critic_learning_rate, saved['optimizer'])
-            tracker.load_state_dict(saved['curriculum'], allow_future_changes=args.allow_future_curriculum_change)
+            tracker.load_state_dict(saved['curriculum'], allow_future_changes=args.allow_future_curriculum_change,
+                                    compare_through=None if restart_index is None else restart_index - 1)
             value_norm.load_state_dict(saved['value_normalizer'])
             global_step, update, best_eval = int(saved['step']), int(saved['update']), saved.get('best_eval')
             actor_lr = float(saved['actor_lr'])
+            if restart_index is not None:
+                tracker.restart_at(restart_index)
             install_stage()
             print(f'Resumed step {global_step:,}, stage {tracker.stage_index}', flush=True)
 
         def checkpoint(path):
             payload = dict(format_version=3, task='waypoint_flight', observation_contract=wf.OBSERVATION_CONTRACT,
                            obs_dim=obs_dim, act_dim=act_dim,
-                           action_contract=dict(fins='tanh(z) * max_command_angle rad, order +X,+Y,-X,-Y',
-                                                throttle='clamp(throttle_center + throttle_span * tanh(z), 0, 1)',
-                                                throttle_center=hover_duty, throttle_span=args.throttle_span),
+                           action_contract=action_contract,
                            model=model.state_dict(), optimizer=optimizer.state_dict(), args=vars(args),
                            step=global_step, update=update, task_config=task_config,
                            curriculum=tracker.state_dict(), value_normalizer=value_norm.state_dict(), actor_lr=actor_lr,
@@ -267,6 +342,7 @@ def main():
             return env.reset(seed=args.seed + update)[0]['policy']
 
         obs = env.reset(seed=args.seed)[0]['policy']
+        cohorts = wf.StartCohortOutcomes(num_envs, device)
         T = args.rollout_steps
         batch_size = T * num_envs
         minibatch_size = batch_size // args.minibatches
@@ -303,7 +379,7 @@ def main():
                     action_raw, logprob, _, value, latent = model.get_action_and_value(obs, return_latent=True)
                 latent_buf[t], logprob_buf[t], value_buf[t] = latent, logprob, value_norm.denormalize(value)
                 action = to_env_action(action_raw)
-                throttle_sum += action[:, 4].sum()
+                throttle_sum += (env._throttle_state if rate_mode else action[:, 4]).sum()
                 obs_dict, reward, terminated, truncated, info = env.step(action)
                 obs = obs_dict['policy']
                 done = terminated | truncated
@@ -314,6 +390,7 @@ def main():
                 flight = info['flight_pre_reset']
                 success = done & (flight['outcome'] == wf.SUCCESS)
                 success_buf[t] = success
+                cohorts.observe(done, success, (flight['final_land'] > 0).long())
                 outcome_counts += (torch.nn.functional.one_hot(flight['outcome'], len(wf.OUTCOMES))
                                    * done[:, None]).sum(0)
                 term_sums += torch.stack([info['reward_terms'][k].sum() for k in wf.REWARD_TERMS])
@@ -325,7 +402,9 @@ def main():
                 env.render()
 
             # One host synchronisation per rollout.
-            tracker.record_outcomes(batch_size, success_buf[done_buf.bool()].tolist())
+            horizon = math.ceil(float(config.config['task']['episode_length_s']) / rl_dt) + 1
+            released, released_groups = cohorts.release(horizon)
+            tracker.record_outcomes(batch_size, released, [('land' if g else 'hover') for g in released_groups])
             completed_stage = tracker.stage_index
             stage_success = tracker.success_fraction()
             advanced = tracker.should_advance()
@@ -411,6 +490,7 @@ def main():
                 sps=round((global_step - start_step) / max(elapsed, 1e-6), 1),
                 stage_index=completed_stage, stage_name=stages[completed_stage].get('name'),
                 stage_success_fraction=round(stage_success, 4), stage_steps=tracker.steps_in_stage,
+                stage_group_success={k: round(v, 4) for k, v in tracker.group_success_fractions().items()},
                 pg_loss=sums['pg'] / max(minibatches, 1), v_loss=sums['v'] / max(minibatches, 1),
                 entropy=sums['ent'] / max(minibatches, 1), minibatches=minibatches, kl_early_stop=kl_stop,
                 approx_kl=float(torch.stack(kls).mean()) if kls else 0.0,
@@ -438,6 +518,7 @@ def main():
                 tracker.advance()
                 install_stage()
                 obs = env.reset()[0]['policy']
+                cohorts.restart()
                 print(f'[curriculum] stage {completed_stage} mastered at {stage_success:.3f}; now stage '
                       f'{tracker.stage_index} ({stages[tracker.stage_index].get("name")})', flush=True)
             if global_step // args.save_interval > last_save_bucket:
@@ -446,6 +527,7 @@ def main():
             if global_step // args.eval_interval > last_eval_bucket:
                 last_eval_bucket = global_step // args.eval_interval
                 obs = run_eval('eval')
+                cohorts.restart()
 
         run_eval('final_eval')
         checkpoint(output_dir / 'ppo_final.pt')

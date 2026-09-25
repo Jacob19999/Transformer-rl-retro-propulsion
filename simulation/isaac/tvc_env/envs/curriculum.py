@@ -207,8 +207,15 @@ class StagedCurriculumTracker:
     success_window_size: int = 1024
     stage_index: int = 0
     steps_in_stage: int = 0
+    # Optional per-group windows (e.g. hover- vs land-ending missions). When
+    # ``grouped`` is set, the stage success is the minimum over groups with at
+    # least ``min_group_size`` outcomes, so one easy mission type cannot carry
+    # a stage whose other type is never solved.
+    grouped: bool = False
+    min_group_size: int = 128
     _successes: deque = field(default_factory=deque)
     _terminations: deque = field(default_factory=deque)
+    _groups: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.stages:
@@ -257,36 +264,51 @@ class StagedCurriculumTracker:
             self._terminations.append(True)
 
     def success_fraction(self) -> float:
+        if self.grouped:
+            fractions = [sum(window) / len(window) for window in self._groups.values()
+                         if len(window) >= self.min_group_size]
+            return min(fractions) if fractions else 0.0
         if not self._terminations:
             return 0.0
         return sum(1 for s in self._successes if s) / len(self._terminations)
 
-    def record_outcomes(self, num_env_steps: int, outcomes: list[bool]) -> None:
+    def group_success_fractions(self) -> dict:
+        return {key: sum(window) / len(window) for key, window in self._groups.items() if window}
+
+    def record_outcomes(self, num_env_steps: int, outcomes: list[bool], groups: list | None = None) -> None:
         """Record terminal outcomes in observed order, without sorting by success.
 
         September review: aggregated rollout counts inserted all successes
         before all failures; clipping that sequence to 1024 events biased the
         curriculum window, particularly for short near-ground episodes.
+        ``groups`` (one key per outcome) feeds the per-group windows.
         """
         if num_env_steps < 0:
             raise ValueError('num_env_steps must be non-negative')
+        if groups is not None and len(groups) != len(outcomes):
+            raise ValueError('groups must align with outcomes')
         self.steps_in_stage += int(num_env_steps)
         self._successes.extend(bool(x) for x in outcomes)
         self._terminations.extend(True for _ in outcomes)
+        for key, success in zip(groups or (), outcomes):
+            self._groups.setdefault(key, deque(maxlen=self.success_window_size)).append(bool(success))
 
     def state_dict(self) -> dict[str, Any]:
         return dict(stage_index=self.stage_index, steps_in_stage=self.steps_in_stage,
                     successes=list(self._successes), stages=deepcopy(self.stages),
                     success_window_size=self.success_window_size)
 
-    def load_state_dict(self, state: dict[str, Any], allow_future_changes: bool = False) -> None:
+    def load_state_dict(self, state: dict[str, Any], allow_future_changes: bool = False,
+                        compare_through: int | None = None) -> None:
         """Restore progress. ``allow_future_changes`` accepts a curriculum whose
         stages after the checkpoint's current stage were revised; the stages
-        already trained on (0..stage_index) must be identical."""
+        already trained on (0..stage_index) must be identical. ``compare_through``
+        narrows that to stages 0..compare_through (a restart at a revised stage)."""
         index = int(state['stage_index'])
         if not 0 <= index < self.num_stages:
             raise ValueError('Invalid checkpoint stage index')
-        trained = slice(0, index + 1) if allow_future_changes else slice(None)
+        last = index if compare_through is None else min(index, int(compare_through))
+        trained = slice(0, last + 1) if allow_future_changes else slice(None)
         if (state['stages'][trained] != self.stages[trained]
                 or state['success_window_size'] != self.success_window_size):
             raise ValueError('Checkpoint curriculum differs from the configured curriculum')
@@ -294,6 +316,7 @@ class StagedCurriculumTracker:
         self.steps_in_stage = int(state['steps_in_stage'])
         self._successes.clear()
         self._terminations.clear()
+        self._groups.clear()  # per-group windows refill after a resume
         self.record_outcomes(0, state['successes'])
 
     def termination_count(self) -> int:
@@ -326,4 +349,15 @@ class StagedCurriculumTracker:
         self.steps_in_stage = 0
         self._successes.clear()
         self._terminations.clear()
+        self._groups.clear()
         return self.stage_index
+
+    def restart_at(self, index: int) -> None:
+        """Re-enter the curriculum at ``index`` with empty stage statistics."""
+        if not 0 <= index < self.num_stages:
+            raise ValueError('Invalid stage index')
+        self.stage_index = index
+        self.steps_in_stage = 0
+        self._successes.clear()
+        self._terminations.clear()
+        self._groups.clear()

@@ -192,8 +192,17 @@ def main():
         contract = saved['action_contract']
         max_angle = float(env._servo_model.max_command_angle)
 
-        def action_fn(raw):
-            return wf.policy_to_env_action(raw, max_angle, contract['throttle_center'], contract['throttle_span'])
+        if contract['throttle'] == 'rate':
+            # The env integrates the rate from the task config saved with the run.
+            configured = config.config['task']['waypoint_flight'].get('throttle_command') or {}
+            if configured.get('mode') != 'rate' or float(configured['max_rate_per_s']) != contract['max_rate_per_s']:
+                raise ValueError('Checkpoint throttle-rate contract differs from the evaluation task config')
+
+            def action_fn(raw):
+                return wf.policy_to_env_rate_action(raw, max_angle)
+        else:
+            def action_fn(raw):
+                return wf.policy_to_env_action(raw, max_angle, contract['throttle_center'], contract['throttle_span'])
         report = dict(checkpoint=str(checkpoint), step=saved['step'], action_mode=args.action_mode,
                       disturbance=args.disturbance, num_envs=args.num_envs)
         report['max_seconds'] = args.max_seconds

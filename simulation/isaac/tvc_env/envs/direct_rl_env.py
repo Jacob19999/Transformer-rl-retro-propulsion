@@ -30,6 +30,9 @@ from tvc_env.envs.base_env import TVCEnvBase, BaseEnvConfig
 from tvc_env.common.datatypes import VehicleState
 from tvc_env.common.constants import ContactState
 
+# Airborne-frame count meaning "no contact yet this episode" (see _update_contact_state).
+_LONG_AIRBORNE = 1 << 30
+
 
 class TVCDirectRLEnv(TVCEnvBase):
     """Isaac Lab environment for EDF TVC simulation.
@@ -47,6 +50,7 @@ class TVCDirectRLEnv(TVCEnvBase):
         TVCEnvBase.__init__(self, config)
         self._pending_actions = None
         self._touchdown_speed = None
+        self._airborne_frames = None
         self._max_downward_speed_step = None
         self._landing_contact_force_step = None
         self._unsafe_contact_step = None
@@ -101,6 +105,10 @@ class TVCDirectRLEnv(TVCEnvBase):
             device=device,
         )
         self._touchdown_speed = torch.zeros(self._config.num_envs, dtype=torch.float32, device=device)
+        # Consecutive PhysX frames without landing contact; starts "long ago" so
+        # an episode's first contact always counts as an arrival from flight.
+        self._airborne_frames = torch.full((self._config.num_envs,), _LONG_AIRBORNE,
+                                           dtype=torch.int32, device=device)
         self._max_downward_speed_step = torch.zeros_like(self._touchdown_speed)
         self._landing_contact_force_step = torch.zeros_like(self._touchdown_speed)
         self._unsafe_contact_step = torch.zeros(
@@ -143,6 +151,27 @@ class TVCDirectRLEnv(TVCEnvBase):
             from tvc_env.envs.waypoint_flight import WaypointFlightTask
             self._flight = WaypointFlightTask(self._config.num_envs, device, self._config.config, env_origins,
                                               self._config.physics_dt * self._config.decimation)
+        # Throttle-rate action contract (task.waypoint_flight.throttle_command):
+        # action channel 4 is a normalized duty rate that is integrated here,
+        # as the flight computer does, instead of a duty.
+        self._throttle_rate = None
+        self._throttle_state = torch.zeros(self._config.num_envs, device=device)
+        command = self._config.config.get('task', {}).get('waypoint_flight', {}).get('throttle_command') or {}
+        if self._flight is not None and command.get('mode', 'duty') == 'rate':
+            self._throttle_rate = float(command['max_rate_per_s'])
+            if not 0.0 < self._throttle_rate <= 10.0:
+                raise ValueError('throttle_command.max_rate_per_s must be within (0, 10]')
+        elif command.get('mode', 'duty') != 'duty':
+            raise ValueError(f"Unknown throttle_command.mode {command.get('mode')!r}")
+        # Fixed flight-computer yaw-rate damper (task.waypoint_flight.yaw_damper).
+        self._yaw_damper_gain = None
+        self._yaw_owns_common_mode = False
+        damper = self._config.config.get('task', {}).get('waypoint_flight', {}).get('yaw_damper') or {}
+        if self._flight is not None and damper:
+            self._yaw_damper_gain = float(damper['gain_rad_per_rad_s'])
+            self._yaw_owns_common_mode = bool(damper.get('remove_policy_common_mode', False))
+            if not 0.0 <= self._yaw_damper_gain <= 1.0:
+                raise ValueError('yaw_damper.gain_rad_per_rad_s must be within [0, 1]')
         spawn_rotor = self._config.config.get('task', {}).get('spawn', {}).get('initial_motor_omega_fraction')
         if self._flight is not None or spawn_rotor == 'hover':
             self._reset_manager.hover_omega_fraction = self.nominal_hover_throttle()
@@ -188,6 +217,17 @@ class TVCDirectRLEnv(TVCEnvBase):
             (obs_dict, reward, terminated, truncated, info)
         """
         action = action.to(self.device)
+        if self._throttle_rate is not None:
+            from tvc_env.envs.waypoint_flight import integrate_throttle
+            self._throttle_state = integrate_throttle(self._throttle_state, action[:, 4], self._throttle_rate,
+                                                      self._config.physics_dt * self._config.decimation)
+            action = torch.cat((action[:, :4], self._throttle_state[:, None]), dim=-1)
+        if self._yaw_damper_gain is not None:
+            from tvc_env.envs.waypoint_flight import apply_yaw_damper
+            yaw_rate = self._body_iface.get_angular_velocity_body_frd()[:, 2]
+            fins = apply_yaw_damper(action[:, :4], yaw_rate, self._yaw_damper_gain,
+                                    float(self._servo_model.max_command_angle), self._yaw_owns_common_mode)
+            action = torch.cat((fins, action[:, 4:]), dim=-1)
         self._pre_physics_step(action)
         self._max_downward_speed_step.zero_()
         self._landing_contact_force_step.zero_()
@@ -227,7 +267,7 @@ class TVCDirectRLEnv(TVCEnvBase):
             # per decimated policy step made dwell_frames=15 mean 0.5 s rather
             # than 0.125 s at 120 Hz, and turned brief within-step bounces into
             # sustained contact. Advance the state machine on each PhysX report.
-            self._update_contact_state(landing_force, unsafe_contact, downward_speed)
+            self._update_contact_state(landing_force, unsafe_contact, downward_speed, rates_before)
         self._step_count += 1
         if self._navigation:
             self._navigation.advance(navigation_before, self._body_iface.get_root_position(),
@@ -286,6 +326,7 @@ class TVCDirectRLEnv(TVCEnvBase):
             self._reset_manager.reset_envs(reset_ids)
             self._contact_sensor.reset(reset_ids)
             self._touchdown_speed[reset_ids] = 0.0
+            self._airborne_frames[reset_ids] = _LONG_AIRBORNE
             self._step_count[reset_ids] = 0
             self._rotation.reset(reset_ids)
             if self._navigation:
@@ -313,6 +354,7 @@ class TVCDirectRLEnv(TVCEnvBase):
         self._reset_manager.reset_envs(indices)
         self._contact_sensor.reset(indices)
         self._touchdown_speed.zero_()
+        self._airborne_frames.fill_(_LONG_AIRBORNE)
         self._max_downward_speed_step.zero_()
         self._landing_contact_force_step.zero_()
         self._unsafe_contact_step.zero_()
@@ -336,6 +378,18 @@ class TVCDirectRLEnv(TVCEnvBase):
         self._previous_action[env_ids] = 0.0
         self._previous_action[env_ids, 4] = rotor * 2.0 - 1.0
         self._action_delta[env_ids] = 0.0
+        if self._throttle_rate is not None:
+            # Rate contract: start from the duty that holds the spawned rotor
+            # at this env's loaded pack voltage (the vehicle is already flying).
+            from tvc_env.envs.waypoint_flight import holding_duty
+            battery = self._battery_model
+            c = battery.config
+            power = torch.zeros_like(battery.soc)
+            power[env_ids] = c['shaft_power_at_max_w'] * rotor.pow(3) / c['motor_efficiency'] + c['auxiliary_power_w']
+            voltage = battery.solve_load(power)[0][env_ids]
+            duty = holding_duty(rotor, voltage, float(c['reference_voltage_v']))
+            self._throttle_state[env_ids] = duty
+            self._previous_action[env_ids, 4] = duty * 2.0 - 1.0
 
     def close(self) -> None:
         """Release the simulation context."""
@@ -659,8 +713,13 @@ class TVCDirectRLEnv(TVCEnvBase):
         contact_force: Tensor,
         unsafe_contact: Tensor,
         downward_speed: Tensor,
+        arrival_rates_frd: Tensor,
     ) -> None:
-        """Advance landing/crash state from one PhysX contact frame."""
+        """Advance landing/crash state from one PhysX contact frame.
+
+        ``downward_speed`` and ``arrival_rates_frd`` are the body state before
+        this frame's PhysX step, i.e. what the vehicle arrived with.
+        """
         in_contact = contact_force >= self._contact_sm.min_contact_force
 
         previous_state = self._contact_sm.state
@@ -678,13 +737,26 @@ class TVCDirectRLEnv(TVCEnvBase):
             downward_speed,
             self._touchdown_speed,
         )
-        ang_vel_frd = self._body_iface.get_angular_velocity_body_frd()
-        ang_rate = ang_vel_frd.norm(dim=-1)
+        # The angular-rate gate is judged on arrival from flight, like impact
+        # speed: the body rate before this PhysX frame, at the first contact
+        # after >= dwell_frames airborne frames. It used to read the rate after
+        # the step on every contact frame. Crash-cause replay of run
+        # 20260925_010435 at 600M (touchdown stage, 512 envs): 82/98 CRASHes
+        # were rate-at-contact on the impact frame itself -- 0.4-0.66 m/s,
+        # 2-4 deg tilt, pre-contact rates <= 34 deg/s -- because the
+        # one-leg-first contact impulse pivots the body at 100-350 deg/s.
+        # Bounce re-contacts carrying that rocking (127 of 9980 above 3 rad/s)
+        # were all airborne <= 22 frames. With this rule the same replay had
+        # 17 CRASHes, all tip-overs, which tilt-at-contact still catches.
+        from_flight = in_contact & (self._airborne_frames >= self._contact_sm.dwell_frames)
+        self._airborne_frames = torch.where(in_contact, torch.zeros_like(self._airborne_frames),
+                                            self._airborne_frames + 1)
+        arrival_rate = arrival_rates_frd.norm(dim=-1)
         q = self._body_iface.get_root_quaternion_wxyz()
 
         is_crashed = unsafe_contact | self._crash_detector.check_impact_speed(impact_speed, first_contact)
         is_crashed = is_crashed | self._crash_detector.check_tilt_at_contact(q, in_contact)
-        is_crashed = is_crashed | self._crash_detector.check_angular_rate_at_contact(ang_rate, in_contact)
+        is_crashed = is_crashed | self._crash_detector.check_angular_rate_at_contact(arrival_rate, from_flight)
         is_crashed = is_crashed | self._crash_detector.check_excessive_tilt(q)
 
         self._contact_sm.update(in_contact, is_crashed, contact_force)
