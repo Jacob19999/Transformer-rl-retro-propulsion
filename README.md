@@ -5,8 +5,51 @@
 > Bridging the sim-to-real gap for attention-enhanced reinforcement learning in thrust-vectoring control systems.
 
 ---
-Work in progress issac sim training env (parallel): 
+Work-in-progress Isaac Sim training environment (parallel envs):
 <img width="2517" height="1244" alt="image" src="https://github.com/user-attachments/assets/8a5a5e4d-327d-45d1-8080-6d50f27499b4" />
+
+---
+
+## Current Status (September 2026)
+
+Phase 1 (simulation) is in progress. The latest results are written up in the draft paper
+[*Reinforcement Learning for Thrust-Vectored Fin Control of an Electric Ducted Fan VTOL Vehicle in Simulation*](Paper/tvc_fin_control_rl.tex).
+
+**Headline result so far.** On the corrected plant, explicit convex guidance substantially outperforms model-free PPO:
+
+| Controller | Result on the corrected Isaac Sim plant |
+|------------|------------------------------------------|
+| **Convex (SOCP) guidance** | Landed all 7 benchmark missions inside the vehicle envelope (touchdown 0.146–0.184 m/s, 0.05–0.40 m from pad centre), including combined wind + sensor noise + CoM offset, a 50 m cold-rotor start and a two-waypoint route. Also flew a 100 s three-hover route and landed four ~100 m starts in wind at up to 30 m/s initial speed. |
+| **PID baseline** | Touched down at 1.50 m/s on the default mission (above the 0.5 m/s target). |
+| **PPO (waypoint_flight)** | Best full randomized-task success 1.3% after 700M transitions (best hover-heavy policy: 31.7% overall, 53% hover missions, 0% landing missions). |
+
+The dominant obstacle to learning is **rotor–body angular-momentum exchange**: every throttle change yaws the airframe (~46.5 rad/s body yaw per unit throttle change in the unmitigated plant), while the four jet vanes provide only ~0.3 N·m of yaw authority.
+
+### Recent development
+
+- **Physics corrections to the simulator.**
+  - A finite-momentum coupled-jet vane model replaces independent per-vane lift forces. The legacy model gave ~8.5× the physically possible side force.
+  - The EDF is coupled to a LiPo equivalent circuit.
+  - Rotor spool and gyroscopic reactions are integrated with an energy-conserving implicit-midpoint (Cayley) scheme.
+  - External forces are applied about the true centre of mass.
+- **Torque-limited motor model** ([train_waypoint_flight.yaml](simulation/isaac/configs/env/train_waypoint_flight.yaml)). The motor applies at most K<sub>t</sub>·I<sub>max</sub> ≈ 0.76 N·m, and zero throttle coasts with no brake, as EDF ESCs do. The previously unbounded spool lag put 5.2 N·m on the body at disarm and spun landed vehicles at 430–710 °/s on the pad.
+- **Waypoint-flight PPO task** ([waypoint_flight_2026-09-23.md](simulation/isaac/docs/waypoint_flight_2026-09-23.md)). This replaced the landing-first task, which stalled at 200M steps. The policy learns one skill: reach the next waypoint efficiently, with the efficiency cost weighted ~75% energy and ~25% time. Landings and holds are composed by a planner as routes ending in `land` or `hover`.
+  - The hardware-facing action contract is a throttle **rate** command (±0.25 duty/s) plus four vane angles. A fixed flight-computer yaw-rate damper owns yaw and removes the common mode of the policy's vane commands.
+  - Reward uses potential-based route shaping and a bounded `hover_track` station-keeping bonus. Terminal rewards are checked to dominate the per-step budget.
+  - The curriculum changes one difficulty axis per stage, and success is measured by start cohorts.
+  - A reverse landing ladder (touchdown → descent → approach → landing) mixes hover missions into every stage. Landing-only stages had erased flight skill.
+  - Contact-detection fix: the crash gate now reads the pre-contact body rate. Before, 82 of 98 gentle touchdowns in one replay were misclassified as crashes.
+- **Convex guidance controller** ([convex_guidance_2026-09-25.md](simulation/isaac/docs/convex_guidance_2026-09-25.md)). It adapts Açıkmeşe & Ploen (2007) lossless convexification to a constant-mass, battery-powered vehicle, solved in closed loop with Clarabel.
+  - It minimizes electrical energy with a power-cone objective.
+  - Added constraints: a thrust-vector rate bound derived from the vanes' yaw authority, a gate approached from above, and waypoint nodes.
+  - A servo-deadband inverse removed a 1 Hz gyroscopic coning limit cycle, cutting hover body-rate RMS from 15 to 1.5 °/s.
+- **Mission Control** ([mission_control.md](simulation/isaac/docs/mission_control.md)). A local web console (`simulation/isaac/mission_control/start.ps1`, http://127.0.0.1:8830) plans and launches Isaac missions with PID, convex or PPO controllers. It replays telemetry on a 3D vehicle model, shows convex-guidance diagnostics and browses training runs.
+
+### Next steps
+
+- Retrain PPO route skills on the torque-limited, coupled-jet plant, then tighten the touchdown gate (`landing_soft`, 0.25 m/s)
+- GTrXL-PPO training on the corrected plant (`apps/run_train_gtrxl.py`) and comparison with MLP PPO and convex guidance
+- Measure EDF rotor inertia and servo deadband on hardware, then begin HIL integration
 
 
 ## Overview
@@ -56,7 +99,7 @@ The system is designed to handle the following perturbations:
 
 ## Project Architecture -- High-Level Modules
 
-The project is organized into the following major modules, each addressing a distinct aspect of the research pipeline:
+The project is organized into the following major modules, each addressing a distinct aspect of the research pipeline. Module paths below are the planned architecture; see [Repository Layout](#repository-layout) for where the implemented code lives today.
 
 ### 1. Simulation Environment (`simulation/`)
 
@@ -87,7 +130,7 @@ Training infrastructure for all controller variants using reinforcement learning
 Traditional and classical control baselines for comparative evaluation.
 
 - **PID Controller**: Ziegler-Nichols tuned proportional-integral-derivative controller for attitude and position control
-- **Sequential Convex Programming (SCP)**: Optimization-based powered descent guidance using convex relaxation of nonlinear constraints (Acikme et al., 2007)
+- **Sequential Convex Programming (SCP)**: Optimization-based powered descent guidance using convex relaxation of nonlinear constraints (Açıkmeşe & Ploen, 2007); implemented as the convex guidance controller
 - **Vanilla PPO**: Standard PPO agent without transformer augmentation
 
 ### 4. Hardware Platform (`hardware/`)
@@ -157,6 +200,21 @@ Open-source deliverables and reproducibility assets.
 - **Hardware Documentation**: Full bill of materials, CAD files for 3D-printed components, wiring diagrams
 - **Datasets**: 100+ flight test logs with full state vectors for community benchmarking
 - **Reproducibility**: Containerized training environment, configuration files, random seeds
+
+---
+
+## Repository Layout
+
+| Path | Contents |
+|------|----------|
+| [simulation/isaac/tvc_env/](simulation/isaac/tvc_env/) | Isaac Lab environment package: dynamics (EDF, coupled jet, LiPo), envs (`direct_rl_env`, `waypoint_flight`, rewards, curriculum), controllers (PID, convex, PPO, GTrXL adapters) |
+| [simulation/isaac/configs/](simulation/isaac/configs/) | Plant/env configs, task definitions (`hover`, `landing`, `waypoint_flight`) and controller settings |
+| [simulation/isaac/apps/](simulation/isaac/apps/) | Entry points: `run_train_waypoints.py`, `run_train_ppo.py`, `run_train_gtrxl.py`, `waypoint_eval.py`, `run_mission.py`, PID evaluation and sweeps |
+| [simulation/isaac/mission_control/](simulation/isaac/mission_control/) | Local mission-control web console (server + frontend) |
+| [simulation/isaac/docs/](simulation/isaac/docs/) | Dated design notes and investigation reports (physics review, PPO convergence, waypoint flight, convex guidance) |
+| [simulation/isaac/tests/](simulation/isaac/tests/) | Unit tests (`pytest`) |
+| [Paper/](Paper/) | Draft paper (LaTeX) and references |
+| [CAD/](CAD/) | EDF drone CAD, Blender/USD models and FEA |
 
 ---
 
@@ -377,7 +435,7 @@ The thesis itself -- hardware validation of an existing algorithm -- is best sui
 - Parisotto et al. (2020). *Stabilizing Transformers for Reinforcement Learning*. ICML 2020
 - Federici et al. (2024). *Meta-Reinforcement Learning with Transformer for Lunar Landing*. AIAA SciTech 2024
 - Carradori et al. (2025). *Transformer-Based Robust Feedback Guidance for Atmospheric Powered Landing*. AIAA SciTech 2025
-- Acikme & Ploen (2007). *Convex Programming Approach to Powered Descent Guidance for Mars Landing*. JGCD
+- Açıkmeşe & Ploen (2007). *Convex Programming Approach to Powered Descent Guidance for Mars Landing*. JGCD
 - Hwangbo et al. (2017). *Control of a Quadrotor with Reinforcement Learning*. IEEE RA-L
 - Zhang & Li (2020). *Testing and Verification of Neural-Network-Based Safety-Critical Control Software*. IST
 
