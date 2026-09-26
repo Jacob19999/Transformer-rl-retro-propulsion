@@ -6,7 +6,8 @@
 
 ---
 Work in progress issac sim training env (parallel): 
-<img width="1792" height="916" alt="image" src="https://github.com/user-attachments/assets/f7e2d12d-152e-48e2-8a61-a02b2548ff64" />
+<img width="2517" height="1244" alt="image" src="https://github.com/user-attachments/assets/8a5a5e4d-327d-45d1-8080-6d50f27499b4" />
+
 
 ## Overview
 
