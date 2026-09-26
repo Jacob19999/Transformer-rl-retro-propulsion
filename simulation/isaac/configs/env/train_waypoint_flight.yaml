@@ -53,3 +53,17 @@ dynamics:
     shaft_power_at_max_w: 3072.0
     exit_position_frd: [0, 0, 0.05]
   gyro_integration: coupled_cayley
+  # Torque-limited motor (plant audit, 2026-09-26). tau_motor is the spool
+  # response the ESC asks for; the motor applies at most Kt I_max, with
+  # Kt = 60 / (2 pi KV). That is 0.76 N m for the planned 4075 KV1500 at the
+  # 120 A ESC limit (legacy 6S, KV1850 at 150 A: 0.77 N m). With the brake
+  # disabled (EDF ESC practice), zero throttle applies no torque: the rotor
+  # coasts on its aerodynamic drag, shaft_power_at_max / omega_max
+  # (omega / omega_max)^2 (0.47 N m at hover, a ~1.7 s coast time constant).
+  # Unbounded, the 0.15 s lag stopped the rotor on disarm with 5.2 N m on the
+  # body, which spun every landed vehicle at 430-710 deg/s on the pad (Isaac
+  # missions addd8752dc7c, fa66253416c8); a cold spool-up drew up to 12 N m.
+  motor_torque_limit:
+    enabled: true
+    max_torque_nm: 0.76
+    zero_throttle_brake: false

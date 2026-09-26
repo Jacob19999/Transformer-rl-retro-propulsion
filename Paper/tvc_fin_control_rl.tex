@@ -29,27 +29,27 @@ Mankato, MN, USA}
 \maketitle
 
 \begin{abstract}
-This paper presents a Proximal Policy Optimization (PPO) approach to attitude and position control of a thrust-vectored electric ducted fan (EDF) vertical take-off and landing (VTOL) vehicle using aerodynamic control fins immersed in the exhaust stream. Unlike conventional multirotor platforms that achieve control authority through differential rotor speeds, the vehicle studied here relies on a single axial EDF unit and four jet-vane fins for three-axis attitude control, presenting a tightly coupled, nonlinear control problem. We develop a GPU-accelerated simulation environment in NVIDIA Isaac Sim with semi-empirical aerodynamic, propulsion, and actuator dynamics models calibrated to a physical 3.1\,kg EDF drone testbed. A feed-forward actor--critic PPO agent with a 24-dimensional observation space and 5-dimensional continuous action space (four fin deflections plus throttle) is trained on 128 parallel environments for hover stabilization and autonomous landing tasks. The hover policy achieves a mean position error of \SI{0.085}{\metre} within 2{,}048 environment steps. The landing policy, trained over 5 million steps with spawn-position curriculum, achieves 100\% landing rate with a mean touchdown speed of \SI{0.126}{\metre\per\second}, though lateral accuracy (mean pad distance \SI{1.89}{\metre}) remains an open challenge. We detail the simulation architecture, reward design rationale, and training methodology, and discuss implications for sim-to-real transfer to the physical testbed.
+This paper studies closed-loop control of a thrust-vectored electric ducted fan (EDF) vertical take-off and landing (VTOL) vehicle whose only attitude actuators are four jet vanes immersed in the fan exhaust. Attitude authority is therefore coupled to the throttle state, and every change in rotor speed exchanges angular momentum with the airframe. We develop a GPU-accelerated simulation in NVIDIA Isaac Sim and, in this revision, correct its physics: a finite-momentum jet model replaces independent per-vane lift forces, the EDF is coupled to a LiPo equivalent circuit, the full rotor spool and gyroscopic reactions are integrated with an energy-conserving implicit-midpoint scheme, and external forces are applied about the true center of mass. On the corrected plant we compare model-free Proximal Policy Optimization (PPO) with a convex-optimization guidance controller that adapts the lossless-convexification powered-descent method of A\c{c}{\i}kme\c{s}e and Ploen to a constant-mass, battery-powered vehicle. The planner minimizes electrical energy with a power-cone objective and adds a thrust-rate bound derived from the vanes' yaw authority. It landed in all seven benchmark missions within the vehicle's envelope, at touchdown speeds of 0.146--0.184\,m/s and 0.05--0.40\,m from the pad center. These missions included combined wind, sensor noise and center-of-mass offset, a 50\,m cold-rotor start, and a two-waypoint route. The controller also flew a 100\,s three-hover route, and it landed four further starts from about 100\,m in wind with sensor noise, at initial speeds up to 30\,m/s. A PID baseline touched down at 1.50\,m/s on the default mission. On the same plant, the best PPO policy reached 1.3\% success on its full randomized waypoint task after 700 million transitions. On this experiment, explicit model-based convex guidance substantially outperforms model-free PPO. We identify the rotor--body angular-momentum exchange as the dominant obstacle to learning, and discuss the transfer risks of both approaches.
 \end{abstract}
 
 \begin{IEEEkeywords}
-reinforcement learning, thrust vector control, electric ducted fan, proximal policy optimization, VTOL, Isaac Sim, jet vane
+reinforcement learning, convex optimization, powered descent guidance, lossless convexification, thrust vector control, electric ducted fan, proximal policy optimization, VTOL, Isaac Sim, jet vane
 \end{IEEEkeywords}
 
 \section{Introduction}
 
 Vertical take-off and landing (VTOL) vehicles have seen rapid adoption across commercial, military, and research domains. While conventional multirotors achieve attitude control through differential rotor speeds, alternative configurations---particularly those employing thrust vector control (TVC)---offer potential advantages in aerodynamic efficiency, noise reduction, and mechanical simplicity for certain mission profiles \cite{b1}.
 
-Thrust-vectored vehicles that use aerodynamic control surfaces (jet vanes or fins) immersed in the exhaust stream of a single propulsion unit present a fundamentally different control challenge compared to multirotors. The control authority is coupled to the throttle state: at low thrust, fin effectiveness diminishes because the dynamic pressure in the exhaust drops quadratically with rotor speed. This throttle-dependent authority, combined with nonlinear aerodynamic force characteristics, actuator dynamics, and gyroscopic effects from the spinning rotor, makes classical linear control design challenging and motivates data-driven approaches.
+Thrust-vectored vehicles that use aerodynamic control surfaces (jet vanes or fins) immersed in the exhaust stream of a single propulsion unit present a fundamentally different control challenge compared to multirotors. The control authority is coupled to the throttle state: at low thrust, fin effectiveness diminishes because the dynamic pressure in the exhaust drops quadratically with rotor speed. A single fast rotor also stores substantial angular momentum. Each throttle change therefore torques the airframe about the thrust axis, and each body rotation produces gyroscopic precession. This coupling, together with nonlinear vane aerodynamics and hobby-grade servo dynamics, makes classical linear control design challenging.
 
-Reinforcement learning (RL) has demonstrated success in quadrotor control \cite{b2, b3}, fixed-wing flight \cite{b4}, and rocket landing \cite{b5}. However, its application to thrust-vectored fin control of EDF vehicles remains largely unexplored. The key distinctions of this control problem include: (1) a single thrust source with four coupled control surfaces, (2) aerodynamic forces that depend on both fin deflection angle and instantaneous exhaust velocity, (3) significant actuator dynamics from hobby-grade servos, and (4) gyroscopic precession from the high-speed rotor.
+Reinforcement learning (RL) has demonstrated success in quadrotor control \cite{b2, b3}, fixed-wing flight \cite{b4}, and rocket landing \cite{b5}. Convex optimization has an equally strong record in powered-descent guidance, where lossless convexification turns a non-convex thrust constraint into a problem that can be solved to global optimality in real time \cite{b21, b22}. Neither approach has been systematically applied to thrust-vectored fin control of EDF vehicles. The key distinctions of this control problem include: (1) a single thrust source with four coupled control surfaces, (2) vane forces bounded by the momentum of a finite jet, (3) significant actuator dynamics and deadband from hobby-grade servos, and (4) rotor--body angular-momentum exchange strong enough to exceed the vanes' yaw authority.
 
 This paper makes the following contributions:
 \begin{itemize}
-    \item A GPU-accelerated simulation environment for an EDF TVC drone built on NVIDIA Isaac Sim with physically grounded aerodynamic, propulsion, and actuator models.
-    \item A PPO-based control policy for hover stabilization and autonomous landing of a thrust-vectored vehicle, trained end-to-end from raw state observations.
-    \item Analysis of reward design considerations specific to TVC vehicles, including the terminal-vs-per-step magnitude balance critical for landing tasks.
-    \item Preliminary training results demonstrating feasibility and identifying open challenges for lateral accuracy in landing.
+    \item A GPU-accelerated Isaac Sim environment for an EDF TVC drone, with a corrected physics model: finite-momentum jet vanes, a battery-coupled EDF, full rotor angular-momentum reactions integrated without numerical energy gain, and force application about the true center of mass. The physical and numerical corrections are each backed by regression tests.
+    \item A convex (conic) guidance and flight-control stack for this vehicle, adapted from lossless-convexification powered descent guidance \cite{b21}. It uses a first-order-hold thrust profile, a thrust-rate bound derived from rotor momentum exchange, a minimum-electrical-energy objective and waypoint routes.
+    \item PPO policies for hover, landing, and waypoint flight, together with an analysis of reward design for TVC vehicles, including the terminal-vs-per-step magnitude balance critical for landing tasks.
+    \item A comparison on the corrected plant showing that the convex controller lands reliably where both PPO and PID fail, with an analysis of why.
 \end{itemize}
 
 
@@ -67,15 +67,19 @@ Landing tasks are inherently long-horizon: the controller must plan a descent tr
 
 In aerospace guidance, Federici et al.\ \cite{b19} applied meta-reinforcement learning with transformers to lunar landing, and Carradori et al.\ \cite{b20} demonstrated transformer-based robust feedback guidance for atmospheric powered landing. Both studies report strong simulated performance under uncertain initial conditions and disturbances, but neither closes the loop on hardware transfer---a gap that motivates the physical testbed described in this work.
 
+\subsection{Convex Optimization for Powered Descent Guidance}
+
+A\c{c}{\i}kme\c{s}e and Ploen posed Mars powered descent as a convex second-order cone program (SOCP) \cite{b21}. The thrust magnitude must lie in an annulus $\rho_1 \le \|\mathbf{T}\| \le \rho_2$, which is non-convex. They relaxed it with a slack variable and proved that the relaxation is \emph{lossless}: the optimum of the relaxed problem satisfies the original constraint. A\c{c}{\i}kme\c{s}e and Blackmore generalized lossless convexification to a class of optimal control problems with non-convex control constraints \cite{b22}. Blackmore et al.\ added a minimum-landing-error formulation for targets that cannot be reached \cite{b23}. Because interior-point conic solvers have deterministic convergence behavior, these problems can be solved onboard. We use the Clarabel interior-point solver \cite{b24}.
+
 \subsection{Thrust Vector Control}
 
 TVC has a long history in rocketry, where gimbaled nozzles or jet vanes provide attitude control during powered flight \cite{b8}. More recently, TVC has been explored for VTOL vehicles. Jet-vane TVC, where flat plates are immersed in the exhaust stream, provides a mechanically simple alternative to gimbaled motors but introduces nonlinear aerodynamic coupling \cite{b9}.
 
-Classical control approaches for TVC vehicles typically linearize the plant around a hover operating point and apply PID or LQR controllers \cite{b10}. However, the strongly nonlinear relationship between fin deflection, throttle state, and resulting forces---particularly the quadratic dependence of fin effectiveness on exhaust velocity---limits the operating envelope of linear controllers. Optimization-based guidance such as Sequential Convex Programming (SCP) offers fuel-aware trajectory planning \cite{b21}, but trust-region limitations can cause infeasibility when the required maneuver deviates significantly from the nominal trajectory.
+Classical control approaches for TVC vehicles typically linearize the plant around a hover operating point and apply PID or LQR controllers \cite{b10}. However, the strongly nonlinear relationship between fin deflection, throttle state, and resulting forces---particularly the quadratic dependence of fin effectiveness on exhaust velocity---limits the operating envelope of linear controllers. Geometric attitude control on $SO(3)$ \cite{b25} avoids the singularities of Euler-angle linearization and is used by our convex flight controller's inner loop. Optimization-based guidance can plan fuel- or energy-aware trajectories that respect actuator limits explicitly. Sequential convex programming extends this to non-convex constraints, but its trust-region iterations can become infeasible when the required maneuver departs far from the linearization point.
 
 \subsection{Sim-to-Real Transfer}
 
-Domain randomization \cite{b11} and system identification \cite{b12} are established techniques for bridging the simulation-to-reality gap. For aerial vehicles, Sadeghi and Levine demonstrated that policies trained entirely in simulation could transfer to real quadrotors \cite{b13}. The fidelity of the simulation dynamics model is a critical factor, motivating the semi-empirical approach adopted in this work.
+Domain randomization \cite{b11} and system identification \cite{b12} are established techniques for bridging the simulation-to-reality gap. For aerial vehicles, Sadeghi and Levine demonstrated that policies trained entirely in simulation could transfer to real quadrotors \cite{b13}. The fidelity of the simulation dynamics model is a critical factor, motivating the physics corrections reported in this work.
 
 \section{Vehicle Description}
 
@@ -95,35 +99,41 @@ The testbed is a custom-built EDF VTOL vehicle (Fig.~\ref{fig:drone_schematic}) 
 \caption{Vehicle Physical Parameters}
 \label{tab:vehicle_params}
 \centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
 \begin{tabular}{lrl}
 \toprule
 \textbf{Parameter} & \textbf{Value} & \textbf{Source} \\
 \midrule
-Total mass & \SI{3.1}{\kilogram} & Measured \\
+Body mass & \SI{3.1}{\kilogram} & Measured \\
+Vane mass (each) & \SI{0.001}{\kilogram} & USD asset \\
+Total mass & \SI{3.104}{\kilogram} & USD asset \\
+COM offset (above origin) & \SI{10}{\milli\metre} & Estimate \\
 Body length & \SI{0.35}{\metre} & Measured \\
 Body diameter & \SI{0.12}{\metre} & Measured \\
 $I_{xx}$, $I_{yy}$ & \SI{0.05}{\kilogram\metre\squared} & Isaac Sim MassAPI \\
 $I_{zz}$ & \SI{0.02}{\kilogram\metre\squared} & Isaac Sim MassAPI \\
 Fin count & 4 & --- \\
 Fin area (each) & \SI{0.002}{\metre\squared} & Measured \\
+Vane COP radius & \SI{0.04}{\metre} & Estimate \\
 Max fin deflection & \SI{15}{\degree} (\SI{0.262}{\radian}) & Measured \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The vehicle employs a single FMS 90\,mm 12-blade EDF unit (FMSDF010-1) with a 4068-KV1850 inrunner motor powered by a 6S LiPo battery. Four MG996R hobby servos actuate flat-plate jet vanes positioned in the EDF exhaust stream. The fins are arranged in a cruciform pattern at $90°$ intervals, with hinge axes oriented to provide independent pitch, roll, and yaw authority through differential deflection.
+Two propulsion profiles are modeled. The \emph{legacy 6S} profile is the originally specified FMS 90\,mm 12-blade EDF (FMSDF010-1) with a 4068-KV1850 inrunner and a 6S LiPo. The \emph{planned 8S} profile is the upgrade selected for the next hardware build: a 90\,mm 12-blade EDF with a 4075-KV1500 motor on an 8S pack. It is used for all corrected-plant results. The 8S parts have not yet been purchased, so its parameters are planning estimates, not bench measurements. On 6S, the pack sags under load to a thrust-to-weight ratio of about 1.1, too little to arrest a fall from a cold-rotor start (Section~\ref{sec:convex_results}). Four MG996R hobby servos actuate flat-plate jet vanes positioned in the EDF exhaust stream.
 
 \subsection{Control Architecture}
 
-The vehicle's control surfaces are arranged as follows:
+The four vanes are arranged in a cruciform pattern at $90^\circ$ intervals. Each vane hinges about its own radial span (confirmed by the builder), so a deflection turns its slice of the jet tangentially:
 \begin{itemize}
-    \item \textbf{Forward fin} (+X): hinge axis along +Y, provides pitch control.
-    \item \textbf{Right fin} (+Y): hinge axis along $-$X, provides roll control.
-    \item \textbf{Aft fin} ($-$X): hinge axis along $-$Y, complementary pitch.
-    \item \textbf{Left fin} ($-$Y): hinge axis along +X, complementary roll.
+    \item \textbf{Forward fin} (+X): hinge axis along +X.
+    \item \textbf{Right fin} (+Y): hinge axis along +Y.
+    \item \textbf{Aft fin} ($-$X): hinge axis along $-$X.
+    \item \textbf{Left fin} ($-$Y): hinge axis along $-$Y.
 \end{itemize}
 
-Yaw control is achieved through differential deflection that creates asymmetric tangential forces. Altitude is controlled via the EDF throttle. This architecture provides full 6-DOF control authority (three rotational axes plus altitude) through five actuator commands: four fin angles and one throttle.
+The vane forces act about \SI{0.1}{\metre} below the body origin and \SI{0.04}{\metre} off the thrust axis. A differential deflection of the forward/aft pair therefore produces a roll moment, and one of the right/left pair produces a pitch moment. A common-mode deflection of all four vanes produces a yaw moment, because the four tangential forces add around the axis. The vanes also push the vehicle sideways directly. This side force is strong: identified at about \SI{59}{\metre\per\second\squared} of lateral acceleration per radian of vane effort at full rotor speed. Altitude is controlled via the EDF throttle. This architecture provides three-axis rotational control plus thrust through five actuator commands: four fin angles and one throttle. An earlier version of the simulation modeled the hinges tangentially, which gave roll and pitch authority but no yaw authority. Section~\ref{sec:physics_corrections} lists this and the other corrections.
 
 
 \section{Simulation Environment}
@@ -146,9 +156,9 @@ The simulation uses two coordinate conventions. The Isaac Sim world frame is rig
 
 \subsection{Overview}
 
-The simulation environment is built on NVIDIA Isaac Sim using the Isaac Lab framework (v2.3.2), which provides GPU-accelerated rigid-body physics via PhysX 5. The environment implements a Gymnasium-compatible interface with vectorized step, reset, and observation computation across 128 parallel environments on a single GPU.
+The simulation environment is built on NVIDIA Isaac Sim using the Isaac Lab framework (v2.3.2), which provides GPU-accelerated rigid-body physics via PhysX 5. The environment implements a Gymnasium-compatible interface with vectorized step, reset, and observation computation across parallel environments on a single GPU. Each vane is a separate articulation link on a revolute joint, driven by a joint drive that follows the servo model.
 
-The simulation operates at a physics timestep of $\Delta t_{\text{phys}} = \SI{8.33}{\milli\second}$ ($\SI{120}{\hertz}$) with a decimation factor of 4, yielding an RL decision timestep of $\Delta t_{\text{RL}} = \SI{33.3}{\milli\second}$ ($\SI{30}{\hertz}$). Each RL step executes four physics substeps, during which actuator dynamics, aerodynamic forces, and propulsion effects are updated at the full physics rate.
+Controllers act at $\Delta t_{\text{RL}} = \SI{33.3}{\milli\second}$ (\SI{30}{\hertz}). Physics runs at a higher rate. The original experiments used \SI{120}{\hertz} (decimation 4). Current PPO training uses \SI{480}{\hertz} (decimation 16) with 2{,}048--8{,}192 environments. The single-vehicle missions used to evaluate the classical controllers use \SI{120}{\hertz} with the same corrected force and integration models. Actuator dynamics, propulsion, battery, and aerodynamic forces are updated at every physics substep.
 
 \begin{figure}[htbp]
 \centering
@@ -157,120 +167,268 @@ The simulation operates at a physics timestep of $\Delta t_{\text{phys}} = \SI{8
 \label{fig:isaac_sim_envs}
 \end{figure}
 
-\subsection{Propulsion Model}
+\subsection{Propulsion and Battery Model}
+\label{sec:propulsion}
 
-The EDF propulsion system is modeled with first-order spool dynamics and a quadratic thrust law:
+The EDF is modeled with first-order spool dynamics toward a voltage-scaled speed target, and a quadratic thrust law:
 
 \begin{equation}
-\dot{\omega} = \frac{\omega_{\text{target}} - \omega}{\tau_{\text{motor}}}
+\dot{\omega} = \frac{\omega_{\text{target}} - \omega}{\tau_{\text{motor}}}, \qquad
+\omega_{\text{target}} = \text{clip}\!\left(d\,\frac{V_{\text{bus}}}{V_{\text{ref}}},\,0,\,1\right)\omega_{\max}
 \label{eq:spool}
 \end{equation}
 
 \begin{equation}
-T = k_T \omega^2
+T = k_T \omega^2, \qquad k_T = T_{\max}/\omega_{\max}^2
 \label{eq:thrust}
 \end{equation}
 
-\noindent where $\omega$ is the rotor angular velocity, $\omega_{\text{target}} = u_{\text{throttle}} \cdot \omega_{\max}$ is the commanded speed, $\tau_{\text{motor}} = \SI{0.15}{\second}$ is the motor time constant, and $k_T = T_{\max} / \omega_{\max}^2$ is the thrust coefficient derived from the maximum thrust $T_{\max} = \SI{39.2}{\newton}$ and maximum angular velocity $\omega_{\max} = \SI{4300}{\radian\per\second}$.
+\noindent where $\omega$ is the rotor angular velocity, $d \in [0,1]$ is the commanded duty (throttle), $V_{\text{bus}}$ is the loaded pack voltage, and $V_{\text{ref}}$ is the nominal pack voltage at which $\omega_{\max}$ is defined. In steady state $T = T_{\max}(d\,V_{\text{bus}}/V_{\text{ref}})^2$, so the same duty gives less thrust as the pack sags.
 
-The propulsion model also computes three torque components acting on the vehicle body:
-
-\begin{enumerate}
-    \item \textbf{Static reaction torque}: $\boldsymbol{\tau}_{\text{static}} = -k_Q \omega^2 \hat{\mathbf{e}}_z$, opposing the rotor spin direction.
-    \item \textbf{Dynamic spool torque}: $\boldsymbol{\tau}_{\text{spool}} = -I_{\text{rotor}} \dot{\omega} \hat{\mathbf{e}}_z$, the reaction to rotor acceleration.
-    \item \textbf{Gyroscopic precession}: $\boldsymbol{\tau}_{\text{gyro}} = -\boldsymbol{\omega}_{\text{body}} \times (I_{\text{rotor}} \omega \hat{\mathbf{e}}_z)$, coupling body rotation to rotor angular momentum.
-\end{enumerate}
+The aerodynamic shaft power follows the momentum-theory scaling $P_{\text{aero}} = P_{\max}(\omega/\omega_{\max})^3$. The electrical demand is
+\begin{equation}
+P_{\text{elec}} = \frac{P_{\text{aero}} + \frac{d}{dt}\left(\tfrac{1}{2}I_{\text{rotor}}\omega^2\right)}{\eta_m} + P_{\text{aux}},
+\label{eq:power}
+\end{equation}
+with regenerative braking assumed to be zero. The pack is a Thevenin equivalent circuit: open-circuit voltage $E(\text{SOC})$ from a piecewise-linear LiPo discharge curve, series resistance, and one RC polarization branch. The load current is the high-voltage root of $P = I(E - V_p - IR)$, limited to \SI{120}{\ampere}. State of charge follows coulomb counting, and a lumped thermal state tracks pack temperature. The voltage-dependent load is solved by fixed-point iteration at every substep. When the pack cannot deliver the requested power, the rotor may gain only the kinetic energy that the delivered shaft power provides:
+\begin{equation}
+\omega_{k+1} \le \sqrt{\omega_k^2 + \frac{2\,\Delta t\,(P_{\text{shaft}} - P_{\text{aero}})}{I_{\text{rotor}}}}.
+\label{eq:energy_cap}
+\end{equation}
+This bound is what makes cold-rotor starts from low altitude unrecoverable on this vehicle. Near full throttle the motor can add rotor energy at only about \SI{3}{\kilo\watt}, so thrust builds more slowly than a first-order model alone would predict.
 
 \begin{table}[htbp]
-\caption{EDF Propulsion Parameters}
+\caption{EDF and Battery Parameters (Planned 8S / Legacy 6S)}
 \label{tab:edf_params}
 \centering
+\footnotesize
+\setlength{\tabcolsep}{2.5pt}
 \begin{tabular}{lrl}
 \toprule
 \textbf{Parameter} & \textbf{Value} & \textbf{Source} \\
 \midrule
-Max thrust $T_{\max}$ & \SI{39.2}{\newton} & Datasheet \\
+Max thrust $T_{\max}$ & 48.0 / \SI{39.2}{\newton} & Est. / datasheet \\
+Max rotor speed $\omega_{\max}$ & 4650 / \SI{4300}{\radian\per\second} & KV $\times$ $V_{\text{ref}}$ \\
+Reference voltage $V_{\text{ref}}$ & 29.6 / \SI{22.2}{\volt} & Nominal pack \\
+Exhaust speed (nominal) & 128 / \SI{116}{\metre\per\second} & $\sqrt{2T/(\rho A)}$ \\
+Shaft power at $\omega_{\max}$ & 3072 / \SI{2300}{\watt} & $T v_{\text{jet}}/2$ \\
 Motor time constant $\tau_{\text{motor}}$ & \SI{0.15}{\second} & Estimate \\
-Max angular velocity $\omega_{\max}$ & \SI{4300}{\radian\per\second} & Derived \\
-Rotor inertia $I_{\text{rotor}}$ & \SI{0.0002}{\kilogram\metre\squared} & Estimate \\
-Exhaust speed (nominal) & \SI{116}{\metre\per\second} & Estimate \\
-Gyro torque scale & 0.1 & Calibrated \\
+Rotor inertia $I_{\text{rotor}}$ & \SI{2e-4}{\kilogram\metre\squared} & Estimate \\
+Residual stator swirl fraction & 0.1 & Estimate \\
+Motor efficiency $\eta_m$ & 0.88 & Estimate \\
+Pack capacity & \SI{5.0}{\ampere\hour} & Planned \\
+Cell resistance & \SI{3}{\milli\ohm} & Estimate \\
+Polarization $R_p$, $\tau_p$ & \SI{6}{\milli\ohm}, \SI{15}{\second} & Estimate \\
+Current limit & \SI{120}{\ampere} & ESC continuous \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Fin Aerodynamic Model}
+On the 8S profile the vehicle hovers at a rotor fraction of about 0.84, drawing about \SI{2.1}{\kilo\watt}. This corresponds to a duty of 0.84 at the reference voltage, or about 0.77 on a full pack. The static thrust-to-weight ratio is 1.58, which falls as the pack sags and after vane losses are included.
 
-The jet-vane aerodynamic forces are computed using a semi-empirical model. Each fin experiences a dynamic pressure proportional to the square of the exhaust velocity, which itself scales with throttle:
+\subsection{Rotor Angular Momentum}
+\label{sec:rotor_momentum}
 
+The rotor's angular momentum $\mathbf{H} = I_{\text{rotor}}\,\omega\,\hat{\mathbf{e}}_z$ is not part of the PhysX articulation, so its reactions are applied to the body explicitly at full physical strength:
+\begin{enumerate}
+    \item \textbf{Spool reaction}: $\boldsymbol{\tau}_{\text{spool}} = -I_{\text{rotor}} \dot{\omega}\, \hat{\mathbf{e}}_z$, the reaction to rotor acceleration.
+    \item \textbf{Gyroscopic precession}: $\boldsymbol{\tau}_{\text{gyro}} = -\boldsymbol{\omega}_{\text{body}} \times \mathbf{H}$, coupling body rotation to rotor angular momentum.
+    \item \textbf{Residual stator torque}: $Q = f_{\text{res}}\,P_{\text{aero}}/\omega$, the steady shaft torque that the stator does not recover. The same $Q$ leaves the nozzle as jet swirl, which the vanes see (Section~\ref{sec:vanes}).
+\end{enumerate}
+
+The spool reaction dominates yaw. With $I_{\text{rotor}}\omega_{\max}/I_{zz} = 2\times10^{-4}\cdot 4650/0.02 \approx \SI{46.5}{\radian\per\second}$, every unit change in rotor fraction spins the body by about \SI{46.5}{\radian\per\second} about the thrust axis unless the vanes remove that momentum. A common-mode vane deflection provides only about $\pm\SI{0.30}{\newton\metre}$ of yaw torque at hover. By contrast, a unit throttle step produces a transient spool torque of up to about \SI{6.2}{\newton\metre}. A throttle rate of \SI{0.25}{\per\second} uses 83\% of the vanes' yaw authority. This single number shapes both the PPO action contract and the convex planner's thrust-rate constraint. At hover, $\|\mathbf{H}\| \approx \SI{0.78}{\newton\metre\second}$, which places a gyroscopic cross-coupling of about \SI{16}{\radian\per\second} between roll and pitch.
+
+\textbf{Integration.} Applying $-\boldsymbol{\omega}\times\mathbf{H}$ at the old angular velocity is an explicit Euler step that adds rotational energy. In an unforced test at \SI{240}{\hertz}, it increased the body's rotational energy 10.2-fold in two seconds. PhysX's own explicit treatment of the rigid-body Euler term amplified the transverse rate-squared 114-fold at a yaw rate of \SI{40}{\radian\per\second}, even with the rotor stopped. We therefore solve the body Euler equation and the rotor term together with an implicit midpoint step,
 \begin{equation}
-q = \frac{1}{2} \rho \, v_{\text{exhaust}}^2 \cdot u_{\text{throttle}}^2 \cdot k_{\text{duct}}
-\label{eq:dynamic_pressure}
+\mathbf{I}\,(\boldsymbol{\omega}_{m} - \boldsymbol{\omega}_{k}) = \tfrac{\Delta t}{2}\left(\boldsymbol{\tau}_{\text{ext}} - \boldsymbol{\omega}_{m} \times (\mathbf{I}\boldsymbol{\omega}_{m} + \mathbf{H})\right),
+\label{eq:cayley}
 \end{equation}
+with $\boldsymbol{\omega}_{k+1} = 2\boldsymbol{\omega}_m - \boldsymbol{\omega}_k$. In free flight this velocity step is paired with a Cayley orientation update $\mathbf{R}_{k+1} = \mathbf{R}_k\,\mathrm{Cay}(\Delta t\,\boldsymbol{\omega}_m)$. The implementation also inverts PhysX's subsequent angular-momentum projection. The scheme introduces no damping and does not reduce the gyroscopic strength. In unforced two-second tests with roll and pitch rates of \SI{6.28}{\radian\per\second} and yaw rates up to $\pm\SI{40}{\radian\per\second}$, the rotational-energy drift was at most 0.13\% at \SI{480}{\hertz} and 0.12\% at \SI{960}{\hertz}. The world angular-momentum error was below \SI{1.2e-3}{\newton\metre\second}.
 
-\noindent where $\rho = \SI{1.225}{\kilogram\per\metre\cubed}$ is air density, $v_{\text{exhaust}} = \SI{116}{\metre\per\second}$ is the nominal exhaust speed, $u_{\text{throttle}} \in [0, 1]$ is the normalized throttle, and $k_{\text{duct}} = 1.3$ is a duct confinement correction factor.
+\subsection{Jet-Vane Model}
+\label{sec:vanes}
 
-The normal (lift) and tangential (drag) force coefficients are:
+The original model applied an independent lift force $F_n = q S C_{N}(\alpha)$ to each vane, with dynamic pressure scaled by throttle. At \SI{128}{\metre\per\second}, \SI{0.002}{\metre\squared} and \SI{15}{\degree}, this could exceed \SI{15}{\newton} of side force per vane. Yet a quarter of a \SI{48}{\newton} jet carries only \SI{12}{\newton} of axial momentum. The corrected model is a reduced-order control-volume model, following the momentum and angular-momentum bookkeeping of Drela's QPROP formulation \cite{b26}. It is not a blade-element fan model or CFD.
 
+Four equal streamtubes share the mass flow $\dot{m} = T/U$, where $U$ is the jet axial speed. $U$ is reduced slightly so that axial and swirl kinetic power together equal the nominal wake power. The flow entering vane $i$ is
 \begin{equation}
-C_N(\alpha) = C_{N_\alpha} \cdot \alpha \cdot (1 - k_{\text{sat}} \alpha^2)
-\label{eq:cn}
+\mathbf{v}_{\text{in},i} = U\hat{\mathbf{e}}_z + \Omega_s\hat{\mathbf{e}}_z\times\mathbf{r}_i + \boldsymbol{\omega}_{\text{body}}\times\mathbf{r}_{\text{exit}} - \dot{\mathbf{r}}_i,
+\label{eq:vane_inflow}
 \end{equation}
-
+where $\Omega_s = Q/(\dot{m}\langle r^2\rangle)$ is the residual swirl rate, $\mathbf{r}_i$ is the vane's measured, moving center of pressure (COP), $\mathbf{r}_{\text{exit}}$ is the nozzle exit, and $\dot{\mathbf{r}}_i$ is the COP velocity relative to the translating body. A vane removes a bounded fraction of the flow normal to its actual plane $\hat{\mathbf{n}}_i$:
 \begin{equation}
-C_D(\alpha) = C_{D_0} + C_{D_{\alpha^2}} \alpha^2
-\label{eq:cd}
+\lambda_i = \frac{q\,S\,k_{\text{duct}}\,C_{N_\alpha}}{\dot{m}_i U}, \quad
+\mathbf{v}' = \mathbf{v}_{\text{in}} - \left(1 - e^{-\lambda_i}\right)(\mathbf{v}_{\text{in}}\cdot\hat{\mathbf{n}}_i)\,\hat{\mathbf{n}}_i ,
+\label{eq:vane_turning}
 \end{equation}
-
-\noindent where $\alpha$ is the fin deflection angle, $C_{N_\alpha} = 3.5\,\text{rad}^{-1}$ is the lift-curve slope (derived from thin-airfoil theory with empirical correction), $k_{\text{sat}} = 2.0$ accounts for stall saturation, $C_{D_0} = 0.05$ is the zero-deflection drag, and $C_{D_{\alpha^2}} = 1.5$ captures the deflection-dependent drag increase.
-
-The resulting forces per fin are:
+with $q = \tfrac{1}{2}\rho U^2$ and $\dot{m}_i = \dot{m}/4$. Profile drag similarly removes a fraction $1 - e^{-\lambda_D}$, with $\lambda_D$ built on $C_{D_0}$, of the streamwise component along the vane chord, giving $\mathbf{v}_{\text{out},i}$. The force on the vane is the momentum change of its streamtube,
 \begin{equation}
-F_n = q \cdot S_{\text{fin}} \cdot C_N(\alpha), \quad F_t = q \cdot S_{\text{fin}} \cdot C_D(\alpha)
-\label{eq:fin_forces}
+\mathbf{F}_i = \dot{m}_i\,(\mathbf{v}_{\text{in},i} - \mathbf{v}_{\text{out},i}),
+\label{eq:vane_force}
 \end{equation}
+applied once, at the vane's actual COP. At small loading, (\ref{eq:vane_turning}) recovers the thin-airfoil slope $F_n \approx q S k_{\text{duct}} C_{N_\alpha}\alpha$ of the original model. At high loading the flow approaches alignment with the vane, instead of reversing more transverse momentum than its streamtube carries. Induced losses follow from the momentum turning and are not added a second time. Because the inflow includes swirl, body rotation and vane motion, the model is passive and provides flow damping through physical relative velocity rather than through a tuned damping torque. At zero deflection the vanes cancel the residual swirl torque: the net yaw torque is \SI{0.000}{\newton\metre} from 0.5 to 1.0 throttle. The coefficients $C_{N_\alpha} = 3.5\,\text{rad}^{-1}$, $C_{D_0} = 0.05$ and $k_{\text{duct}} = 1.3$ are retained from the original semi-empirical model as estimates.
 
-\noindent where $S_{\text{fin}} = \SI{0.002}{\metre\squared}$. The normal force $F_n$ acts perpendicular to the exhaust flow (providing lateral control force), while the tangential force $F_t$ opposes the flow (contributing to thrust loss). The total thrust loss from all four fins is subtracted from the EDF thrust before application.
-
-A critical feature of this model is the quadratic coupling between throttle and fin effectiveness: at 50\% throttle, fin forces are only 25\% of their maximum value. This coupling is a defining characteristic of jet-vane TVC and distinguishes it from conventional multirotor control.
+The quadratic coupling between throttle and fin effectiveness is preserved. At half rotor speed, the jet speed halves and the vane forces fall to about a quarter.
 
 \subsection{Force Application}
 
-The simulation supports two force dispatch modes. In the default \emph{per-link force} mode, each fin force is rotated to world coordinates and applied at its world-frame center-of-pressure location using Isaac Lab's wrench composer, while EDF thrust and wind drag are applied as body-link forces. This allows the articulation physics engine to generate the resulting vehicle torques from geometry rather than from manually synthesized body moments. An optional \emph{collapsed body wrench} mode forms a net body force and geometric torque $\boldsymbol{\tau}^{F}_{\text{fin}} = \sum_{i=1}^{4}\mathbf{r}_i^{F}\times \mathbf{F}_{i}^{F}$ before applying a single body wrench, which is useful for debugging and validation.
+Each vane force is applied at its measured, moving COP, and the EDF thrust is applied at the authored body origin, so a center-of-mass offset produces a thrust-line moment. We found two defects in the position-aware wrench kernel of the installed Isaac Lab checkout. It crossed a world-frame lever arm with a force that had already been rotated into link coordinates. It also discarded a supplied torque whenever an application point was given. The environment therefore computes every moment about each body's actual center of mass itself and supplies force and torque without an application point. No vendor files were modified. The corrected application passes two Isaac regressions. First, \SI{48}{\newton} of thrust with a $\pm\SI{10}{\milli\metre}$ center-of-mass offset produces the expected $\pm\SI{0.040}{\radian\per\second}$ pitch impulse; $\pm\SI{0.0399}{\radian\per\second}$ was observed. Second, identical fin commands at four world headings produce the same body rates to within \SI{1e-7}{\radian\per\second}.
 
 \subsection{Servo Actuator Model}
 
-The MG996R servo dynamics are modeled as a first-order lag with rate limiting and deadband:
+The MG996R servo is modeled as a first-order lag with rate limiting and a deadband on the tracking error:
 
 \begin{equation}
-\dot{\alpha}_{\text{fin}} = \text{clip}\!\left(\frac{\alpha_{\text{cmd}} - \alpha_{\text{fin}}}{\tau_{\text{servo}}},\; -\dot{\alpha}_{\max},\; \dot{\alpha}_{\max}\right)
+\dot{\alpha}_{\text{fin}} = \text{clip}\!\left(\frac{e}{\tau_{\text{servo}}},\; -\dot{\alpha}_{\max},\; \dot{\alpha}_{\max}\right), \quad
+e = \begin{cases} \Delta & |\Delta| \ge b \\ 0 & \text{otherwise} \end{cases}
 \label{eq:servo}
 \end{equation}
 
-\noindent where $\tau_{\text{servo}} = \SI{0.05}{\second}$, $\dot{\alpha}_{\max} = \SI{7.54}{\radian\per\second}$ (derived from the datasheet $60°$ transit time of \SI{0.14}{\second}), and a deadband of \SI{0.017}{\radian} ($\approx 1°$) suppresses response to commands smaller than the mechanical resolution. The servo state is clamped to $\pm\SI{0.262}{\radian}$ ($\pm 15°$).
+\noindent where $\Delta = \alpha_{\text{cmd}} - \alpha_{\text{fin}}$ and $\tau_{\text{servo}} = \SI{0.05}{\second}$. The rate limit is $\dot{\alpha}_{\max} = \SI{6.98}{\radian\per\second}$, from the manufacturer's \SI{0.15}{\second} per $60^\circ$ at \SI{6}{\volt}; the original model assumed \SI{0.14}{\second}. The deadband is $b = \SI{0.017}{\radian}$ ($\approx 1^\circ$), and the servo state is clamped to $\pm\SI{0.262}{\radian}$. The servo target drives a PhysX joint drive whose torque is capped at the \SI{1.08}{\newton\metre} stall torque. Under aerodynamic load the identified response is slower, with $\tau \approx \SI{0.08}{\second}$ and a slew of about \SI{2.5}{\radian\per\second}.
 
-\subsection{Contact Detection and State Machine}
+The deadband on the error makes the servo stop $b$ short of every command, so it behaves as backlash. Section~\ref{sec:convex_control} shows that this backlash sustains a real attitude limit cycle.
 
-Landing and crash detection use a four-state contact state machine:
+\subsection{Body Drag}
 
-\begin{enumerate}
-    \item \textbf{AIRBORNE}: No ground contact detected.
-    \item \textbf{GROUND\_CONTACT\_CANDIDATE}: Contact detected; dwell counter incrementing.
-    \item \textbf{LANDED}: Dwell counter exceeds threshold (15 consecutive frames at \SI{120}{\hertz} $= \SI{0.125}{\second}$).
-    \item \textbf{CRASHED}: Crash criteria met (excessive tilt, angular rate, or impact speed).
-\end{enumerate}
-
-Contact is detected via a kinematic proxy: height $< \SI{0.40}{\metre}$ and downward velocity $< \SI{0.50}{\metre\per\second}$. The dwell requirement prevents transient bounces from registering as landings.
-
-\subsection{Wind and Drag Model}
-
-Aerodynamic body drag is modeled as:
+Translational drag is
 \begin{equation}
 \mathbf{F}_{\text{drag}} = -\frac{1}{2} \rho \, C_d \, A_{\text{ref}} \, |\mathbf{v}_{\text{rel}}|^2 \, \hat{\mathbf{v}}_{\text{rel}}
 \label{eq:drag}
 \end{equation}
+with $C_d = 1.0$ (bluff-body estimate) and $A_{\text{ref}} = \SI{0.011}{\metre\squared}$. Drag is retained in calm air, and $\mathbf{v}_{\text{rel}}$ is the velocity relative to the wind field. The original simulation also applied a linear angular damper of \SI{0.27}{\newton\metre\second\per\radian} that had been tuned in simulation, with no physical source. It is replaced by the still-air cross-flow drag of a slender cylinder,
+\begin{equation}
+\boldsymbol{\tau}_{xy} = -\frac{\rho\,C_d\,D\,L^4}{64}\,\|\boldsymbol{\omega}_{xy}\|\,\boldsymbol{\omega}_{xy},
+\label{eq:rot_drag}
+\end{equation}
+which is small. Axial skin friction is omitted pending measurement.
 
-\noindent where $C_d = 1.0$ (bluff body estimate), $A_{\text{ref}} = \SI{0.02}{\metre\squared}$, and $\mathbf{v}_{\text{rel}}$ is the body velocity relative to the wind field. The wind model supports steady-state wind vectors and stochastic gust events with configurable magnitude, duration, and interval, though the results presented here use nominal (zero-wind) conditions.
+\subsection{Contact Detection and State Machine}
+
+Landing and crash detection use PhysX contact reports. The landing legs are collision shapes on the body link. A landing contact is a normal force of at least \SI{1}{\newton} on the body, and any contact on a vane link is unsafe. A four-state machine---AIRBORNE, GROUND\_CONTACT\_CANDIDATE, LANDED, CRASHED---requires \SI{0.125}{\second} of continuous contact before LANDED, with the dwell counted in physics frames. A crash on the final dwell frame takes precedence over a new LANDED transition. The recorded impact speed is the maximum downward speed at any first contact, preserved across bounces, so a later gentle re-contact cannot hide a hard first impact. A soft landing requires an impact speed of at most \SI{0.25}{\metre\per\second} and a pad error of at most \SI{0.5}{\metre}; mission evaluation also requires the vehicle to stay settled after motor shutdown. The original simulation used a kinematic proxy instead (height below \SI{0.40}{\metre} and downward speed below \SI{0.50}{\metre\per\second}).
+
+\subsection{Disturbances}
+
+Disturbances can be enabled individually or combined, and a combination retains each source's standalone strength. They are steady wind with stochastic gusts, which act through the relative airspeed in (\ref{eq:drag}); sensor noise on the observation; and a center-of-mass shift of up to $\pm\SI{1}{\centi\metre}$ per axis.
+
+\subsection{Physics Corrections and Verification}
+\label{sec:physics_corrections}
+
+Table~\ref{tab:physics_corrections} summarizes the corrections made since the original experiments. Each is covered by a unit, pure-tensor or Isaac regression test; all 294 unit tests pass. These tests establish that the implementation is consistent with its stated parameters. They do not establish that those parameters match hardware.
+
+\begin{table}[htbp]
+\caption{Physics Corrections Since the Original Experiments}
+\label{tab:physics_corrections}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{>{\raggedright\arraybackslash}p{0.36\columnwidth}>{\raggedright\arraybackslash}p{0.54\columnwidth}}
+\toprule
+\textbf{Original model} & \textbf{Correction} \\
+\midrule
+Tangential hinge axes; no yaw authority & Radial hinges; rank-3 roll/pitch/yaw authority \\
+Vane side force followed the deflected jet & Force is the reaction to the jet's momentum change \\
+Independent $qSC_N$ force per vane & Finite shared mass flow, (\ref{eq:vane_turning})--(\ref{eq:vane_force}) \\
+Spool and gyro torques scaled by 0 and 0.1 & Full scale, with residual stator swirl \\
+Explicit gyro integration (energy gain) & Coupled implicit midpoint and Cayley update (\ref{eq:cayley}) \\
+Tuned \SI{0.27}{\newton\metre\second\per\radian} angular damper & Cross-flow drag (\ref{eq:rot_drag}) and vane flow damping \\
+Fixed COPs & COPs follow the measured vane-link poses \\
+Isaac Lab position-aware wrench & Moments about the true COM, computed explicitly \\
+No battery; fixed thrust per throttle & LiPo circuit, voltage-scaled spool, energy cap \\
+Kinematic contact proxy; bounces reset impact speed & PhysX contact; first-impact speed preserved \\
+Hover throttle assumed 0.88 (6S) & Derived from all link masses and net thrust: 0.934 (6S), 0.84 (8S), at the reference voltage \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+\section{Convex Optimization Guidance}
+\label{sec:convex}
+
+The convex controller is an explicit classical controller, in the same class as the PID baseline. It is independent of PPO and is not used in any PPO training. It has two layers. A planner solves a conic program for a thrust trajectory from the measured state, through the mission's waypoints, to a gate above the pad, and re-solves it in closed loop. A flight controller tracks the plan and converts thrust commands into attitude, vane and throttle commands.
+
+\subsection{Planning Problem}
+
+The vehicle is planned as a constant-mass point with thrust acceleration $\mathbf{u} = \mathbf{T}/m$ and gravity $\mathbf{g}$:
+\begin{equation}
+\ddot{\mathbf{r}} = \mathbf{u} + \mathbf{g}.
+\end{equation}
+Because the battery vehicle does not lose mass, the logarithmic mass change of variables used for rockets in \cite{b21} is unnecessary. Time is discretized at nodes $k = 0,\dots,N$. A\c{c}{\i}kme\c{s}e and Ploen's Problem~4 holds the thrust constant between nodes (zero-order hold). That steps the thrust direction at every node, which the rate-limited rotor and attitude loop cannot follow. We instead use a first-order hold, with $\mathbf{u}$ linear between nodes, and integrate the dynamics exactly:
+\begin{align}
+\mathbf{r}_{k+1} &= \mathbf{r}_k + \Delta t\,\mathbf{v}_k + \Delta t^2\left(\tfrac{1}{3}\mathbf{u}_k + \tfrac{1}{6}\mathbf{u}_{k+1} + \tfrac{1}{2}\mathbf{g}\right), \label{eq:foh_r}\\
+\mathbf{v}_{k+1} &= \mathbf{v}_k + \Delta t\left(\tfrac{1}{2}(\mathbf{u}_k + \mathbf{u}_{k+1}) + \mathbf{g}\right). \label{eq:foh_v}
+\end{align}
+
+\textbf{Lossless convexification.} The thrust magnitude must satisfy $\rho_1 \le \|\mathbf{T}\| \le \rho_2$. The lower bound is positive because the vanes need jet flow for authority, so the feasible set is a non-convex annulus. Following \cite{b21}, it is relaxed with a slack $\sigma_k$:
+\begin{equation}
+\|\mathbf{u}_k\| \le \sigma_k, \qquad \rho_1/m \le \sigma_k \le \rho_2/m .
+\label{eq:lcvx}
+\end{equation}
+By Lemma~1 of \cite{b21}, $\|\mathbf{u}_k\| = \sigma_k$ at the optimum of a cost that increases with $\sigma$. Every plan reports the gap $\max_k(\sigma_k - \|\mathbf{u}_k\|)/\sigma_k$ as a numerical check. The upper bound keeps half of the thrust margin in reserve for the tracking loop, $\rho_2 = W + 0.5\,(T_{\text{avail}} - W)$, where $T_{\text{avail}}$ is evaluated at the measured bus voltage. The lower bound is at least 60\% of weight $W$ for vane authority. It is raised further so that the planned downward acceleration never exceeds the planned braking acceleration: $W - \rho_1 \le \rho_2 - W$.
+
+\textbf{Constraints.} In addition to (\ref{eq:foh_r})--(\ref{eq:lcvx}), and to the initial state and the rotor's present thrust vector $\mathbf{u}_0$:
+\begin{align}
+&\hat{\mathbf{e}}_z^T\mathbf{u}_k \ge \sigma_k\cos\theta_p, && \theta_p = 15^\circ \label{eq:pointing}\\
+&\|\mathbf{u}_{k+1} - \mathbf{u}_k\| \le \dot{u}_{\max}\,\Delta t_k \label{eq:rate}\\
+&\|\mathbf{v}_k\| \le V_{\max}, && V_{\max} = \SI{4}{\metre\per\second} \label{eq:speed}\\
+&\|(\mathbf{r}_k - \mathbf{r}_{\text{td}})_{xy}\| \le \tan\gamma_k\,(r_{k,z} - z_{\text{td}}), && \gamma = 45^\circ \label{eq:glide}\\
+&\mathbf{r}_N = \mathbf{r}_{\text{gate}},\;\; \mathbf{v}_N = \mathbf{v}_{\text{gate}},\;\; \mathbf{u}_N = -\mathbf{g}. \label{eq:terminal}
+\end{align}
+Constraints (\ref{eq:pointing}), (\ref{eq:speed}) and (\ref{eq:glide}) are the pointing, speed and glide-slope constraints of \cite{b21}. The gate thrust in (\ref{eq:terminal}) is vertical and equal to weight, so the hand-over to terminal descent has no thrust step. The other constraints are specific to this vehicle:
+\begin{itemize}
+    \item \textbf{Thrust-vector rate} (\ref{eq:rate}). A rotor speed change yaws the body (Section~\ref{sec:rotor_momentum}). The bound is the same \SI{0.25}{\per\second} duty rate used by the PPO action contract, converted to thrust at the lowest planned throttle. It bounds the \emph{vector} rather than the slack; with a slack-rate bound, the lossless gap reached 3.4\% and the executed thrust stepped faster than the rotor could follow. With the first-order hold, the bound limits the continuous thrust and also caps the thrust-direction slew that the attitude loop must follow.
+    \item \textbf{Glide cone taper.} A start outside the \SI{45}{\degree} cone gets a widened cone, which narrows back to \SI{45}{\degree} three seconds before the gate. The landing-leg nodes must also stay at or above the gate altitude.
+    \item \textbf{Speed braking.} A start faster than $V_{\max}$ keeps its speed and then brakes back under the bound, instead of being declared infeasible.
+    \item \textbf{Waypoints.} A fly-through node must lie within half the capture radius. A hover node is at rest on the point, with thrust equal to weight, for the remaining hold time.
+\end{itemize}
+
+\textbf{Objective.} The planner minimizes electrical energy. The simulator's power law $P = P_{\text{ref}}(T/T_{\text{ref}})^{3/2} + P_{\text{aux}}$ is convex in $T$. It enters the problem through a power-cone constraint $c_k \ge \sigma_k^{3/2}$ at each node, integrated with the trapezoid rule:
+\begin{equation}
+\min \;\sum_{k=0}^{N} w_k\,c_k \quad \text{s.t.} \quad (c_k, 1, \sigma_k) \in \mathcal{K}_{\text{pow}}^{2/3}.
+\label{eq:energy_obj}
+\end{equation}
+The alternative objective, the integral of $\sigma$, is the propulsive-$\Delta v$ analog of the paper's fuel cost; with it, the problem is a pure SOCP.
+
+\textbf{Free final time and infeasible starts.} The landing-leg duration is chosen by a golden-section line search, following Algorithm~1 of \cite{b21}. Re-plans search around the previous plan's remaining time. When no duration is feasible (for example, too fast and too low to stop), a soft-terminal problem minimizes the miss distance and heavily penalizes ground penetration, in the spirit of \cite{b23}. It keeps every actuator constraint, so it degrades to maximum braking.
+
+The conic program is solved with Clarabel 0.11.1 \cite{b24}. A single solve takes about \SI{3}{\milli\second}. A complete plan, comprising 10--30 solves of the line search, takes \SIrange{30}{110}{\milli\second} on the host CPU without warm starting.
+
+\subsection{Flight Controller}
+\label{sec:convex_control}
+
+The flight controller reads only the observation (including any sensor noise), the mission sequencer's remaining route, and the measured bus voltage. It runs through four phases:
+\begin{enumerate}
+    \item \textbf{Spool-up} (cold rotor): attitude hold while duty ramps at \SI{4}{\per\second}. This trades a yaw transient for altitude lost while falling.
+    \item \textbf{Powered descent / route}: track the plan, re-solved every \SI{0.5}{\second}. While the tracking error is below \SI{0.75}{\metre} and \SI{0.75}{\metre\per\second}, a new plan starts from the current plan's reference state; otherwise it starts from the measured state. Re-planning stops in the last \SI{0.8}{\second} before the gate.
+    \item \textbf{Terminal descent}: from a gate \SI{0.5}{\metre} above touchdown height, a velocity-commanded vertical descent at \SI{0.15}{\metre\per\second}, clamped at \SI{0.18}{\metre\per\second}. The descent pauses while the vehicle is off center, except below a \SI{0.15}{\metre} commit height.
+    \item \textbf{Touchdown}: once a contact candidate appears, the attitude is held level and the rotor is unloaded to 50\% of weight so that the contact dwell can complete.
+\end{enumerate}
+
+The inner loops are as follows. \textbf{Tracking} commands $\mathbf{a}_{\text{cmd}} = \mathbf{u}_{\text{plan}}(t + \SI{0.15}{\second}) + \text{PID}(\mathbf{r}_{\text{ref}} - \mathbf{r}, \mathbf{v}_{\text{ref}} - \mathbf{v})$. The plan's thrust is fed forward one spool lag ahead. The feedback is bounded to \SI{3}{\metre\per\second\squared} per axis group, and conditional integration limits each integrator's authority to \SI{1.5}{\metre\per\second\squared}. \textbf{Attitude} control uses the geometric error on $SO(3)$ \cite{b25}. It keeps the PID baseline's fin-effort structure, mixer and fixed rotor gyroscopic cross-feed, and gives roll and pitch priority over yaw. Yaw is rate-damped only, because heading does not matter for this axisymmetric vehicle. \textbf{Throttle} inverts $T = T_{\max}(d\,V_{\text{bus}}/V_{\text{ref}})^2$ at the measured bus voltage.
+
+\textbf{Plant identification and the deadband limit cycle.} The gains were set from models identified on recorded Isaac missions ($R^2 \ge 0.99$; Table~\ref{tab:sysid}). The first version of the controller showed a 1.0--\SI{1.1}{\hertz} retrograde coning in every recorded mission, with \SI{3}{\degree} of tilt and roll/pitch rates of \SI{15}{\degree\per\second} RMS. Through the vane side force, the coning drove $\pm\SI{0.5}{\metre\per\second}$ of lateral velocity. Its cause is the servo deadband acting as backlash. With the rotor's angular momentum, the attitude loop's retrograde precession mode sits at about \SI{176}{\degree} of loop phase, so the loop is only conditionally stable, and the gain and phase removed by backlash sustain a limit cycle. An offline replica reproduced the cycle (\SI{14.1}{\degree\per\second}, \SI{3.0}{\degree}, \SI{1.0}{\hertz}), and no gain set removed it. A deadband inverse, driven by the measured vane angle,
+\begin{equation}
+\alpha_{\text{cmd}} = \alpha_d + b\,\text{sat}\!\left(\frac{\alpha_d - \alpha_{\text{meas}}}{0.25\,b}\right),
+\label{eq:deadband_inverse}
+\end{equation}
+reduced the coning to \SI{1.2}{\degree\per\second} in the replica. In Isaac it reduced whole-flight roll/pitch RMS from \SI{14.1}{\degree\per\second} to \SI{1.7}{\degree\per\second} on the default mission. Over-compensation (a true deadband of zero) only dithers, at \SI{1.7}{\degree\per\second}. Under-compensation leaves proportionally more coning, so the real deadband must be measured on the bench.
+
+\begin{table}[htbp]
+\caption{Identified Plant Models Used to Set the Convex Controller Gains}
+\label{tab:sysid}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{>{\raggedright\arraybackslash}p{0.16\columnwidth}>{\raggedright\arraybackslash}p{0.42\columnwidth}>{\raggedright\arraybackslash}p{0.32\columnwidth}}
+\toprule
+\textbf{Channel} & \textbf{Model} & \textbf{Consequence} \\
+\midrule
+Yaw & $I_{zz}\dot r = -0.265\,r + 15.0\,f^2\delta_{cm}$ & Yaw damper gain 0.03 (gain margin $\approx 2.4$) \\
+Roll/pitch & $I\dot p = 20.7 f^2 e_{\text{roll}} - 0.33p - 1.05 H q$ & Gyro coupling $\approx$ \SI{16}{\radian\per\second}; fixed cross-feed 0.03 \\
+Lateral & \SI{59}{\metre\per\second\squared} per rad of vane effort & Lateral gains 0.5/0.8/0.15 \\
+Vanes & $\tau \approx \SI{0.08}{\second}$, slew $\approx$ \SI{2.5}{\radian\per\second}, \SI{1}{\degree} backlash & $k_{d,\text{att}} = 0.08$; deadband inverse (\ref{eq:deadband_inverse}) \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 
 \section{Learning Algorithm}
@@ -286,7 +444,7 @@ L^{\text{CLIP}}(\theta) = \hat{\mathbb{E}}_t \left[ \min\!\left( r_t(\theta) \ha
 
 \noindent where $r_t(\theta) = \pi_\theta(a_t | s_t) / \pi_{\theta_{\text{old}}}(a_t | s_t)$ is the probability ratio, $\hat{A}_t$ is the Generalized Advantage Estimate (GAE) \cite{b15}, and $\epsilon = 0.2$ is the clipping coefficient. An adaptive KL-divergence early stopping criterion ($\text{KL}_{\text{target}} = 0.03$) provides an additional safeguard against policy collapse.
 
-Advantages are computed using GAE with $\lambda = 0.95$ and discount factor $\gamma = 0.99$:
+Advantages are computed using GAE with $\lambda = 0.95$ and discount factor $\gamma$:
 
 \begin{equation}
 \hat{A}_t = \sum_{l=0}^{T-t} (\gamma \lambda)^l \delta_{t+l}, \quad \delta_t = r_t + \gamma V(s_{t+1}) - V(s_t)
@@ -300,14 +458,14 @@ L(\theta) = L^{\text{CLIP}}(\theta) - c_1 L^{\text{VF}}(\theta) + c_2 H[\pi_\the
 \label{eq:total_loss}
 \end{equation}
 
-\noindent where $L^{\text{VF}}$ is the value function mean-squared error loss ($c_1 = 0.5$), and $H[\pi_\theta]$ is the policy entropy bonus ($c_2 = 0.005$) that encourages exploration.
+\noindent where $L^{\text{VF}}$ is the value function mean-squared error loss ($c_1 = 0.5$), and $H[\pi_\theta]$ is the policy entropy bonus that encourages exploration. Actions are $\tanh$-squashed Gaussians. The corrected implementation computes the entropy and likelihood of the transformed distribution with its Jacobian, stores the pre-squash samples so that saturated actions keep exact likelihoods, clips the actor and critic gradients separately, and does not clip the value loss by default.
 
 \subsection{Observation Space}
 
-The agent receives a 24-dimensional observation vector at each decision step:
+In the original landing experiments, the agent receives a 24-dimensional observation vector at each decision step:
 
 \begin{table}[htbp]
-\caption{Observation Space}
+\caption{Observation Space (Original Landing Task)}
 \label{tab:obs_space}
 \centering
 \begin{tabular}{clc}
@@ -327,7 +485,7 @@ The agent receives a 24-dimensional observation vector at each decision step:
 \end{tabular}
 \end{table}
 
-Position error is computed as the vector from the current position to the task target (hover setpoint or landing pad center). The quaternion representation avoids gimbal lock singularities inherent in Euler angles. Fin angles and rates provide proprioceptive feedback on actuator state, which is critical given the first-order servo lag. The normalized motor RPM informs the policy of available fin authority, since fin effectiveness scales quadratically with rotor speed.
+Position error is computed as the vector from the current position to the task target (hover setpoint or landing pad center). The quaternion representation avoids gimbal lock singularities inherent in Euler angles. Fin angles and rates provide proprioceptive feedback on actuator state, which is critical given the first-order servo lag. The normalized motor RPM informs the policy of available fin authority, since fin effectiveness scales quadratically with rotor speed. With the battery model, four electrical channels are appended (state of charge, normalized loaded voltage, current, and polarization voltage), giving 28 inputs.
 
 \subsection{Action Space}
 
@@ -338,7 +496,7 @@ The action space is a 5-dimensional continuous vector:
 \label{eq:action}
 \end{equation}
 
-\noindent where $\alpha_i \in [-0.262, +0.262]$\,rad ($\pm 15°$) are the four fin deflection commands and $u_{\text{throttle}} \in [0, 1]$ is the normalized throttle. The network outputs are in $(-1, 1)$ via $\tanh$ saturation; fin channels are linearly scaled to $\pm 0.262$\,rad and the throttle channel is mapped via $(z + 1)/2$.
+\noindent where $\alpha_i \in [-0.262, +0.262]$\,rad ($\pm 15^\circ$) are the four fin deflection commands and $u_{\text{throttle}} \in [0, 1]$ is the normalized throttle. The network outputs are in $(-1, 1)$ via $\tanh$ saturation; fin channels are linearly scaled to $\pm 0.262$\,rad and the throttle channel is mapped via $(z + 1)/2$.
 
 \subsection{Network Architecture}
 
@@ -348,45 +506,47 @@ Both the actor (policy) and critic (value function) are implemented as separate 
 \centering
 \fbox{\parbox{0.9\columnwidth}{\centering\vspace{1.5em}
 \textbf{Actor Network}\\[0.5em]
-Obs (24) $\to$ FC(256) $\to$ Tanh $\to$ FC(256) $\to$ Tanh $\to$ FC(5)\\[1em]
+Obs ($n$) $\to$ FC(256) $\to$ Tanh $\to$ FC(256) $\to$ Tanh $\to$ FC(5)\\[1em]
 \textbf{Critic Network}\\[0.5em]
-Obs (24) $\to$ FC(256) $\to$ Tanh $\to$ FC(256) $\to$ Tanh $\to$ FC(1)
+Obs ($n$) $\to$ FC(256) $\to$ Tanh $\to$ FC(256) $\to$ Tanh $\to$ FC(1)
 \vspace{1.5em}}}
-\caption{Actor--critic network architecture. Both networks take the 24-dimensional observation as input. The actor produces 5 action means; per-dimension log-standard-deviations are learned as free parameters.}
+\caption{Actor--critic network architecture. The observation width is $n = 24$ in the original landing task, 28 with battery channels, and 54 in the waypoint-flight task. The actor produces 5 action means; per-dimension log-standard-deviations are learned as free parameters.}
 \label{fig:network_arch}
 \end{figure}
 
 Two initialization choices are critical for stable early training:
 
 \begin{enumerate}
-    \item \textbf{Throttle bias initialization.} The actor output layer bias for the throttle channel is initialized to $\text{atanh}(2 \cdot 0.78 - 1) \approx 1.05$, so the initial mean throttle maps to $\approx 0.78$---slightly below the hover throttle of $\sqrt{mg / T_{\max}} \approx 0.88$. This ensures initial rollouts straddle the productive hover/descent basin rather than free-falling from the default $0.5$ throttle.
+    \item \textbf{Throttle bias initialization.} The actor output layer bias for the throttle channel is initialized to $\text{atanh}(2 \cdot 0.78 - 1) \approx 1.05$, so the initial mean throttle maps to $\approx 0.78$. This is below hover, so initial rollouts straddle the productive hover/descent basin rather than free-falling from the default $0.5$ throttle. The original paper estimated hover at $\sqrt{mg / T_{\max}} \approx 0.88$. Once all link masses and vane drag are included, level hover on the 6S plant requires 0.934.
     \item \textbf{Per-channel exploration noise.} Fin channels are initialized with $\log\sigma = -2.0$ (std $\approx 0.14$), while the throttle channel uses $\log\sigma = -1.0$ (std $\approx 0.37$). This asymmetry prevents excessive lateral noise from the fins while maintaining sufficient throttle exploration for altitude control.
 \end{enumerate}
 
 \subsection{Training Procedure}
 
-Training uses 128 parallel environments on a single NVIDIA GPU. Each PPO update collects a rollout of 128 steps per environment (16{,}384 transitions total), then performs 4 epochs of minibatch gradient descent with 8 minibatches per epoch. The optimizer is Adam with learning rate $3 \times 10^{-4}$ and gradient norm clipping at 0.5.
+The original experiments used 128 parallel environments on a single NVIDIA GPU. Each PPO update collects a rollout of 128 steps per environment (16{,}384 transitions total), then performs 4 epochs of minibatch gradient descent with 8 minibatches per epoch. The optimizer is Adam with learning rate $3 \times 10^{-4}$ and gradient norm clipping at 0.5. Table~\ref{tab:ppo_params} also lists the settings of the corrected-plant waypoint-flight task (Section~\ref{sec:ppo_waypoint}).
 
 \begin{table}[htbp]
-\caption{PPO Hyperparameters (Landing Task)}
+\caption{PPO Hyperparameters}
 \label{tab:ppo_params}
 \centering
-\begin{tabular}{lr}
+\begin{tabular}{lrr}
 \toprule
-\textbf{Parameter} & \textbf{Value} \\
+\textbf{Parameter} & \textbf{Landing} & \textbf{Waypoint flight} \\
 \midrule
-Parallel environments & 128 \\
-Rollout length & 128 steps \\
-Minibatches per update & 8 \\
-Update epochs & 4 \\
-Learning rate & $3 \times 10^{-4}$ \\
-Discount $\gamma$ & 0.99 \\
-GAE $\lambda$ & 0.95 \\
-Clip coefficient $\epsilon$ & 0.2 \\
-Entropy coefficient & 0.005 \\
-Value loss coefficient & 0.5 \\
-Max gradient norm & 0.5 \\
-Target KL & 0.03 \\
+Parallel environments & 128 & 8{,}192 \\
+Rollout length & 128 steps & 32 steps \\
+Minibatches per update & 8 & 8 \\
+Update epochs & 4 & 4 \\
+Learning rate & $3 \times 10^{-4}$ & KL-adaptive \\
+Discount $\gamma$ & 0.99 & 0.999 \\
+GAE $\lambda$ & 0.95 & 0.95 \\
+Clip coefficient $\epsilon$ & 0.2 & 0.2 \\
+Entropy coefficient & 0.005 & 0.002 \\
+Value loss coefficient & 0.5 & 0.5 \\
+Max gradient norm & 0.5 & 0.5 \\
+Target KL & 0.03 & 0.03 \\
+Value normalization & None & PopArt \\
+Initial fin / throttle $\log\sigma$ & $-2.0$ / $-1.0$ & $-2.5$ / $-1.0$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -399,10 +559,19 @@ The landing task employs a linear spawn-position curriculum to address the explo
 
 Evaluation is always conducted against the full (un-curricularized) spawn range to ensure reported metrics reflect the final task difficulty.
 
+\subsection{Corrected-Plant PPO: Waypoint Flight}
+\label{sec:ppo_waypoint}
+
+On the corrected plant, landing-first PPO did not learn full-task landing (Section~\ref{sec:ppo_corrected}). PPO was therefore reformulated as a single skill: reach the next waypoint efficiently. A mission is a sequence of waypoints. A \emph{fly-through} is captured when the swept path passes within its radius. A \emph{hover} requires a continuous hold inside its radius at no more than \SI{0.5}{\metre\per\second} and \SI{60}{\degree\per\second} body rate. A \emph{land} waypoint, allowed only last, requires a real LANDED contact within the pad radius at no more than \SI{0.25}{\metre\per\second}. The 54-channel body-frame observation contains the vectors to the active waypoint and the next two legs, the waypoint kinds, the capture radius and remaining hold time, the gravity direction, velocity, body rates, height, vane angles and rates, rotor speed, contact state, battery state, the previous action, and a fine-scale copy of the target vector.
+
+Two explicit interface choices follow from the rotor momentum analysis of Section~\ref{sec:rotor_momentum}; both are part of the task definition. First, the policy commands a throttle \emph{rate}, $d \leftarrow d + \tanh(z)\cdot 0.25\,\Delta t_{\text{RL}}$. This bounds the spool reaction to 83\% of the vanes' yaw authority and makes throttle exploration a random walk with lasting altitude effects. With direct duty commands, no run learned altitude feedback. Second, a fixed yaw-rate damper removes the common mode of the policy's vane commands and adds $-0.15\,r$ to every vane. The policy keeps the differential (roll and pitch) part. Before this damper was introduced, every policy developed a common-mode vane bias and orbited its targets.
+
+The reward is energy-weighted. Per second of level hover, time costs 0.25 and energy costs 1.3 per Wh, or about 0.75, so energy is 75\% of the efficiency cost. Dense guidance is potential-based \cite{b27}, with $\Phi = -(\text{remaining route length})$ and $\Phi = 0$ at absorbing states. A yaw-weighted body-rate cost uses soft limits of 180/180/\SI{90}{\degree\per\second}. Mission success earns $+400$ and every failure $-400$. The nominal worst-case integrated step cost of a \SI{90}{\second} full-power episode is 274, below the terminal magnitude. A 16-stage curriculum changes only the spawn, the mission generator and the episode length. The final task has 1--6 waypoints over 2--\SI{25}{\metre} legs at 2--\SI{30}{\metre} altitude, state of charge 50--100\%, and steady wind up to \SI{4}{\metre\per\second}. Training spawns the rotor at hover speed.
+
 
 \section{Reward Design}
 
-Reward shaping is a critical design decision for TVC landing, where the agent must simultaneously manage altitude, lateral position, attitude, and touchdown conditions. We structure the reward as a sum of weighted per-step shaping terms and one-time terminal events.
+Reward shaping is a critical design decision for TVC landing, where the agent must simultaneously manage altitude, lateral position, attitude, and touchdown conditions. We structure the reward as a sum of weighted per-step shaping terms and one-time terminal events. This section describes the original landing task.
 
 \subsection{Per-Step Shaping Terms}
 
@@ -447,7 +616,7 @@ Landing success & $+250$ \\
 
 A key insight for landing reward design is the magnitude balance between integrated per-step costs and one-time terminal rewards. For an episode of length $T$ steps, the integrated per-step contribution is $\sum_i |w_i| \cdot \bar{\phi}_i \cdot T$, which can easily reach $\mathcal{O}(100)$ over a 30-second episode at 30\,Hz ($T = 900$). If terminal rewards are not substantially larger, PPO will optimize per-step cost minimization---typically by reducing throttle to zero---rather than pursuing the terminal landing event.
 
-We set terminal magnitudes ($|w_{\text{terminal}}| \geq 200$) to clearly dominate the integrated per-step budget. The landing success bonus of $+250$ plus the pad accuracy bonus (up to $+200$) provide a combined terminal reward of up to $+450$ for a perfect landing, which exceeds the worst-case integrated per-step cost. The crash penalty of $-200$ ensures that uncontrolled impacts are strongly discouraged.
+We set terminal magnitudes ($|w_{\text{terminal}}| \geq 200$) to clearly dominate the integrated per-step budget. The landing success bonus of $+250$ plus the pad accuracy bonus (up to $+200$) provide a combined terminal reward of up to $+450$ for a perfect landing, which exceeds the worst-case integrated per-step cost. The crash penalty of $-200$ ensures that uncontrolled impacts are strongly discouraged. The later audit found a loophole in this table: a hard landing could still collect the partial softness and accuracy bonuses. The corrected landing task adds a $-250$ hard-landing penalty, which exceeds the maximum partial payout of 225.
 
 \subsection{Horizontal Guidance Shaping}
 
@@ -456,14 +625,17 @@ The horizontal position error term ($w = -0.30$) provides a dense gradient towar
 
 \section{Experimental Results}
 
-We present results for two tasks: hover stabilization and autonomous landing. All experiments use nominal (zero-wind) conditions. Evaluation metrics are computed over 128 parallel episodes with the full (un-curricularized) spawn range.
+We report two sets of results. Section~\ref{sec:legacy_results} gives the original PPO results on the original plant. Sections~\ref{sec:convex_results}--\ref{sec:comparison} give results on the corrected plant: the convex controller, PPO, and their comparison.
 
-\subsection{Hover Stabilization}
+\subsection{Original-Plant PPO Results}
+\label{sec:legacy_results}
 
-The hover policy uses a residual-PID architecture where a PID controller provides the baseline action and the PPO policy learns a small bounded correction (scale $= 0.05$). After 2{,}048 environment steps of training, the policy achieves:
+\emph{These results were obtained before the corrections of Table~\ref{tab:physics_corrections}. That plant had tangential hinges, a reversed vane side-force sign, suppressed rotor momentum, a tuned angular damper, and a kinematic contact proxy that could register a landing after a bounce. They are kept for the record. They are not evidence of landing performance on the corrected plant.} All experiments use nominal (zero-wind) conditions, with metrics computed over 128 parallel episodes with the full spawn range.
+
+\textbf{Hover.} The hover policy uses a residual-PID architecture where a PID controller provides the baseline action and the PPO policy learns a small bounded correction (scale $= 0.05$). After 2{,}048 environment steps of training, the policy achieves:
 
 \begin{table}[htbp]
-\caption{Hover Stabilization Results}
+\caption{Hover Stabilization Results (Original Plant)}
 \label{tab:hover_results}
 \centering
 \begin{tabular}{lr}
@@ -480,21 +652,19 @@ Evaluation passed & Yes \\
 \end{tabular}
 \end{table}
 
-The near-zero tilt and angular rate values indicate that the PID baseline provides effective attitude stabilization, while the RL residual corrects for position drift. The mean position error of \SI{0.085}{\metre} is well within the \SI{0.5}{\metre} success threshold.
+The near-zero tilt and angular rate values reflect the PID baseline's attitude stabilization and, in part, the tuned angular damper and suppressed rotor torques of the original plant.
 
-\subsection{Autonomous Landing}
-
-The landing policy is trained with pure PPO (no PID baseline) for 5{,}000{,}000 environment steps with spawn-position curriculum. Table~\ref{tab:landing_results} summarizes the final evaluation metrics.
+\textbf{Landing.} The landing policy is trained with pure PPO (no PID baseline) for 5{,}000{,}000 environment steps with spawn-position curriculum. Table~\ref{tab:landing_results} summarizes the final evaluation metrics.
 
 \begin{table}[htbp]
-\caption{Landing Task Final Evaluation Results}
+\caption{Landing Task Final Evaluation Results (Original Plant)}
 \label{tab:landing_results}
 \centering
 \begin{tabular}{lr}
 \toprule
 \textbf{Metric} & \textbf{Value} \\
 \midrule
-Landing rate & 100\% \\
+Landing rate (kinematic proxy) & 100\% \\
 Mean touchdown speed & \SI{0.126}{\metre\per\second} \\
 Max touchdown speed & \SI{0.347}{\metre\per\second} \\
 Mean pad distance & \SI{1.89}{\metre} \\
@@ -506,80 +676,161 @@ On-pad fraction ($d < 0.5$\,m) & 2\% \\
 \end{tabular}
 \end{table}
 
-The policy achieves a 100\% landing rate with soft touchdowns (mean \SI{0.126}{\metre\per\second}, well below the \SI{0.50}{\metre\per\second} contact detection threshold). However, lateral accuracy remains limited: the mean pad distance of \SI{1.89}{\metre} and on-pad fraction of only 2\% indicate that the policy has learned reliable descent and soft touchdown but has not fully solved lateral guidance to the pad center.
+Under the kinematic proxy, the policy registered a landing in every episode. However, only 2\% of episodes ended on the pad, with a mean pad distance of \SI{1.89}{\metre}. The proxy's touchdown speed was measured after any bounce, so it may understate the first impact.
 
-\subsection{Training Progression}
-
-Fig.~\ref{fig:training_curves} shows the mean episode reward over the course of training. The reward transitions from $\approx -3$ in the first million steps to consistently positive values after 2M steps, reaching $\approx +1.75$ by 5M steps. The monotonic upward trend confirms that PPO is learning the core control task: altitude management and soft touchdown. The policy achieves 100\% landing rate early in training and maintains it throughout, while progressively improving touchdown softness and descent control.
+Fig.~\ref{fig:training_curves} shows the mean episode reward over the course of training. The reward rises from $\approx -3$ in the first million steps to consistently positive values after 2M steps, reaching $\approx +1.75$ by 5M steps. Negative reward means that integrated per-step costs dominate the return; positive reward means that terminal bonuses outweigh them.
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=\columnwidth]{figures/training_curves.pdf}
-\caption{Mean episode reward during landing task training over 5M environment steps. The smoothed curve (EMA, $\alpha = 0.08$) shows a clear learning signal: reward transitions from negative (dominated by per-step costs) to positive (dominated by terminal landing bonuses) around 2M steps, indicating that the policy has learned controlled descent and soft touchdown.}
+\caption{Mean episode reward during original-plant landing training over 5M environment steps (EMA, $\alpha = 0.08$). Reward crosses from negative (dominated by per-step costs) to positive (dominated by terminal bonuses) around 2M steps.}
 \label{fig:training_curves}
 \end{figure}
 
-The transition from negative to positive mean reward is significant: negative reward indicates that integrated per-step costs (attitude error, control effort, delta-v) dominate the return, while positive reward indicates that terminal landing bonuses ($+250$ success $+$ up to $+200$ pad accuracy) outweigh those costs. The crossover at $\approx 2$M steps marks the point where the majority of episodes end in successful landings rather than timeouts or crashes.
+\subsection{Convex Guidance on the Corrected Plant}
+\label{sec:convex_results}
+
+Each mission is flown once in Isaac Sim on the planned 8S profile with a full LiPo, unless noted, and succeeds only on a LANDED contact that stays settled after motor shutdown. The missions cover four conditions. A \emph{cold} start has the rotor stopped at $t = 0$, so the vehicle falls while spooling up; a \emph{warm} start has the rotor at hover speed. The \emph{combined} disturbance applies wind with gusts, sensor noise, and a center-of-mass shift together. Table~\ref{tab:convex_results} lists the benchmark missions with the final controller.
+
+\begin{table*}[htbp]
+\caption{Convex Guidance: Benchmark Missions on the Corrected Plant (Final Controller)}
+\label{tab:convex_results}
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llcccccc}
+\toprule
+\textbf{Mission} & \textbf{Start (altitude, velocity, rotor)} & \textbf{Outcome} & \textbf{Impact (m/s)} & \textbf{Pad err. (m)} & \textbf{Time (s)} & \textbf{Energy (Wh)} & \textbf{Roll/pitch RMS (\si{\degree\per\second})} \\
+\midrule
+Default & 18\,m, $-1$\,m/s, cold & Landed & 0.146 & 0.08 & 8.3 & 5.37 & 1.7 \\
+Offset + wind/gusts & 12\,m, 7.2\,m off, $-2$\,m/s, cold & Landed & 0.152 & 0.30 & 8.3 & 5.58 & 13.3 \\
+Hot hop & 3\,m, 1\,m off, warm & Landed & 0.172 & 0.10 & 6.1 & 3.48 & 7.4 \\
+Combined disturbances & 15\,m, $-5$\,m/s, warm & Landed & 0.153 & 0.07 & 20.1 & 12.12 & 11.4 \\
+Route (fly-through + 2\,s hover) & 8\,m, warm & Landed, 2/2 captured & 0.150 & 0.40 & 23.5 & 13.82 & 8.3 \\
+High start & 50\,m, $-1$\,m/s, cold & Landed & 0.146 & 0.05 & 16.1 & 9.90 & 1.5 \\
+Legacy 6S & 8\,m, warm (0.9) & Landed & 0.184 & 0.36 & 9.6 & 5.72 & 8.9 \\
+\midrule
+Long route (3 hovers, 10\,s holds) & 50\,m, $-0.5$\,m/s, warm & Landed, 3/3 captured & 0.189 & 0.16 & 99.8 & 58.46 & 3.9 \\
+\midrule
+Combined disturbances & 15\,m, $-5$\,m/s, \emph{cold} & Crashed & --- & --- & --- & --- & --- \\
+Legacy 6S default & 18\,m, $-1$\,m/s, cold & Hard landing & 2.56 & 0.38 & 11.7 & 7.34 & --- \\
+\bottomrule
+\end{tabular}}
+\end{table*}
+
+The controller landed all seven benchmark missions within the vehicle's envelope. Touchdown speeds were 0.146--\SI{0.184}{\metre\per\second} (gate \SI{0.25}{\metre\per\second}) and pad errors 0.05--\SI{0.40}{\metre} (gate \SI{0.5}{\metre}). The whole-flight roll/pitch rates were 1.5--\SI{13.3}{\degree\per\second} RMS. The 50\,m start obeys the \SI{4}{\metre\per\second} speed bound. Its remaining \SI{5.9}{\metre\per\second} peak is the fall during cold spool-up, before the first plan. The long route flew three hover waypoints with 10\,s holds and then landed after \SI{99.8}{\second}, 0.16\,m from the pad; its roll/pitch RMS of \SI{3.9}{\degree\per\second} compares with \SI{15.8}{\degree\per\second} before the deadband inverse. After the benchmark, four further missions from 100\,m in wind with sensor noise all landed. Three started descending at \SI{20}{\metre\per\second}, two of them with a total speed of \SI{30}{\metre\per\second}. The fourth started 86\,m from the pad horizontally, descending at \SI{5.5}{\metre\per\second}, and flew one waypoint. Their impacts were 0.156--\SI{0.187}{\metre\per\second} and their pad errors 0.07--\SI{0.28}{\metre}, in 15--\SI{49}{\second}. A fifth such mission was cancelled by the operator and is excluded.
+
+The two failures lie outside the vehicle's physical envelope rather than the controller's. In the cold-rotor combined case, full thrust is commanded by $t = \SI{0.5}{\second}$. However, the energy cap (\ref{eq:energy_cap}) lets the motor add rotor energy at only about \SI{3}{\kilo\watt}. Thrust therefore reaches \SI{40}{\newton} at \SI{3.5}{\metre} altitude, with the vehicle still falling at \SI{6.8}{\metre\per\second}, which needs more than \SI{5}{\metre} to stop. On the legacy 6S pack, sag reduces the thrust-to-weight ratio to about 1.1, which cannot arrest the fall built up during a cold spool-up.
+
+\subsection{PPO on the Corrected Plant}
+\label{sec:ppo_corrected}
+
+Table~\ref{tab:ppo_corrected} summarizes PPO's progress as the plant was corrected. Every entry is a direct-action feed-forward policy with no PID wrapper, thrust floor or scripted guidance.
+
+\begin{table*}[htbp]
+\caption{PPO Across Plant Revisions (Independent Full-Task Evaluations)}
+\label{tab:ppo_corrected}
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llrl}
+\toprule
+\textbf{Run} & \textbf{Plant} & \textbf{Transitions} & \textbf{Full-task result} \\
+\midrule
+8S landing, radial hinges & Independent vane forces, tuned damper & 30.0M & 95.7\% success, 0.4\% crash; 0.175\,m/s, 0.13\,m (superseded plant) \\
+8S landing, momentum model & Finite-momentum jet, no damper & 100.1M & 0\% success, 100\% crash (16--20\,m, cold rotor) \\
+Landing-first waypoint missions & + wrench and gyro-integration fixes & 200M & 0\% in every evaluation to 132M; stalled on stage 1 of 11 \\
+Waypoint flight (Sec.~\ref{sec:ppo_waypoint}) & Current plant, \SI{480}{\hertz} & 700M & 1.3\% success (hover missions 2.1\%, land 0\%); 11.0\% crash \\
+\bottomrule
+\end{tabular}}
+\end{table*}
+
+The 30M-step policy on the intermediate plant landed reliably. That plant still applied independent per-vane forces that could exceed the jet's momentum and a tuned angular damper. Once those were replaced by the finite-momentum jet and physical damping, full-task success fell to zero and did not recover within 100M transitions. The waypoint-flight reformulation learned hover and short hops. At 700M transitions, on 8{,}192 randomized full-task episodes, the outcomes were: 1.3\% success, 51.4\% geofence exits, 21.3\% timeouts, 11.0\% crashes, 7.5\% hard landings, 5.0\% premature landings, and 2.5\% spin terminations above \SI{360}{\degree\per\second}. The 95th-percentile peak yaw rate was \SI{328}{\degree\per\second}. Successful episodes averaged \SI{17.1}{\watt\hour} over \SI{29.0}{\second} at a route speed of \SI{0.69}{\metre\per\second}. At 750M transitions the policy had passed the landing stage at a relaxed \SI{1.0}{\metre\per\second} touchdown gate (49\% land-mission success). It had 0\% success at the \SI{0.25}{\metre\per\second} gate after a further 36M transitions.
+
+The same 750M-step policy was flown through mission control on two three-waypoint trials. From a \SI{50}{\metre} start, it was stopped at $t = \SI{0.03}{\second}$ because the start lies above its \SI{30}{\metre} training geofence. From a \SI{32.5}{\metre} start, it did not capture the first waypoint in \SI{100}{\second}. Both starts are at or beyond the edge of its training envelope. The randomized evaluation above is therefore the fair measure of this policy.
+
+\subsection{Comparison}
+\label{sec:comparison}
+
+Table~\ref{tab:comparison} compares the three controllers on the corrected plant. The PID baseline flew the default mission with the same plant and battery and touched down at \SI{1.50}{\metre\per\second}, six times the soft-landing gate.
+
+\begin{table}[htbp]
+\caption{Controllers on the Corrected 8S Plant}
+\label{tab:comparison}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{>{\raggedright\arraybackslash}p{0.26\columnwidth}>{\raggedright\arraybackslash}p{0.21\columnwidth}>{\raggedright\arraybackslash}p{0.17\columnwidth}>{\raggedright\arraybackslash}p{0.21\columnwidth}}
+\toprule
+ & \textbf{Convex} & \textbf{PID} & \textbf{PPO} \\
+\midrule
+Default mission (18\,m, cold) & Landed, 0.146\,m/s, 0.08\,m & 1.50\,m/s touchdown & Outside envelope (cold rotor) \\
+Benchmark landings & 7/7 & --- & --- \\
+Waypoint routes & 2/2 landed & Not supported & 1.3\% full-task success \\
+Soft landing (0.25\,m/s gate) & Yes, 0.146--0.189\,m/s & No & Not yet learned \\
+Cold-rotor starts & Landed when recoverable & 1.50\,m/s touchdown & Not trained \\
+Training cost & None & None & 700M transitions \\
+Online cost & 30--110\,ms per plan & Negligible & One MLP pass \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+On this experiment, the convex controller is clearly better. It lands softly and on the pad from every in-envelope start tested, including combined disturbances and routes, whereas PPO has not learned to land softly on the corrected plant. The comparison has limits. The convex controller was evaluated on 12 hand-specified missions, each flown once, whereas PPO was evaluated on thousands of randomized episodes. The convex controller has not yet been run on PPO's randomized waypoint task. Running it there is the next step toward a like-for-like success rate.
 
 
 \section{Discussion}
 
-\subsection{Effectiveness of Initialization Priors}
+\subsection{Why Convex Guidance Outperforms PPO Here}
 
-The throttle bias initialization proved essential for training stability. Early experiments without this bias (default throttle mean $\approx 0.5$) resulted in policies that immediately entered free-fall, accumulated large negative per-step rewards, and converged to a zero-throttle equilibrium---a local optimum where the agent minimizes per-step costs by crashing quickly. The initialization prior at 0.78 (near hover) ensures that initial rollouts produce meaningful flight trajectories from which the policy can learn descent behavior.
+The convex controller is given the physics that PPO must discover. Its thrust-rate constraint (\ref{eq:rate}) encodes the rotor momentum exchange as a hard limit, and its energy objective (\ref{eq:energy_obj}) is the simulator's own power law. The planner's decisions are globally optimal for the point-mass problem at every re-plan, so it never has to explore to find a braking burn or a feasible descent profile. The inner loops were designed from identified plant models (Table~\ref{tab:sysid}).
 
-Similarly, the per-channel exploration noise initialization (quieter fins, louder throttle) addressed a failure mode where uniform exploration noise caused excessive lateral oscillations that prevented the policy from learning stable descent. With $\log\sigma_{\text{fin}} = -2.0$, the initial fin exploration is bounded to approximately $\pm 0.05 \cdot 0.262 \approx \pm 0.013$\,rad, small enough to avoid destabilizing the vehicle while still allowing gradient-based learning of fin control.
+PPO faces the same physics through exploration, and the corrected plant makes exploration costly in three ways. First, rotor momentum exchange couples throttle exploration to yaw. Throttle noise large enough to reveal altitude dynamics spins the body past its termination limit, while noise small enough to avoid that moves the vertical speed by only about \SI{0.02}{\metre\per\second} per step, too little for PPO to learn from. The rate-throttle contract and yaw damper were introduced for this reason. Second, soft landing requires sub-\SI{0.25}{\metre\per\second} vertical precision after a long descent. This is a sparse, delayed event that the policy reached at a \SI{1.0}{\metre\per\second} gate but not at \SI{0.25}{\metre\per\second}. Third, the persistent failure mode was climbing: extra throttle avoids early sinking crashes, but it drives the vehicle out of the geofence and raises rotor speed, which yaws the body. Throughout, the policy's exploration noise collapsed before translation was learned.
 
-\subsection{Lateral Accuracy Challenge}
+The comparison also shows that the landing results of PPO depended strongly on the plant. An intermediate plant, with unbounded vane forces and an artificial damper, was much easier to control, and PPO reached 95.7\% success on it. The same method failed once those non-physical terms were removed. A learned policy's success is therefore only as meaningful as the physics it was trained on.
 
-The primary open challenge is lateral accuracy: the policy reliably descends and lands softly but does not consistently steer toward the pad center. Several factors contribute to this limitation:
+\subsection{Rotor Angular Momentum as the Dominant Difficulty}
 
-\begin{enumerate}
-    \item \textbf{Throttle--fin coupling.} Lateral control authority depends quadratically on throttle. During descent, the policy reduces throttle below hover levels, which simultaneously reduces fin effectiveness. This creates a fundamental tension between descent rate and lateral controllability.
-    \item \textbf{Actuator bandwidth.} The MG996R servos ($\tau = \SI{0.05}{\second}$, $\dot{\alpha}_{\max} = \SI{7.54}{\radian\per\second}$) limit the rate at which the policy can correct lateral errors, particularly during the final approach where corrections must be rapid.
-    \item \textbf{Reward gradient at large distances.} The exponential pad accuracy bonus $e^{-d_{\text{horiz}}}$ has negligible gradient for $d > 2$\,m, where most of the descent occurs. While the linear horizontal position error term provides a constant gradient, its weight ($-0.30$) may be insufficient relative to the vertical speed shaping and delta-v cost terms that encourage rapid descent.
-    \item \textbf{Spawn curriculum interaction.} The curriculum narrows the initial spawn range, which helps the policy learn on-pad behavior but may not provide sufficient training signal for large lateral corrections from the full $\pm 2.0$\,m range.
-\end{enumerate}
+Both approaches were shaped by the rotor. Earlier landing-first PPO runs held mean peak yaw rates of 1{,}625--1{,}651\,\si{\degree\per\second} from 32.5M to 200M transitions. That is the momentum exchange predicted for their descent throttle swing (0.84 to 0.23). Open-loop checks confirm the \SI{46.5}{\radian\per\second} per unit coupling to within 5--10\%, with no drift from swirl. The convex controller's worst transient, a cold spool-up, yaws the body at up to \SI{148}{\degree\per\second} regardless of the controller, because the rotor's angular momentum comes from the airframe. Rotor inertia is an estimate, and the yaw coupling scales linearly with it. It should be measured, for example by a spin-down test, before either controller is trusted on hardware.
+
+\subsection{Limitations of the Convex Controller}
+
+The convex controller is not model-free. Its gains, thrust bounds and deadband compensation come from the simulator's estimated vane, servo and motor models, and they must be re-identified on hardware. Lateral precision (0.05--\SI{0.40}{\metre}) is now set by a deliberately slow lateral loop. Its gains were chosen while the coning limit cycle was present, and higher gains landed within \SI{0.04}{\metre} in the offline replica. The attitude loop is proportional-derivative only, so a center-of-mass offset leaves a steady attitude error (\SI{1.7}{\degree} in the combined-disturbance mission). A \SI{1}{\centi\metre} lateral offset can drift the vehicle off the pad during terminal descent. A plan takes 30--\SI{110}{\milli\second} against a \SI{33}{\milli\second} control period, so real-time use requires a latency-compensating state predictor. The long route plus landing at the enforced \SI{4}{\metre\per\second} took about \SI{100}{\second}, and a \SI{100}{\second} mission window was too short by a fraction of a second.
 
 \subsection{Comparison with Quadrotor RL}
 
-Compared to quadrotor RL approaches \cite{b2, b3}, the TVC control problem presents unique challenges. Quadrotors have independent, throttle-decoupled attitude authority through differential rotor speeds, whereas the TVC vehicle's attitude control is fundamentally coupled to the thrust state. This coupling means that standard RL techniques developed for quadrotors---such as separate attitude and position control loops---do not directly transfer.
-
-However, the single-actuator-plus-fins architecture also offers advantages: the 5-dimensional action space is smaller than a quadrotor's (typically 4 rotor speeds), and the vehicle's inherent aerodynamic stability (drag damping, gyroscopic stiffness) provides a degree of passive stabilization that aids learning.
+Compared to quadrotor RL approaches \cite{b2, b3}, the TVC control problem presents unique challenges. Quadrotors have independent, throttle-decoupled attitude authority through differential rotor speeds, whereas the TVC vehicle's attitude control is fundamentally coupled to the thrust state. A quadrotor's counter-rotating rotors also largely cancel each other's angular momentum. Here, a single rotor exchanges momentum with the body at every throttle change. This coupling means that standard RL techniques developed for quadrotors---such as separate attitude and position control loops with free throttle exploration---do not directly transfer.
 
 \subsection{Sim-to-Real Considerations}
 
-The simulation employs semi-empirical models calibrated to datasheet specifications and physical measurements. Key sources of sim-to-real gap include:
+The corrected simulation models battery voltage sag, finite jet momentum, full rotor reactions, servo backlash, sensor noise, wind and center-of-mass offsets. The remaining sources of sim-to-real gap include:
 
 \begin{itemize}
-    \item \textbf{Aerodynamic model fidelity.} The flat-plate fin model with empirical corrections may not capture flow separation, wake interactions between fins, or ground-effect changes during landing.
-    \item \textbf{Servo nonlinearities.} Real MG996R servos exhibit backlash, load-dependent speed variation, and temperature drift not captured by the first-order model.
-    \item \textbf{Battery voltage sag.} The 6S LiPo battery voltage drops under load, reducing available thrust during high-throttle maneuvers---an effect not modeled in the current simulation.
-    \item \textbf{Sensor noise.} The simulation provides clean state observations, whereas the physical testbed will rely on noisy IMU and position estimates.
+    \item \textbf{Unmeasured 8S hardware.} Thrust, shaft power, rotor inertia, motor lag and pack impedance are planning estimates for parts not yet purchased.
+    \item \textbf{Jet and vane model fidelity.} Equal streamtube sharing, vane coefficients, residual swirl fraction and COP positions are estimates. Ground effect, recirculation and wake interactions are not modeled.
+    \item \textbf{Servo nonlinearities.} The \SI{1}{\degree} deadband is an estimate that the deadband inverse relies on. Load-dependent speed and temperature drift are not captured.
+    \item \textbf{Mass properties.} Mass and inertia come from the authored USD, not from a weighing or inertia test.
+    \item \textbf{Latency.} Planner solve time and sensor-to-actuator delay are not yet simulated.
 \end{itemize}
-
-Domain randomization of these parameters during training is a natural next step for improving transfer robustness.
 
 
 \section{Conclusion and Future Work}
 
-This paper presented a PPO-based approach to controlling a thrust-vectored EDF VTOL vehicle in simulation. We developed a GPU-accelerated environment in NVIDIA Isaac Sim with semi-empirical propulsion, aerodynamic, and actuator models calibrated to a physical 3.1\,kg drone testbed. The key findings are:
+This paper presented a GPU-accelerated Isaac Sim environment for a thrust-vectored EDF VTOL vehicle. The physics was corrected for finite jet momentum, battery coupling, full rotor angular-momentum reactions with energy-conserving integration, and force application about the true center of mass. On that plant we compared model-free PPO with a convex-optimization guidance controller. The key findings are:
 
 \begin{enumerate}
-    \item PPO can learn hover stabilization for a TVC vehicle, achieving \SI{0.085}{\metre} mean position error with a residual-PID architecture in only 2{,}048 environment steps.
-    \item Pure PPO can learn autonomous landing with 100\% success rate and soft touchdowns (mean \SI{0.126}{\metre\per\second}), though lateral accuracy (mean pad distance \SI{1.89}{\metre}) remains an open challenge.
-    \item Initialization priors on the action distribution (throttle bias near hover, per-channel exploration noise) are critical for avoiding degenerate local optima in TVC control.
-    \item Terminal reward magnitudes must substantially exceed integrated per-step costs to prevent PPO from converging to cost-minimizing rather than task-completing policies.
+    \item Convex guidance based on lossless convexification \cite{b21} controls this vehicle well once adapted to it. With a first-order-hold thrust profile, a thrust-rate bound from the vanes' yaw authority, and a minimum-energy power-cone objective, it landed all seven in-envelope benchmark missions softly and on the pad. These included combined disturbances, a 50\,m cold-rotor start and a waypoint route. It also flew a 100\,s three-hover route and landed four further starts from about 100\,m in wind at initial speeds of up to \SI{30}{\metre\per\second}.
+    \item On the corrected plant, the convex controller substantially outperforms PPO: the best PPO policy reached 1.3\% full-task success after 700M transitions and did not learn soft landing. A PID baseline also failed the soft-landing gate on the default mission.
+    \item The rotor--body angular-momentum exchange (\SI{46.5}{\radian\per\second} of body yaw per unit change in rotor fraction) is the dominant control difficulty. It sets the admissible throttle rate for both controllers and couples PPO's throttle exploration to yaw.
+    \item PPO's landing success depended strongly on non-physical plant terms: 95.7\% on a plant with unbounded vane forces and a tuned damper, and 0\% once they were corrected. Physics verification must precede any claim of learned control.
+    \item The original findings on reward design still hold: initialization priors and terminal rewards that dominate integrated per-step costs are necessary to avoid degenerate PPO optima.
 \end{enumerate}
 
 Future work will address the following directions:
 
 \begin{itemize}
-    \item \textbf{Gated Transformer-XL (GTrXL) policy.} Replacing the feed-forward MLP with a GTrXL architecture \cite{b16, b17} to provide temporal context for handling wind disturbances and improving trajectory planning during descent. Recent aerospace results \cite{b19, b20} suggest that transformer-based policies can improve landing performance under uncertainty, and the 24-dimensional observation space used here is compatible with the sequence-based input expected by GTrXL.
-    \item \textbf{Domain randomization.} Randomizing aerodynamic coefficients, servo parameters, mass properties, and sensor noise during training to improve sim-to-real transfer robustness.
-    \item \textbf{Lateral guidance improvements.} Investigating potential-based reward shaping (Ng et al., 1999), hierarchical policies (separate lateral and vertical controllers), and extended curriculum strategies to improve on-pad landing accuracy.
-    \item \textbf{Hardware validation.} Deploying trained policies on the physical EDF drone testbed to validate sim-to-real transfer and characterize the reality gap.
-    \item \textbf{Wind disturbance rejection.} Training and evaluating policies under stochastic wind conditions using the simulation's wind model, with the 27-dimensional observation space that includes wind estimates.
+    \item \textbf{Like-for-like evaluation.} Run the convex controller on PPO's randomized waypoint task and benchmark routes to obtain directly comparable success rates.
+    \item \textbf{Convex controller refinement.} Re-tune the lateral loop now that the coning is removed, add a body-frame attitude integrator for center-of-mass offsets, and add a latency-compensating state predictor for real-time solves.
+    \item \textbf{Hybrid approaches.} Investigate learning methods that use the convex planner explicitly, for example as a teacher or as a guidance layer, as part of the task definition.
+    \item \textbf{Gated Transformer-XL (GTrXL) policy.} Replace the feed-forward MLP with a GTrXL architecture \cite{b16, b17} to provide temporal context for disturbances and long descents \cite{b19, b20}. This requires a sequence-aware PPO optimizer.
+    \item \textbf{Hardware identification and validation.} Measure the 8S thrust and power maps, rotor inertia (spin-down test), servo deadband and vane forces, re-identify the controller gains, and validate on the physical testbed.
 \end{itemize}
 
 \section*{Data and Code Availability}
@@ -588,7 +839,7 @@ The simulation environment, training scripts, configuration files, and evaluatio
 
 \section*{Acknowledgment}
 
-AI-assisted tools (Claude Opus 4.6, Anthropic) were used for code generation, debugging, and language editing during the preparation of this manuscript. All research design, simulation architecture, reward formulation, experimental execution, data analysis, and interpretation of results were performed by the author.
+AI-assisted tools (Claude Opus 4.6 and Claude Opus 5.5, Anthropic) were used for code generation, debugging, and language editing during the preparation of this manuscript. All research design, simulation architecture, reward formulation, experimental execution, data analysis, and interpretation of results were performed by the author.
 
 \begin{thebibliography}{00}
 \bibitem{b1} R.~Beard and T.~McLain, \textit{Small Unmanned Aircraft: Theory and Practice}. Princeton University Press, 2012.
@@ -612,6 +863,12 @@ AI-assisted tools (Claude Opus 4.6, Anthropic) were used for code generation, de
 \bibitem{b19} L.~Federici, A.~Zavoli, and R.~Furfaro, ``Meta-reinforcement learning with transformer for lunar landing,'' in \textit{Proc. AIAA SciTech}, AIAA Paper 2024-2061, 2024.
 \bibitem{b20} J.~Carradori, M.~Sagliano, and E.~Mooij, ``Transformer-based robust feedback guidance for atmospheric powered landing,'' in \textit{Proc. AIAA SciTech}, AIAA Paper 2025-2771, 2025.
 \bibitem{b21} B.~A\c{c}{\i}kme\c{s}e and S.~R.~Ploen, ``Convex programming approach to powered descent guidance for Mars landing,'' \textit{Journal of Guidance, Control, and Dynamics}, vol.~30, no.~5, pp.~1353--1366, 2007.
+\bibitem{b22} B.~A\c{c}{\i}kme\c{s}e and L.~Blackmore, ``Lossless convexification of a class of optimal control problems with non-convex control constraints,'' \textit{Automatica}, vol.~47, no.~2, pp.~341--347, 2011.
+\bibitem{b23} L.~Blackmore, B.~A\c{c}{\i}kme\c{s}e, and D.~P.~Scharf, ``Minimum-landing-error powered-descent guidance for Mars landing using convex optimization,'' \textit{Journal of Guidance, Control, and Dynamics}, vol.~33, no.~4, pp.~1161--1171, 2010.
+\bibitem{b24} P.~J.~Goulart and Y.~Chen, ``Clarabel: An interior-point solver for conic programs with quadratic objectives,'' \textit{arXiv preprint arXiv:2405.12762}, 2024.
+\bibitem{b25} T.~Lee, M.~Leok, and N.~H.~McClamroch, ``Geometric tracking control of a quadrotor UAV on SE(3),'' in \textit{Proc. 49th IEEE Conf. Decision and Control}, 2010, pp.~5420--5425.
+\bibitem{b26} M.~Drela, ``QPROP formulation,'' MIT Aeronautics and Astronautics, Tech. Note, 2006.
+\bibitem{b27} A.~Y.~Ng, D.~Harada, and S.~Russell, ``Policy invariance under reward transformations: Theory and application to reward shaping,'' in \textit{Proc. ICML}, 1999, pp.~278--287.
 \end{thebibliography}
 
 \end{document}
