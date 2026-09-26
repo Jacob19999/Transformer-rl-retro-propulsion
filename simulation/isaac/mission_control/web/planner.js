@@ -1,12 +1,12 @@
 // Two synchronized projections make XYZ dragging unambiguous on a flat screen.
 import { fitCanvas } from './instruments.js';
 
-export function createMissionPlanner(root,{readInitial,writeInitial,onChange}){
+export function createMissionPlanner(root,{readInitial,writeInitial,onChange,overlay}){
   let waypoints=[],selected=-1,drag=null;
   root.innerHTML=`<div class="panel-title">ROUTE PLANNER <span>DRAG START, VELOCITY & WAYPOINTS</span></div>
     <div class="planner-tools"><button type="button" data-add="flypass">+ FLY-THROUGH</button><button type="button" data-add="hover">+ HOVER</button><button type="button" id="invertStart">INVERT START</button><label>VIEW RANGE <select id="plannerRange"><option>10</option><option>25</option><option>50</option><option selected>100</option></select> m</label></div>
     <div class="planner-views"><div><b>TOP · X / Y</b><canvas id="planXY" aria-label="Drag start position and waypoints in X Y; drag the arrow to set initial velocity"></canvas></div><div><b>SIDE · X / Z</b><canvas id="planXZ" aria-label="Drag start height and waypoint altitude; drag the arrow to set vertical velocity"></canvas></div></div>
-    <div class="hint" id="plannerHint">White diamond: start. Arrow: initial velocity (2-second scale). Numbered points: route. Landing pad: origin. Ground is Z = 0; starts must stay above it.</div><div id="waypointEditor"></div>`;
+    <div class="hint" id="plannerHint">White diamond: start. Arrow: initial velocity (2-second scale). Numbered points: route. Landing pad: origin. Ground is Z = 0; starts must stay above it.</div><div class="hint" id="plannerCheck"></div><div id="waypointEditor"></div>`;
   const range=root.querySelector('#plannerRange'),list=root.querySelector('#waypointEditor');
   const canvases=[root.querySelector('#planXY'),root.querySelector('#planXZ')];
   const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
@@ -16,7 +16,9 @@ export function createMissionPlanner(root,{readInitial,writeInitial,onChange}){
       toWorld:(x,y)=>[(x-p)/(w-2*p)*2*r-r,axis===1?r-(y-p)/(h-2*p)*2*r:(1-(y-p)/(h-2*p))*r]};
   }
   function draw(){
-    const initial=readInitial();
+    const initial=readInitial(),check=overlay?.(waypoints);
+    // Braking estimate (braking.js): full thrust from the start velocity; the dashed line ends where it stops.
+    root.querySelector('#plannerCheck').textContent=check?.braking?`Full-thrust braking from the start velocity: ~${check.braking.distance.toFixed(0)} m in ${check.braking.time.toFixed(1)} s (dashed line to ×).`:'';
     canvases.forEach((canvas,k)=>{
       const axis=k===0?1:2,{w,h,toScreen}=geometry(canvas,axis);if(!w||!h)return; // hidden page
       const ctx=fitCanvas(canvas,w,h);ctx.fillStyle='#030507';ctx.fillRect(0,0,w,h);
@@ -28,6 +30,8 @@ export function createMissionPlanner(root,{readInitial,writeInitial,onChange}){
       const [px,py]=toScreen([0,0,0]);ctx.strokeStyle='#f4f6f7';ctx.strokeRect(px-5,py-3,10,6);
       const start=toScreen(initial.position),end=toScreen(initial.position.map((v,i)=>v+initial.velocity[i]*2));
       ctx.strokeStyle='#d95926';ctx.beginPath();ctx.moveTo(...start);ctx.lineTo(...end);ctx.stroke();
+      if(check?.stop){const stop=toScreen(check.stop);ctx.setLineDash([2,3]);ctx.beginPath();ctx.moveTo(...start);ctx.lineTo(...stop);ctx.stroke();ctx.setLineDash([]);
+        ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(stop[0]-5,stop[1]-5);ctx.lineTo(stop[0]+5,stop[1]+5);ctx.moveTo(stop[0]+5,stop[1]-5);ctx.lineTo(stop[0]-5,stop[1]+5);ctx.stroke();ctx.lineWidth=1.5;}
       if(Math.hypot(end[0]-start[0],end[1]-start[1])>8){ctx.fillStyle='#d95926';ctx.beginPath();ctx.arc(...end,5,0,2*Math.PI);ctx.fill();ctx.fillText('V',end[0]+8,end[1]-5);}
       waypoints.forEach((wp,i)=>{const [x,y]=toScreen(wp.position);ctx.fillStyle=i===selected?'#fff':wp.type==='hover'?'#c98500':'#3987e5';ctx.beginPath();ctx.arc(x,y,8,0,Math.PI*2);ctx.fill();ctx.fillStyle='#071119';ctx.textAlign='center';ctx.fillText(String(i+1),x,y+3);ctx.textAlign='left';});
       ctx.fillStyle='#f4f6f7';ctx.beginPath();ctx.moveTo(start[0],start[1]-9);ctx.lineTo(start[0]+8,start[1]);ctx.lineTo(start[0],start[1]+9);ctx.lineTo(start[0]-8,start[1]);ctx.closePath();ctx.fill();ctx.fillText('START',start[0]+12,start[1]-8);

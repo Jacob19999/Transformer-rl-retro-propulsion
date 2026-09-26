@@ -94,7 +94,8 @@ spin drives the remaining 40% crash rate.
 The legacy 26M and 34M landing policies were retired on 2026-09-17. They were
 trained before the radial fin hinge correction, so their fin mapping does not
 match the vehicle this simulation flies, and they never observed waypoint
-targets. **PID · radial hinges** remains available for non-waypoint missions.
+targets. The PID baseline and the legacy vane physics were removed from
+mission control on 2026-09-26 (below); their recorded missions still replay.
 Training status shows current stage and independent full-task evaluation
 separately. Simulation launch is disabled while the trainer owns Isaac; editing
 plans and replay remain usable.
@@ -164,6 +165,20 @@ is a deterministic classical controller with no checkpoint.
   flies waypoint routes too: fly-through and timed hover points.
 - **Constraints.** Thrust bounds, a 15° tilt cone, a 45° glide slope,
   4 m/s speed and the flight computer's thrust-rate bound.
+- **Route corridor.** On a mission with waypoints every plan stays within
+  1 m of the drawn blue route (a soft constraint), never below the lower
+  end of a waypoint leg. Before, plans only met the waypoints: from a
+  20 m/s descent one sank 26 m below its fly-through and climbed back,
+  28 m off the line (`835c3de32185`). On a corridor, a fast start may brake
+  at full thrust instead of the reserved ceiling.
+- **Launch-form route check.** The board and route planner estimate
+  full-thrust braking from the start velocity, after the rotor spools up
+  (a dashed line to × on the planner). ROUTE CHECK warns when the vehicle
+  cannot stop above the ground, when the start carries it off the first
+  leg by more than the waypoint radius, or when the drawn route dips more
+  than 1 m below both ends of a leg. The estimate uses the Isaac plant's
+  mass and full-rotor thrust (`models.PLANT_THRUST`) and applies to every
+  controller.
 - **Closed loop.** The plan is re-solved every 0.5 s from the measured
   state. A tracking loop and a geometric attitude loop fly it, ending in a
   velocity-commanded terminal descent. The planned thrust is continuous
@@ -197,23 +212,22 @@ is a deterministic classical controller with no checkpoint.
   attempts or internal convergence iterations.
 - **Requirements.** The Clarabel solver from `requirements.txt`. Waypoint
   missions also need the LiPo model enabled.
-- **Vane physics.** The launch form's VANE PHYSICS selector (request field
-  `vane_model`) picks the plant:
-  - *Momentum-bounded jet* is the default for convex missions: the
-    coupled-jet model the waypoint_flight PPO trains on, with a
-    torque-limited motor. The motor applies at most 0.76 N·m, and at zero
-    throttle (ESC brake off) the rotor coasts. That removed a 430–710°/s
-    pad spin after every landing.
-  - *Legacy airfoils + damper* has 8.5× too much vane torque per degree; it
-    is kept to reproduce missions flown before 2026-09-25.
+- **Vane physics.** Convex missions fly the momentum-bounded jet: the
+  coupled-jet model the waypoint_flight PPO trains on, with a torque-limited
+  motor. The motor applies at most 0.76 N·m, and at zero throttle (ESC brake
+  off) the rotor coasts. That removed a 430–710°/s pad spin after every
+  landing. PPO missions always fly their training plant.
 
-  PID is the legacy-vane reference: the selector locks to legacy for it,
-  and the service rejects PID on momentum vanes. PPO missions always fly
-  their training plant. On momentum vanes, start in the air with the rotor
-  spinning, or spool up on the pad: a cold in-air spool-up spins the body,
-  and the launch board warns about it. A spawned spinning rotor now starts
-  on its loaded bus; the open-circuit voltage had made every warm start
-  yaw 30°/s.
+  On 2026-09-26 the *legacy airfoils + damper* plant (8.5× too much vane
+  torque per degree) and the PID baseline, which only flew it (on
+  momentum-bounded vanes it drifted 11 m off the pad, `6421f6ec55a4`), were
+  removed from the launch form and the service; requests naming them are
+  rejected. Missions recorded with them still replay, labelled LEGACY VANES.
+
+  Start in the air with the rotor spinning, or spool up on the pad: a cold
+  in-air spool-up spins the body, and the launch board warns about it. A
+  spawned spinning rotor now starts on its loaded bus; the open-circuit
+  voltage had made every warm start yaw 30°/s.
 
 Convex missions raise the landing task's 30 m altitude fail-stop to 105 m,
 so starts up to the planner's 100 m ceiling are flyable. On 2026-09-26, on
@@ -221,7 +235,10 @@ momentum-bounded vanes, it landed nine of nine validation missions
 0.004–0.15 m from centre at 0.14–0.18 m/s. They include the waypoint route,
 the 120 s mission trial, the 6S pack and wind + sensor noise + CoM shift.
 Terminal-descent body rates were 0.7–4.6°/s, against 15–30°/s limit cycles
-before. Formulation, the plant audit, the plant identification behind every
+before. With the route corridor (2026-09-26) route flights hold the
+drawn line to 1.2 m (fly-through + hover, L-turn) and 3.5 m on the 120 s
+trial, where they had strayed 1.9–4.3 m; the 20 m/s dive of `835c3de32185`
+now bottoms at 17.5 m instead of 6.6 m. Formulation, the plant audit, the plant identification behind every
 gain, the wobble diagnosis and the full validation table are in
 `docs/convex_guidance_2026-09-25.md`.
 
@@ -281,8 +298,9 @@ not a complete electrical system or hardware flight qualification.
   rate is the change in the rate-limited servo target divided by the control
   interval. It is distinct from measured joint velocity.
 - These PPO policies output fin angles and throttle directly. There is no
-  commanded body-rate target. PID's internally named `rate_cmd` is a fin-mixer
-  control signal, not a calibrated body-rate setpoint; it is not plotted as one.
+  commanded body-rate target. In recorded PID missions the internally named
+  `rate_cmd` is a fin-mixer control signal, not a calibrated body-rate
+  setpoint; it is not plotted as one.
 - Applied thrust includes fin axial losses. Raw thrust, RPM, throttle, battery
   voltage/current/power/SOC/temperature/energy and contact force are logged.
 - Propulsive delta-v is the time integral of the magnitude of EDF plus fin

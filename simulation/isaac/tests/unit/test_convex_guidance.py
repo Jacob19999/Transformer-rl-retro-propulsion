@@ -10,7 +10,8 @@ pytest.importorskip('clarabel')
 
 from tvc_env.controllers.convex_adapter import ConvexGuidanceController, VehicleModel, _FRD_TO_ISAAC  # noqa: E402
 from tvc_env.controllers.convex_guidance import (  # noqa: E402
-    ConvexGuidance, EnergyModel, GuidanceLimits, LandingGate, RouteWaypoint, _Segment,
+    ConvexGuidance, EnergyModel, GuidanceLimits, LandingGate, RouteWaypoint, _Segment, catmull_rom_leg,
+    curve_fraction, curve_point,
 )
 from tvc_env.controllers.pid_fin_mixer import PIDFinMixer  # noqa: E402
 from tvc_env.common.quaternions import from_euler, to_euler, to_rotation_matrix  # noqa: E402
@@ -172,6 +173,86 @@ def test_unreachable_gate_degrades_to_maximum_braking():
     assert np.all(np.isfinite(plan.position)) and np.all(np.isfinite(plan.thrust_accel))
     early = plan.times < .5
     assert plan.sigma[early].max() * MASS > .95 * FULL   # full braking at once, past the 85% ceiling
+
+
+def _corridor_planner():
+    base = planner()
+    limits = GuidanceLimits(**{**base.limits.__dict__, 'emergency_thrust_max_n': FULL,
+                               'emergency_thrust_rate_n_s': 8 * RATE})
+    return ConvexGuidance(limits, base.energy, corridor_m=1.)
+
+
+def _off_route(plan):
+    """Largest distance of a plan's route-leg nodes from their drawn curves."""
+    worst, node = 0., 0
+    for seg in plan.segments:
+        first, node = node, node + seg.nodes
+        for r in plan.position[first + 1:node + 1] if seg.curve is not None else ():
+            point, _ = curve_point(seg.curve, curve_fraction(seg.curve, r)[0])
+            worst = max(worst, float(np.linalg.norm(r - point)))
+    return worst
+
+
+def test_route_corridor_keeps_the_plan_on_the_drawn_route():
+    start = [0., 0., 20.]
+    route = (RouteWaypoint((20., 0., 15.), 'flypass', 1., 3.), RouteWaypoint((20., 20., 10.), 'flypass', 1., 3.))
+    points = [start] + [w.position for w in route] + [[0., 0., 0.]]
+    path = [catmull_rom_leg(points, leg) for leg in range(3)]
+    guidance = _corridor_planner()
+    on = guidance.plan(start, [0., 0., 0.], WEIGHT, GATE, route, path=path)
+    assert on.mode == 'optimal' and on.corridor_excess_m < .05
+    assert _off_route(on) <= 1.05
+    # Without it the plan only meets the waypoints: 2.6 m off the curve at the turn.
+    free = guidance.plan(start, [0., 0., 0.], WEIGHT, GATE, route)
+    free.segments = guidance._route_segments(np.array(start), np.zeros(3), route, 1., path) + free.segments[2:]
+    assert _off_route(free) > 2.
+
+
+def test_route_corridor_brakes_a_fast_descent_at_its_waypoint():
+    # Isaac 835c3de32185: from a 20 m/s descent the plan sank 26 m below its
+    # fly-through and climbed back. The corridor caps the leg at the
+    # waypoint, and the plan may then brake at full thrust.
+    guidance = _corridor_planner()
+    start, velocity = [4., 0., 40.], [0., 0., -12.]
+    route = (RouteWaypoint((0., 0., 18.), 'flypass', 1., 3.),)
+    path = [catmull_rom_leg([start, route[0].position, [0., 0., 0.]], leg) for leg in range(2)]
+    free = guidance.plan(start, velocity, [0., 0., WEIGHT], GATE, route)
+    on = guidance.plan(start, velocity, [0., 0., WEIGHT], GATE, route, path=path)
+    assert free.mode == on.mode == 'optimal'
+    before = lambda plan: plan.position[:plan.waypoint_nodes[0] + 1, 2].min()  # noqa: E731
+    assert before(free) < 1.        # the energy optimum rides down to the 0.8 m floor
+    assert before(on) > 16.         # stops within ~2 m of the 18 m waypoint
+    ceiling = guidance.limits.thrust_max_n
+    assert free.sigma.max() * MASS <= ceiling + 1e-3 < on.sigma.max() * MASS
+    np.testing.assert_array_less(on.sigma[on.times > 8.] * MASS, ceiling + 1e-3)   # reserve back after braking
+
+
+def test_route_corridor_is_soft_for_a_start_it_cannot_contain():
+    guidance = _corridor_planner()
+    start = [0., 0., 12.]
+    route = (RouteWaypoint((10., 0., 10.), 'flypass', 1., 3.),)
+    path = [catmull_rom_leg([start, route[0].position, [0., 0., 0.]], leg) for leg in range(2)]
+    plan = guidance.plan(start, [0., 3.5, 0.], [0., 0., WEIGHT], GATE, route, path=path)
+    assert plan.mode == 'optimal' and plan.corridor_excess_m > .2
+
+
+def test_corridor_curves_match_the_mission_sequencer_and_never_undershoot_a_leg():
+    from tvc_env.envs.waypoints import catmull_rom
+    points = [[-1.2, .8, 50.4], [-.5, 23.6, 6.], [7.3, -1.4, 4.5], [-.1, -29.9, 18.6], [0., 0., 0.]]
+    p = torch.tensor(points, dtype=torch.float64)
+    for leg in range(4):
+        # WaypointMission._refresh_curves: p0 = start for the first two legs, p3 clamps to the pad.
+        ends = [p[max(0, leg - 1)], p[leg], p[leg + 1], p[min(4, leg + 2)]]
+        expected = catmull_rom(*(e[None] for e in ends))[0].numpy()
+        np.testing.assert_allclose(catmull_rom_leg(points, leg), expected, atol=1e-9)
+    # The trial route's hover-to-hover leg (6 m -> 4.5 m) dips to 1.5 m on the
+    # drawn curve; the controller's corridor stays at or above 4.5 m.
+    assert catmull_rom_leg(points, 1)[:, 2].min() < 2.
+    controller = ConvexGuidanceController(settings(), vehicle(), (0., 0., 0.), .3125, 1 / 30)
+    curves = controller._path(points, 1, 2)
+    assert len(curves) == 3 and curves[0][:, 2].min() >= 4.5 - 1e-9
+    np.testing.assert_allclose(curves[0][[0, -1]], np.array(points[1:3]), atol=1e-9)
+    assert controller._path(points[:1] + points[-1:], 0, 0) is None      # a direct landing has no corridor
 
 
 def test_geometric_attitude_efforts_match_pid_euler_convention():

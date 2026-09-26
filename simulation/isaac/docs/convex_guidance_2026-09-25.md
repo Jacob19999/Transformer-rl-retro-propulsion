@@ -461,6 +461,117 @@ to 153°/s.
   1,781°/s of yaw and a 6.8 m/s crash (`ee3f973be19e`). Spool up on the
   pad. The launch form warns about cold in-air starts on momentum vanes.
 
+## Fifth pass: following the drawn route (2026-09-26)
+
+Goal: fly the route drawn on the launch form, not only its waypoints. In
+`835c3de32185` the start was 94 m up, descending at 20 m/s and drifting
+9 m/s sideways, with the rotor at 50%, and one fly-through waypoint at 32.5 m.
+The vehicle sank to 6.6 m, climbed back 26 m to the waypoint, then landed,
+up to 28.5 m from the blue route line. Tracking error stayed under 0.7 m: the
+controller flew its plan, and the plan ignored the line. There were three
+causes:
+
+- **The planner only constrained the waypoints.** Between them it took the
+  minimum-energy path. A fly-through must be passed, so after overshooting
+  it climbs back.
+- **The start could not reach the waypoint.** Half of the thrust above
+  weight is reserved for feedback, so plans brake a descent at only
+  2.0 m/s² (36.8 of 43.1 N). A 20.9 m/s descent needs ~107 m to stop at that
+  rate; the waypoint was 62 m below.
+- **Braking weakened mid-flight.** While no plan was feasible the fallback
+  braked at full thrust, and its plans bottomed at 15–18 m. Once a plan was
+  feasible again (3.5 s) it planned at the reserved ceiling and dipped to
+  4.3 m.
+
+### Route corridor
+
+On a mission with waypoints each plan node now stays within 1 m of the
+drawn route: the sequencer's Catmull-Rom curve through the start, the
+waypoints and the pad, the same curve the launch planner draws.
+
+| Choice | Evidence |
+|---|---|
+| Distance to a chord of the curve (an SOC per node, with a chord parameter) | A corridor measured across the curve's tangent left the along-route direction free: on the near-vertical first leg of `835c3de32185` the plan still sank 20 m below the waypoint. A chord ends at its waypoint, so running past it counts |
+| Two passes: the whole leg's chord, then ±10% chords around each planned node | The whole chord leaves the timing free but is 1–3 m from the curve on the routes tried; local chords are 0.2–0.6 m from it. A second refinement changed nothing |
+| Soft: the excess is priced at 10 s of hover energy per metre-second | A start the corridor cannot contain still gets a plan; the landing-time search ranks durations with the penalty included |
+| Legs never run below their lower end | Catmull-Rom undershoots after a steep arrival. The trial's hover-to-hover leg (6 m, 4.5 m) dips to 1.5 m, and following it took the plan to the 0.8 m floor at 2.3 m/s: touchdown 17 m from the pad (offline replica). The sequencer's curve is unchanged (PPO observation contract) |
+| On a corridor, an over-speed start may brake at full thrust until back under the speed bound | Without a corridor the energy optimum brakes no harder than the floor forces: offline, the same allowance turned `835c3de32185`'s maximum-braking fallback into a plan that skimmed the 0.8 m floor with no thrust left for tracking. With the corridor the plan from that mission's 3.5 s state bottoms at 18.5 m instead of 4.3 m |
+
+A rotor above the planning ceiling (a braking plan or tracking margin) now
+comes back down at the thrust rate instead of starting the next plan at the
+ceiling in one step.
+
+Offline (coupled-jet replica, no wind), largest distance from the drawn
+route, corridor off → on; every mission landed within 0.07 m of centre:
+
+| Route | Off | On |
+|---|---|---|
+| `835c3de32185` start | 33.7 m | 17.4 m |
+| Launch-form draft (83 m, −18 m/s, hover at 17.9 m) | 11.4 m | 2.2 m |
+| Fly-through + hover | 1.9 m | 1.2 m |
+| L-turn fly-throughs | 4.1 m | 1.2 m |
+| Zig-zag, three fly-throughs | 6.2 m | 2.1 m |
+| 120 s trial, three hovers | 4.3 m | 3.5 m (1.0 m rms; 3 m of it is the dip it now skips) |
+
+The `835c3de32185` remainder is physics: straight-line braking from that
+start carries the vehicle ~33 m across the route (the tilt cone allows
+2.6 m/s² sideways while the thrust brakes the descent). Solves take longer:
+median 70–150 ms per re-plan (was 70–90), 380 ms on the three-hover trial.
+
+### Launch-form route check
+
+The launch board and route planner estimate where the start velocity
+carries the vehicle: straight-line braking at full thrust inside the 15°
+tilt cone, after the rotor spools up from its start speed (the EDF lag, and
+the 0.76 N·m torque bound on momentum vanes). Mass and full-rotor thrust are
+the Isaac plant's (`models.PLANT_THRUST`). The board warns when:
+
+- the vehicle cannot stop above the ground;
+- the stop point lies more than the waypoint radius off the first leg (for
+  `835c3de32185`: ~33 m);
+- the drawn route dips more than 1 m below both ends of a waypoint leg (the
+  convex corridor holds the lower end).
+
+The planner draws the braking path as a dashed line ending in ×.
+
+### Results (Isaac)
+
+Largest (RMS) distance from the drawn route, before → after; every
+mission landed (0.15–0.16 m/s):
+
+| Mission | Before | After | Pad error after | Run |
+|---|---|---|---|---|
+| `835c3de32185` start (wind, sensor noise) | 28.5 m (14.4), lowest 6.6 m before the 32.5 m waypoint | 17.3 m (7.5), lowest 17.5 m | 0.27 m | `96c4b40be2be` |
+| Fly-through + hover | 1.9 m (0.69) | 1.2 m (0.49) | 0.12 m | `4c8c210998f3` |
+| L-turn fly-throughs (new) | 4.1 m offline | 1.2 m (0.78) | 0.14 m | `f379934526eb` |
+| 120 s trial, three hovers | 4.3 m (1.47) | 3.5 m (1.02); 1.2 m from the corridor | 0.13 m | `1d29169d440f` |
+
+Peak roll/pitch rates on the short route fell from 42/41 to 21/23°/s. The
+0.27 m pad error of `96c4b40be2be` came after the vehicle was centred to
+0.03 m at touchdown height: it slid in the wind for 1.4 s before the landing
+registered, a contact-phase effect this pass does not touch. The eight
+missions without waypoints (default, hop, crosswind, 6S, 50 m, all
+disturbances, legacy vanes) flew exactly as in the fourth pass: same
+impact speeds and pad errors.
+
+A user mission from the launch form (`60e1f757fa15`: 80.8 m, −15.9 m/s,
+rotor 50%, four waypoints) held 2.7 m (0.86 m RMS) of the route, stopped at
+19.7 m above an 18.5 m fly-through, and timed out 0.1 m above touchdown
+height at its 60 s limit.
+
+### Remaining limits
+
+- **A start the tilt cone cannot turn stays off the route.** From
+  `835c3de32185` the straight-line estimate is ~33 m across the first leg
+  and the flight kept 17 m; only a slower or better-aimed start fixes it.
+  The launch board says so before launch.
+- **A half-spun rotor still yaws the body at ~690°/s.** A 50% start spools
+  up at the full rate to brake, and the body takes the rotor's momentum.
+  The launch board's cold-start warning only covers starts below 50%.
+- **Near the pad the corridor competes with the glide slope and the
+  vertical gate arrival**, so the last metres of a slanted final leg can sit
+  1–2 m off the drawn curve.
+
 ## Mission control
 
 - **Controller option.** **CONVEX · SOCP powered-descent guidance** is
@@ -472,6 +583,10 @@ to 153°/s.
   (phase, time to gate, tracking error, thrust command, solve time, lossless
   gap) and phase and fallback events on the timeline. The altitude and
   thrust charts gain PLAN and COMMAND traces.
+- **Launch-form route check.** The board and route planner estimate
+  full-thrust braking from the start velocity and warn when the vehicle
+  cannot stop above the ground, cannot hold the first leg, or the drawn
+  route dips below a leg's lower end (see the fifth pass).
 - **Recording.** Frames record `guidance` telemetry; the full planned path
   is stored only on re-plan frames. Metadata records the settings, solver
   version and vehicle model. `--convex-settings` is a local diagnostic
@@ -498,7 +613,8 @@ to 153°/s.
   PhysX joint velocity. On hardware it would need a vane position sensor,
   or a model-based estimate from the commands.
 - Real-time use would need a solve-latency state predictor. Solves take
-  30–110 ms, against a 33 ms control period.
+  30–110 ms (70–150 ms with a route corridor, up to 1.1 s on the
+  three-hover trial), against a 33 ms control period.
 - The mission runner now retries its status-file replace. On Windows, the
   service reading `status.json` at the same instant had aborted a mission
   (`aea16ce345d4`).

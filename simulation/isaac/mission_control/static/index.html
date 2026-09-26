@@ -61,9 +61,8 @@
 <div id="checklist" class="panel checklist"></div>
 <div class="panel launch-card"><div class="panel-title">LAUNCH <span>NEXT ISAAC RUN</span></div><div class="card-body">
 <label>MISSION NAME<input id="name" maxlength="80" value="8S landing test" required></label>
-<label>CONTROLLER<select id="controller"><option value="pid">PID · radial hinges</option></select></label>
+<label>CONTROLLER<select id="controller"><option value="convex">CONVEX · SOCP powered-descent guidance</option></select></label>
 <label>HARDWARE PROFILE<select id="hardware_profile"><option value="planned_8s">Planned 8S / 48 N estimate</option><option value="legacy_6s">Legacy 6S / 39.2 N estimate</option></select></label>
-<label>VANE PHYSICS<select id="vane_model" title="Momentum-bounded: each vane turns at most its quarter of the jet (the waypoint_flight training plant). Legacy: independent airfoils plus an artificial damper, 8.5x too much torque per degree; kept to reproduce missions flown before 2026-09-25. PID flies legacy vanes only (it is the legacy-plant reference); PPO policies fly their training plant."><option value="momentum">Momentum-bounded jet (training plant)</option><option value="legacy">Legacy airfoils + damper (pre-audit)</option></select></label>
 <div class="pair"><label>SEED<input id="seed" type="number" min="0" max="2147483647" step="1" value="2026" required></label><label>DURATION / s<input id="duration_s" type="number" min="1" max="180" value="120" required></label></div>
 <button id="run" class="primary" type="submit">RUN ISAAC SIMULATION <span>↗</span></button>
 <div id="launchMessage" class="hint" role="status">Launching opens the Flight page with live telemetry.</div>

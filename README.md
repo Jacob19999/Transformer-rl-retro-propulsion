@@ -43,7 +43,7 @@ The dominant obstacle to learning is **rotor–body angular-momentum exchange**:
   - It minimizes electrical energy with a power-cone objective.
   - Added constraints: a thrust-vector rate bound derived from the vanes' yaw authority, a gate approached from above, and waypoint nodes.
   - A servo-deadband inverse removed a 1 Hz gyroscopic coning limit cycle, cutting hover body-rate RMS from 15 to 1.5 °/s.
-- **Mission Control** ([mission_control.md](simulation/isaac/docs/mission_control.md)). A local web console (`simulation/isaac/mission_control/start.ps1`, http://127.0.0.1:8830) plans and launches Isaac missions with PID, convex or PPO controllers. It replays telemetry on a 3D vehicle model, shows convex-guidance diagnostics and browses training runs.
+- **Mission Control** ([mission_control.md](simulation/isaac/docs/mission_control.md)). A local web console (`simulation/isaac/mission_control/start.ps1`, http://127.0.0.1:8830) plans and launches Isaac missions with convex or PPO controllers. It replays telemetry on a 3D vehicle model, shows convex-guidance diagnostics and browses training runs.
 
 ### Next steps
 

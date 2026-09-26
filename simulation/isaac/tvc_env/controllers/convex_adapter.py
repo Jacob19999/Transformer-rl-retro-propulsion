@@ -21,9 +21,12 @@ Flight phases:
                     the descent pauses while the vehicle is off center
   HOLD              no feasible plan yet: hold the current position
 
+On a mission with waypoints every plan also stays near the drawn route (the
+sequencer's Catmull-Rom curve), a soft corridor in the SOCP.
+
 The controller reads only the observation (so sensor noise reaches it), the
-mission sequencer's remaining route and the measured bus voltage. It never
-reads simulator ground truth and never alters the environment.
+mission sequencer's route and the measured bus voltage. It never reads
+simulator ground truth and never alters the environment.
 """
 
 from __future__ import annotations
@@ -41,7 +44,7 @@ from tvc_env.common.quaternions import to_rotation_matrix
 from tvc_env.controllers.attitude_lqr import AttitudePlant, GyroAttitudeLQR, LQRWeights
 from tvc_env.controllers.base import BaseController
 from tvc_env.controllers.convex_guidance import (
-    HOVER, ConvexGuidance, EnergyModel, GuidanceLimits, LandingGate, RouteWaypoint,
+    HOVER, ConvexGuidance, EnergyModel, GuidanceLimits, LandingGate, RouteWaypoint, catmull_rom_leg,
 )
 from tvc_env.controllers.pid_fin_mixer import PIDFinMixer
 
@@ -171,7 +174,9 @@ class ConvexGuidanceController(BaseController):
             self._limits, vehicle.energy_model(), objective=str(g['objective']),
             landing_nodes=int(g['landing_nodes']), route_dt_s=float(g['route_dt_s']),
             max_leg_nodes=int(g['max_leg_nodes']), flypass_capture_fraction=float(g['flypass_capture_fraction']),
-            max_solve_time_s=float(g['max_solve_time_s']))
+            max_solve_time_s=float(g['max_solve_time_s']),
+            corridor_m=None if g.get('route_corridor_m') is None else float(g['route_corridor_m']),
+            corridor_weight=float(g.get('route_corridor_weight', 10.0)))
         self.reset()
 
     def _planning_ceiling(self, available_n: float, strict: bool = False) -> float:
@@ -329,6 +334,7 @@ class ConvexGuidanceController(BaseController):
         self._velocity = np.zeros(3)
         self._throttle = None
         self._rotor_command = None      # duty x V_bus / V_ref: the rotor speed the duty asks for
+        self._path_key = self._path_curves = None   # route corridor curves for the active leg onward
         self.last_telemetry: dict = {}
 
     @property
@@ -342,7 +348,7 @@ class ConvexGuidanceController(BaseController):
     # ---- main entry ----
 
     def compute_action(self, obs: Tensor, *, reference_position=None, route=(), hold_elapsed_s: float = 0.0,
-                       bus_voltage_v: float | None = None) -> Tensor:
+                       bus_voltage_v: float | None = None, path_points=None, path_index: int = 0) -> Tensor:
         """Fin angles and duty for one vehicle.
 
         Args:
@@ -352,6 +358,10 @@ class ConvexGuidanceController(BaseController):
             route: remaining waypoints, active first (mission sequencer).
             hold_elapsed_s: dwell already accrued on an active hover waypoint.
             bus_voltage_v: measured pack voltage (None: ideal reference bus).
+            path_points: the mission's drawn route, [start, every waypoint,
+                landing target] (world); its Catmull-Rom legs are the route
+                corridor. None, or no waypoints: no corridor.
+            path_index: the active leg (the sequencer's waypoint index).
         """
         o = obs[0].detach().to('cpu', torch.float64).numpy()
         reference = self.pad if reference_position is None else np.asarray(reference_position, dtype=float)
@@ -368,6 +378,7 @@ class ConvexGuidanceController(BaseController):
             self._throttle = min(1.0, rotor * self.vehicle.reference_voltage_v / max(volts, 1e-3))
         self._new_plan = False
         waypoints = tuple(self._route(route, hold_elapsed_s))
+        path = self._path(path_points, path_index, len(waypoints))
 
         if contact == int(ContactState.LANDED):
             # The flight executive disarms after LANDED; never push on the pad.
@@ -388,7 +399,7 @@ class ConvexGuidanceController(BaseController):
 
         # Present thrust: magnitude from rotor speed, direction the body axis.
         self._velocity = velocity
-        self._maybe_replan(position, velocity, thrust_now * R[:, 2], waypoints, volts)
+        self._maybe_replan(position, velocity, thrust_now * R[:, 2], waypoints, volts, path)
         r_ref, v_ref, u_ff = self._reference(position, waypoints)
 
         # Feedback around the plan, world frame.
@@ -533,7 +544,32 @@ class ConvexGuidanceController(BaseController):
             result.append(replace(wp, hold_s=hold))
         return result
 
-    def _maybe_replan(self, position, velocity, thrust_now, waypoints, volts):
+    def _path(self, points, index, remaining):
+        """The route corridor's curves, one per remaining leg (landing included).
+
+        A direct landing draws no route and keeps the glide-slope approach.
+        """
+        if points is None or self.guidance.corridor_m is None or len(points) <= 2:
+            return None
+        key = (tuple(tuple(float(x) for x in p) for p in points), int(index))
+        if self._path_key != key:
+            self._path_key = key
+            self._path_curves = []
+            for leg in range(int(index), len(points) - 1):
+                # A Catmull-Rom leg can undershoot both of its ends after a
+                # steep arrival: the trial route's hover-to-hover leg (6 m and
+                # 4.5 m, after the 50 m start) dips to 1.5 m, and the corridor
+                # pulled the plan down to the 0.8 m floor at 2.3 m/s (offline
+                # replica: touchdown 17 m from the pad). The corridor never
+                # runs below the lower end of its leg.
+                curve = catmull_rom_leg(points, leg)
+                curve[:, 2] = np.maximum(curve[:, 2], min(curve[0, 2], curve[-1, 2]))
+                self._path_curves.append(curve)
+        if len(self._path_curves) != remaining + 1:
+            raise ValueError(f'Route path has {len(self._path_curves)} legs left for {remaining} waypoints')
+        return self._path_curves
+
+    def _maybe_replan(self, position, velocity, thrust_now, waypoints, volts, path=None):
         if self._phase == TERMINAL_DESCENT:
             return
         plan, elapsed = self._plan, self._t - self._plan_t0
@@ -576,7 +612,7 @@ class ConvexGuidanceController(BaseController):
             emergency_thrust_max_n=available,
             emergency_thrust_rate_n_s=self._thrust_rate(volts, self.spool_rate))
         self._last_attempt_t = self._t
-        new = self.guidance.plan(*start, self.gate, waypoints, landing_time_hint=hint)
+        new = self.guidance.plan(*start, self.gate, waypoints, landing_time_hint=hint, path=path)
         self._plan_origin = origin
         if new is None:
             if plan is None or len(waypoints) != self._plan_route_len:
@@ -915,7 +951,8 @@ class ConvexGuidanceController(BaseController):
                 landing_start_s=round(plan.landing_start_s, 3), solve_ms=round(plan.solve_time_s * 1e3, 2),
                 solves=plan.solves, iterations=plan.iterations,
                 convexification_gap=round(plan.convexification_gap, 6),
-                terminal_miss_m=round(plan.terminal_miss_m, 4))
+                terminal_miss_m=round(plan.terminal_miss_m, 4),
+                corridor_excess_m=round(plan.corridor_excess_m, 3))
         if self._new_plan:
             record['plan'] = dict(
                 times=[round(float(t), 3) for t in plan.times],

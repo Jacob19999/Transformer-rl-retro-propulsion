@@ -29,7 +29,7 @@ export function createModels(root, api) {
       <span class="badge ${p.validated ? 'go' : 'hold'}">${p.validated ? '✓ VALIDATED' : '▲ ' + escape((p.status ?? 'unqualified').toUpperCase())}</span></div>
       <div class="mono">${escape(p.checkpoint)}</div>
       ${p.note ? `<details><summary>Qualification notes</summary><p>${escape(p.note)}</p></details>` : ''}</div>`).join('')
-      || '<div class="hint">No PPO checkpoint is registered for missions. PID remains available.</div>';
+      || '<div class="hint">No PPO checkpoint is registered for missions. Convex guidance remains available.</div>';
     const runs = data.runs.map(r => {
       const stageCount = r.stages.length, latest = r.checkpoints.at(-1);
       return `<button type="button" class="model-card run ${r.run === selected ? 'selected' : ''}" data-run="${escape(r.run)}">

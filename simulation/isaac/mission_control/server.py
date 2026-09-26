@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from .models import ROOT, DEFAULTS, validate_mission, policy_paths, default_mission, convex_available
+from .models import ROOT, DEFAULTS, validate_mission, policy_paths, default_mission, convex_available, braking_envelopes
 
 HERE = Path(__file__).resolve().parent
 CONVEX_LABEL = 'CONVEX · SOCP powered-descent guidance'
@@ -331,7 +331,7 @@ def status(mid):
 @app.get('/api/config')
 def config():
     paths = policy_paths()
-    policies = {'pid': 'PID · radial hinges'}
+    policies = {}
     if convex_available():
         policies['convex'] = CONVEX_LABEL
     if 'ppo_radial' in paths:
@@ -340,7 +340,7 @@ def config():
         policies = {'ppo_mission': 'EXPERIMENTAL PPO · waypoint flight + landing', **policies}
     training = active_training_command()
     return dict(defaults=default_mission(paths), hardware=read_json(HERE / 'hardware.json'),
-                policies=policies,
+                policies=policies, vehicles=braking_envelopes(),
                 engine='NVIDIA Isaac Sim / PhysX', training=bool(training), training_metrics=training_snapshot(training),
                 active=active_id if process and process.poll() is None else None)
 

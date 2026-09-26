@@ -69,6 +69,17 @@ guidance:
   route_dt_s: 0.35              # target interval on waypoint legs
   max_leg_nodes: 40
   flypass_capture_fraction: 0.5 # plan fly-throughs inside half the capture radius
+  # Route corridor (null disables): on a mission with waypoints every plan
+  # node stays within this half-width of the drawn route (the sequencer's
+  # Catmull-Rom curve through the start, the waypoints and the pad). Without
+  # it the plan only met the waypoints and took the cheapest path between
+  # them: from a 20 m/s descent it sank 26 m below its fly-through and
+  # climbed back, 31 m off the route (Isaac mission 835c3de32185). Soft: the
+  # excess is priced at route_corridor_weight seconds of hover energy per
+  # metre-second, so an unreachable corridor still gets a plan. A plan on a
+  # corridor may also brake an over-speed start at full thrust.
+  route_corridor_m: 1.0
+  route_corridor_weight: 10.0
   max_solve_time_s: 0.5         # per SOCP (Clarabel time limit)
   # Re-solve every period. While tracking error stays inside these bounds the
   # new plan starts from the current plan's reference state (feedback keeps

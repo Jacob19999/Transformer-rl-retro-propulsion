@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createMissionPlanner, samplePlannerSpline } from './planner.js';
+import { checkRoute } from './braking.js';
 import { attitude, drawAdi, drawWebcast, fitCanvas, series } from './instruments.js';
 import { createCharts } from './charts.js';
 import { createModels } from './models.js';
@@ -50,7 +51,6 @@ function updateTraining(c){
   if(JSON.stringify([...$('controller').options].map(o=>[o.value,o.text]))!==JSON.stringify(choices)){
     $('controller').replaceChildren(...choices.map(([key,name])=>new Option(name,key)));
     $('controller').value=choice in c.policies?choice:c.defaults.controller;
-    syncVaneModel();
   }
   state.connected=true;state.training=!!c.training;state.trainingMetrics=c.training_metrics;
   text('connection',state.training?'TRAINER ACTIVE / REPLAY READY':'ISAAC SERVICE ONLINE');
@@ -77,10 +77,20 @@ for (const [key, title, labels, initial, min, max] of [
 }
 const initialKeys=['position','velocity','attitude_deg','angular_rate_deg_s'];
 const readPlannerInitial=()=>Object.fromEntries(initialKeys.map(key=>[key,[0,1,2].map(i=>Number($(`${key}_${i}`).value))]));
+// Launch-form route check (braking.js), recomputed only when its inputs change.
+let routeCheckKey=null,routeCheckValue={warnings:[],stop:null,braking:null};
+function routeCheck(waypoints=planner.getWaypoints()){
+  const initial=readPlannerInitial(),rotor=Number($('initial_motor_fraction').value)/100;
+  const vehicle=config?.vehicles?.[`${$('hardware_profile').value}/momentum`];
+  const key=JSON.stringify([initial.position,initial.velocity,waypoints,rotor,vehicle]);
+  if(key!==routeCheckKey){routeCheckKey=key;routeCheckValue=checkRoute(initial,waypoints,vehicle,rotor);}
+  return routeCheckValue;
+}
 const planner=createMissionPlanner($('missionPlanner'),{readInitial:readPlannerInitial,
   writeInitial:initial=>initialKeys.forEach(key=>initial[key].forEach((v,i)=>{$(`${key}_${i}`).value=Math.round(v*100)/100;})),
-  onChange:()=>updatePlannedRoute()});
-$('vectors').addEventListener('input',()=>{planner.draw();updatePlannedRoute();});
+  onChange:()=>{updatePlannedRoute();renderBoard();},overlay:waypoints=>routeCheck(waypoints)});
+$('vectors').addEventListener('input',()=>{planner.draw();updatePlannedRoute();renderBoard();});
+for(const id of ['initial_motor_fraction','hardware_profile'])$(id).addEventListener('change',()=>{planner.draw();renderBoard();});
 $('finRows').innerHTML = finNames.map((n,i)=>`<tr><td>${n}</td><td class="defl"><div class="dbar"><i id="fd${i}" style="background:${series[i]}"></i><b id="fdc${i}"></b></div></td><td id="fc${i}">—</td><td id="fa${i}">—</td></tr>`).join('');
 $('finRateRows').innerHTML = finNames.map((n,i)=>`<tr><td>${n}</td><td id="fcr${i}">—</td><td id="far${i}">—</td></tr>`).join('');
 $('gyro').innerHTML = ['P · ROLL','Q · PITCH','R · YAW'].map((n,i)=>`<div class="gyro-row"><span>${n}</span><div class="gbar"><i id="gb${i}" style="background:${series[i]}"></i><span class="limit" style="left:25%"></span><span class="limit" style="left:75%"></span></div><b id="g${i}">—</b></div>`).join('');
@@ -334,12 +344,13 @@ function renderBoard(){
   const m=state.trainingMetrics;
   items.push(['PPO TRAINER',state.training?['good',m?.step!=null?`${m.task==='waypoint_flight'?'WAYPOINT':'LANDING'} · ${fmt(m.step/1e6,1)}M · S${m.stage+1}/${m.stages??'—'}`:'STARTING']:['idle','IDLE']]);
   const controller=$('controller').value,policy=config?.policies?.[controller]??controller;
-  items.push(['NEXT CONTROLLER',controller==='pid'?['good','PID']:controller==='convex'?['good','CONVEX SOCP']:[/EXPERIMENTAL/i.test(policy)?'warning':'good',controller==='ppo_mission'?'PPO · EXPERIMENTAL':policy.toUpperCase()]]);
+  items.push(['NEXT CONTROLLER',controller==='convex'?['good','CONVEX SOCP']:[/EXPERIMENTAL/i.test(policy)?'warning':'good',controller==='ppo_mission'?'PPO · EXPERIMENTAL':policy.toUpperCase()]]);
   // A rotor spun up in flight takes its angular momentum (~0.78 N m s at hover)
   // from the body; momentum-bounded vanes hold ~0.3 N m, so the body spins.
   // Spool up on the pad, or start in the air with the rotor already turning.
   const airborne=Number($('position_2')?.value??0)>1,cold=Number($('initial_motor_fraction').value)<50;
-  if(airborne&&cold&&$('vane_model').value==='momentum')items.push(['ROTOR START',['warning','COLD IN AIR · SPIN-UP YAWS THE BODY']]);
+  if(airborne&&cold)items.push(['ROTOR START',['warning','COLD IN AIR · SPIN-UP YAWS THE BODY']]);
+  for(const warning of routeCheck().warnings)items.push(['ROUTE CHECK',[warning.level,warning.text]]);
   const preflight=checklist.summary();
   items.push(['PRE-FLIGHT',preflight.done===preflight.total?['good',`COMPLETE · ${preflight.total}/${preflight.total}`]:preflight.done?['warning',`HOLD · ${preflight.done}/${preflight.total}`]:['idle','NOT STARTED']]);
   items.push(['TELEMETRY',!state.frames.length?['idle','NO DATA']:state.busy&&state.live?['good',`LIVE · ${state.frames.length} SAMPLES`]:['idle',`REPLAY · ${state.frames.length} SAMPLES`]]);
@@ -454,22 +465,10 @@ async function poll(){
   if(state.frames.length)updateTelemetry();
   return m;
 }
-// Vane physics each controller flies (mission_control/models.py): PID is the
-// legacy-vane reference, PPO policies replay their momentum-bounded training
-// plant, and only the convex controller offers the choice.
-let convexVaneModel='momentum';
-function syncVaneModel(){
-  const controller=$('controller').value,select=$('vane_model');
-  const fixed=controller==='pid'?'legacy':controller==='convex'?null:'momentum';
-  select.value=fixed??convexVaneModel;select.disabled=!!fixed;
-}
-$('vane_model').onchange=()=>{if($('controller').value==='convex')convexVaneModel=$('vane_model').value;};
 function fillMissionForm(request){
   for(const key of ['name','controller','hardware_profile','seed','duration_s'])$(key).value=request[key];
-  if(request.controller==='convex')convexVaneModel=request.vane_model??'momentum';
   // Replays can name a retired policy; keep the next run on an available one.
-  if(!$('controller').value)$('controller').value=config?.defaults?.controller??'pid';
-  syncVaneModel();
+  if(!$('controller').value)$('controller').value=config?.defaults?.controller??'convex';
   for(const key of ['position','velocity','attitude_deg','angular_rate_deg_s'])request[key].forEach((v,i)=>{$(`${key}_${i}`).value=v;});
   $('initial_motor_fraction').value=request.initial_motor_fraction*100;
   const selected=Array.isArray(request.disturbance)?request.disturbance:[request.disturbance];
@@ -481,7 +480,7 @@ function fillMissionForm(request){
   planner.setWaypoints(request.waypoints??[]);checklist.update();
 }
 function missionRequest(){
-  const result={};for(const key of ['name','controller','hardware_profile','vane_model'])result[key]=$(key).value;
+  const result={};for(const key of ['name','controller','hardware_profile'])result[key]=$(key).value;
   result.disturbance=[...document.querySelectorAll('input[name="disturbance"]:checked')].map(input=>input.value);
   for(const key of ['seed','duration_s'])result[key]=Number($(key).value);
   for(const key of ['position','velocity','attitude_deg','angular_rate_deg_s'])result[key]=[0,1,2].map(i=>Number($(`${key}_${i}`).value));
@@ -496,7 +495,7 @@ $('history').onchange=()=>{if($('history').value)selectMission($('history').valu
 $('play').onclick=()=>{if(!state.frames.length)return;state.live=false;if(state.time>=state.frames.at(-1).t)state.time=0;state.playing=!state.playing;};
 $('timeline').oninput=()=>{state.live=false;state.playing=false;state.time=Number($('timeline').value);};
 $('live').onclick=()=>{state.live=true;state.playing=false;state.time=state.frames.at(-1)?.t??0;};
-$('controller').onchange=()=>{syncVaneModel();renderBoard();};
+$('controller').onchange=()=>renderBoard();
 $('hardware_profile').onchange=()=>text('packLabel',$('hardware_profile').value==='planned_8s'?'8S / ESTIMATED':'6S / ESTIMATED');
 $('hardwareButton').onclick=()=>$('hardwareDialog').showModal();$('closeHardware').onclick=()=>$('hardwareDialog').close();
 document.addEventListener('keydown',e=>{
@@ -576,7 +575,7 @@ function animate(now){
 requestAnimationFrame(animate);
 try{
   config=await api('/api/config');updateTraining(config);text('hardwareStatus',config.hardware.status);
-  $('controller').replaceChildren(...Object.entries(config.policies).map(([key,name])=>new Option(name,key)));$('controller').value=config.defaults.controller;syncVaneModel();checklist.update();
+  $('controller').replaceChildren(...Object.entries(config.policies).map(([key,name])=>new Option(name,key)));$('controller').value=config.defaults.controller;planner.draw();checklist.update();
   for(const part of config.hardware.parts){const el=document.createElement('div');el.className='hardware-part';const heading=document.createElement('h3');heading.textContent=part.part;const body=document.createElement('div');const name=document.createElement('strong');name.textContent=part.name;const spec=document.createElement('p');spec.textContent=part.spec;const basis=document.createElement('p');basis.textContent=part.basis;body.append(name,spec,basis);if(part.source){const a=document.createElement('a');a.href=part.source;a.target='_blank';a.rel='noreferrer';a.textContent='MANUFACTURER SOURCE ↗';body.append(a);}el.append(heading,body);$('hardwareParts').append(el);}
   if(page==='models')pageShown.models();
   const missions=await refreshHistory(),requested=new URLSearchParams(location.search).get('mission');const selected=requested??config.active??missions.find(m=>m.hinge_layout==='radial_span_v1'&&m.summary?.success)?.id??missions.find(m=>m.hinge_layout==='radial_span_v1'&&m.state==='complete')?.id??missions.find(m=>m.state==='complete')?.id;

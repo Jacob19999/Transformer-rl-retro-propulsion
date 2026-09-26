@@ -110,7 +110,7 @@ def main():
                              'recorded in metadata, never used by the mission service')
     args = parser.parse_args()
     request = validate_mission(json.loads(args.request.read_text()))
-    if args.checkpoint is not None and request['controller'] in ('pid', 'convex'):
+    if args.checkpoint is not None and request['controller'] == 'convex':
         raise ValueError('Checkpoint diagnostics require a PPO mission')
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -182,11 +182,9 @@ def main():
             # The landing task's 30 m altitude fail-stop is a training geofence;
             # planned missions start up to 100 m, so guard just above that.
             overrides['task']['termination'] = dict(max_altitude_error=CONVEX_ALTITUDE_FAIL_STOP_M)
-        elif request.get('waypoints'):
-            raise ValueError('Waypoint missions require the mission PPO policy; the PID baseline is landing-only')
         if saved is None:
-            # Classical controllers fly the requested vane physics; PPO
-            # policies always replay their own training plant (above).
+            # Convex missions fly the momentum-bounded vanes; PPO policies
+            # always replay their own training plant (above).
             from tvc_env.envs.task_registry import deep_merge
             overrides = deep_merge(overrides, vane_model_overrides(request))
         torch.manual_seed(request['seed'])
@@ -200,7 +198,7 @@ def main():
         env = TVCDirectRLEnv(config)
         dt = config.physics_dt * config.decimation
         device = env.device
-        model = pid = guidance = decode = convex = None
+        model = decode = convex = None
         policy_meta = dict(controller=request['controller'])
         if saved is not None:
             model = (ActorCritic(obs_dim, saved['act_dim']) if flight else ActorCritic(obs_dim)).to(device)
@@ -260,16 +258,6 @@ def main():
                                    servo_deadband_rad=servo_deadband),
                 touchdown_root_height_m=touchdown, altitude_fail_stop_m=CONVEX_ALTITUDE_FAIL_STOP_M,
                 diagnostic_settings_override=args.convex_settings is not None)
-        elif saved is None:
-            from tvc_env.controllers.pid_adapter import PIDController
-            from tvc_env.controllers.landing_guidance import LandingGuidance
-            import yaml
-            pid_settings = yaml.safe_load((ROOT / 'configs/controllers/pid_radial.yaml').read_text())
-            hover = env.nominal_hover_throttle()
-            pid = PIDController(**pid_settings['pid'], throttle_hover=hover, num_envs=1, device=device, dt=dt)
-            guidance = LandingGuidance(1, device, env._target_position,
-                                       **pid_settings['guidance'], throttle_hover=hover, dt=dt)
-            policy_meta.update(guidance='Explicit PID landing guidance', parameters=pid_settings)
         obs = env.reset(seed=request['seed'])[0]['policy']
         # User input specifies gyro rates in body FRD; PhysX root writer takes world rates.
         rates = torch.tensor([[math.radians(x) for x in request['angular_rate_deg_s']]], device=device)
@@ -278,9 +266,6 @@ def main():
         env._body_iface.set_root_state(env._body_iface.get_root_position(), initial_quat,
                                       torch.tensor([request['velocity']], device=device), world_rates)
         obs = env._get_observations()['policy']
-        if guidance:
-            pid.reset()
-            guidance.reset(obs=obs)
         if convex:
             convex.reset()
         metadata = dict(schema_version=2, request=request, policy=policy_meta, dt=dt,
@@ -376,27 +361,24 @@ def main():
                             action = decode(raw)
                         else:
                             action = torch.cat([raw[:, :4] * env._servo_model.max_command_angle, (raw[:, 4:] + 1) / 2], dim=-1)
-                    elif convex:
+                    else:
                         # Mission sequencer state: obs[:, :3] refers to its
                         # active goal; the controller gets the remaining route.
                         nav = env._navigation
                         record = nav.record() if nav else None
                         origin = env._env_origins[0].tolist()
-                        route = [dict(w, position=[p + o for p, o in zip(w['position'], origin)])
-                                 for w in record['waypoints'][record['waypoint_index']:]] if record else []
+                        waypoints = [dict(w, position=[p + o for p, o in zip(w['position'], origin)])
+                                     for w in record['waypoints']] if record else []
+                        route = waypoints[record['waypoint_index']:] if record else []
+                        # The drawn route (the sequencer's Catmull-Rom curve through
+                        # the start, the waypoints and the pad) is the route corridor.
+                        path_points = ([nav.start[0].tolist()] + [w['position'] for w in waypoints]
+                                       + [env._target_position[0].tolist()]) if record else None
                         action = convex.compute_action(
                             obs, reference_position=(nav.goal[0] if nav else env._target_position[0]).tolist(),
                             route=route, hold_elapsed_s=record['hold_elapsed_s'] if record else 0.,
-                            bus_voltage_v=float(env._battery_model.voltage_v[0]) if env._battery_model is not None else None)
-                    else:
-                        if env._battery_model is not None and pid_settings['voltage_feedforward']:
-                            # PID-only feedforward: account for the same loaded
-                            # bus voltage used by the EDF's duty-to-speed model.
-                            battery = env._battery_model
-                            corrected_hover = (hover * battery.config['reference_voltage_v']
-                                               / battery.voltage_v.clamp(min=1.)).clamp(0., 1.)
-                            pid.throttle_hover = guidance.throttle_hover = corrected_hover
-                        action = guidance.post_action(pid.compute_action(guidance.modify_obs(obs)), obs)
+                            bus_voltage_v=float(env._battery_model.voltage_v[0]) if env._battery_model is not None else None,
+                            path_points=path_points, path_index=record['waypoint_index'] if record else 0)
                     obs_dict, _, terminated, truncated, info = env.step(action)
                     cumulative_delta_v += float(info['propulsive_delta_v_step'][0])
                     obs = obs_dict['policy']

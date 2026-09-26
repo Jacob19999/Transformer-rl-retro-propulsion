@@ -27,8 +27,6 @@ def test_convex_guidance_is_offered_and_may_fly_routes(monkeypatch):
     assert any(p['key'] == 'convex' for p in client.get('/api/models').json()['flyable'])
     route = [{'type': 'hover', 'position': [4, 2, 5]}]
     assert models.validate_mission({'controller': 'convex', 'waypoints': route})['waypoints'][0]['hold_s'] == 2
-    with pytest.raises(ValueError, match='waypoint-flight PPO policy or convex guidance'):
-        models.validate_mission({'controller': 'pid', 'waypoints': route})
     with pytest.raises(ValueError, match='enable the LiPo model'):
         models.validate_mission({'controller': 'convex', 'waypoints': route, 'battery': {'enabled': False}})
     # Landing-only convex missions do not need the battery model.
@@ -224,29 +222,34 @@ def test_mission_status_replace_retries_while_a_reader_holds_the_file(tmp_path, 
     assert json.loads((tmp_path / 'status.json').read_text()) == {'state': 'running'} and len(calls) == 3
 
 
-def test_vane_physics_defaults_to_the_training_plant_except_for_the_pid_reference(tmp_path, monkeypatch):
+def test_missions_fly_the_training_plant_without_pid_or_legacy_vanes(tmp_path, monkeypatch):
     import json
     import pytest
     from mission_control import models
     monkeypatch.setattr(models, 'policy_paths', lambda: {'ppo_mission': 'new.pt'})
+    monkeypatch.setattr(server, 'convex_available', lambda: True)
+    assert models.validate_mission({})['controller'] == 'convex'
     assert models.validate_mission({'controller': 'convex'})['vane_model'] == 'momentum'
     assert models.validate_mission({'controller': 'ppo_mission'})['vane_model'] == 'momentum'
-    assert models.validate_mission({'controller': 'convex', 'vane_model': 'legacy'})['vane_model'] == 'legacy'
-    # PID is the legacy-vane reference only.
-    assert models.validate_mission({'controller': 'pid'})['vane_model'] == 'legacy'
-    for bad in ({'controller': 'convex', 'vane_model': 'cfd'}, {'controller': 'ppo_mission', 'vane_model': 'legacy'},
-                {'controller': 'pid', 'vane_model': 'momentum'}):
-        with pytest.raises(ValueError):
-            models.validate_mission(bad)
+    # The PID baseline and the legacy vanes were removed on 2026-09-26.
+    with pytest.raises(ValueError, match='PID baseline was removed'):
+        models.validate_mission({'controller': 'pid'})
+    with pytest.raises(ValueError, match='legacy vane physics was removed'):
+        models.validate_mission({'controller': 'convex', 'vane_model': 'legacy'})
+    with pytest.raises(ValueError, match='Unknown vane model'):
+        models.validate_mission({'controller': 'convex', 'vane_model': 'cfd'})
+    assert 'pid' not in TestClient(server.app).get('/api/config').json()['policies']
     # The same physics and dynamics sections the waypoint_flight policies train on.
     plant = models.vane_model_overrides({'vane_model': 'momentum'})
     assert plant['dynamics']['coupled_jet']['enabled'] and plant['dynamics']['body_angular_damping'] == 0.
     assert plant['dynamics']['gyro_integration'] == 'coupled_cayley'
     assert plant['dynamics']['motor_torque_limit'] == dict(enabled=True, max_torque_nm=.76, zero_throttle_brake=False)
     assert plant['physics']['enable_external_forces_every_iteration'] is False
-    assert models.vane_model_overrides({'vane_model': 'legacy'}) == {}
-    # Missions recorded before the field report the plant they actually flew.
+    assert sorted(models.braking_envelopes()) == ['legacy_6s/momentum', 'planned_8s/momentum']
+    # Recorded missions (legacy vanes and PID included) still replay and
+    # report the plant they actually flew.
     for dynamics, expected in (({}, 'legacy'), (plant['dynamics'], 'momentum')):
-        (tmp_path / 'metadata.json').write_text(json.dumps({'request': {'name': 'old'}, 'dynamics': dynamics}))
+        (tmp_path / 'metadata.json').write_text(json.dumps({'request': {'name': 'old', 'controller': 'pid'},
+                                                            'dynamics': dynamics}))
         (tmp_path / 'request.json').write_text(json.dumps({'name': 'old'}))
         assert server.recorded_request(tmp_path)['vane_model'] == expected

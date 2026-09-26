@@ -14,24 +14,18 @@ ROOT = Path(__file__).resolve().parents[1]
 POLICIES: dict[str, str] = {}
 # Explicit classical controllers (no checkpoint). 'convex' is the SOCP
 # powered-descent guidance in tvc_env/controllers/convex_guidance.py.
-CLASSICAL_CONTROLLERS = ('pid', 'convex')
-# Vane physics for classical-controller missions. 'momentum' is the
-# momentum-bounded coupled jet the waypoint_flight policies train on: each
-# vane turns at most its quarter of the jet, so its side force cannot exceed
-# (T/4) sin(angle). 'legacy' is the pre-audit plant: independent q*S*CNa
-# airfoils plus a 0.27 N m s/rad artificial damper. The 2026-09-14 audit
-# (tvc_env/dynamics/coupled_jet.py) found those forces exceed the jet's
-# momentum: 8.5x the momentum-bounded torque per degree at hover. Kept only
-# to reproduce missions flown before 2026-09-25.
-VANE_MODELS = ('momentum', 'legacy')
-# Vane physics each controller may fly, its default first. PID stays the
-# legacy-plant reference: its fin gains are fixed angles tuned on the legacy
-# vanes, with no scaling to a weaker plant, and on momentum-bounded vanes it
-# drifted 11 m off the pad (Isaac mission 6421f6ec55a4). PPO policies replay
-# the momentum-bounded plant they were trained on (any controller not listed).
-CONTROLLER_VANE_MODELS = dict(pid=('legacy',), convex=('momentum', 'legacy'))
-DEFAULTS = dict(name='Landing test', controller='pid', seed=2026, duration_s=30.,
-                hardware_profile='planned_8s', vane_model=None,  # None: the controller's default
+CLASSICAL_CONTROLLERS = ('convex',)
+# Missions fly the momentum-bounded coupled jet the waypoint_flight policies
+# train on: each vane turns at most its quarter of the jet, so its side force
+# cannot exceed (T/4) sin(angle). The pre-audit 'legacy' plant (independent
+# q*S*CNa airfoils plus a 0.27 N m s/rad damper, 8.5x the momentum-bounded
+# torque per degree, tvc_env/dynamics/coupled_jet.py) and the PID baseline,
+# which only flew it (on momentum vanes it drifted 11 m off the pad, Isaac
+# mission 6421f6ec55a4), were removed from mission control on 2026-09-26.
+# Recorded legacy and PID missions still replay.
+VANE_MODELS = ('momentum',)
+DEFAULTS = dict(name='Landing test', controller='convex', seed=2026, duration_s=30.,
+                hardware_profile='planned_8s', vane_model='momentum',
                 position=[-.28, .82, 18.], velocity=[0., 0., -1.],
                 attitude_deg=[0., 0., 0.], angular_rate_deg_s=[0., 0., 0.],
                 initial_motor_fraction=0., disturbance=[],
@@ -80,6 +74,9 @@ def validate_mission(value):
     if not isinstance(result['name'], str) or not 1 <= len(result['name'].strip()) <= 80:
         raise ValueError('Mission name must contain 1–80 characters')
     result['name'] = result['name'].strip()
+    if result['controller'] == 'pid':
+        raise ValueError('The PID baseline was removed from mission control (it only flew the legacy vanes); '
+                         'fly convex guidance or a PPO policy')
     if result['controller'] not in (*policy_paths(), *CLASSICAL_CONTROLLERS):
         raise ValueError('Unknown controller')
     selected = result['disturbance']
@@ -90,16 +87,13 @@ def validate_mission(value):
     result['disturbance'] = sorted(set(selected))
     if result['hardware_profile'] not in ('planned_8s', 'legacy_6s'):
         raise ValueError('Unknown hardware profile')
-    allowed = CONTROLLER_VANE_MODELS.get(result['controller'], ('momentum',))
     if result['vane_model'] is None:
-        result['vane_model'] = allowed[0]
+        result['vane_model'] = VANE_MODELS[0]
+    if result['vane_model'] == 'legacy':
+        raise ValueError('The legacy vane physics was removed from mission control; missions fly the '
+                         'momentum-bounded jet')
     if result['vane_model'] not in VANE_MODELS:
         raise ValueError('Unknown vane model')
-    if result['vane_model'] not in allowed:
-        if result['controller'] == 'pid':
-            raise ValueError('The PID baseline is the legacy-vane reference; its fin gains are not scaled '
-                             'to the momentum-bounded vanes')
-        raise ValueError('PPO policies fly the plant they were trained on (momentum-bounded vanes)')
     seed = finite(result['seed'], 0, 2**31 - 1, 'Seed')
     if seed != int(seed):
         raise ValueError('Seed must be an integer')
@@ -148,6 +142,41 @@ def validate_mission(value):
         raise ValueError('The radial 8S policy requires the 8S hardware profile and coupled battery observations')
     if result['controller'] == 'convex' and waypoints and not b['enabled']:
         raise ValueError('Convex waypoint missions use the battery-coupled mission sequencer; enable the LiPo model')
+    return result
+
+
+# Vehicle mass and net thrust at full rotor speed (neutral vane drag
+# included) as the Isaac plant computes them (nominal_hover_throttle), from
+# the vehicle_model records of convex missions 835c3de32185 (8S) and
+# fdb559daede1 (6S). Only the Isaac asset can recompute them; re-record
+# after changing the asset, the EDF model or the vane model.
+PLANT_THRUST = {('planned_8s', 'momentum'): (3.104, 43.07), ('legacy_6s', 'momentum'): (3.104, 35.16)}
+
+
+def braking_envelopes():
+    """What the launch form's braking estimate needs, per 'profile/vanes'.
+
+    The rotor spool is the EDF's first-order lag with the motor torque bound
+    of the mission plant (vane_model_overrides); the rotor's aerodynamic drag,
+    P_shaft / omega_max at full speed, then limits the spool. The tilt cone
+    is the convex planner's.
+    """
+    edf = yaml.safe_load((ROOT / 'configs/params/edf_90mm.yaml').read_text(encoding='utf-8'))['edf']
+    tilt = yaml.safe_load((ROOT / 'configs/controllers/convex_guidance.yaml').read_text(encoding='utf-8'))['guidance']['max_tilt_deg']
+    source = yaml.safe_load((ROOT / 'configs/env/train_waypoint_flight.yaml').read_text(encoding='utf-8'))
+    limit = source.get('dynamics', {}).get('motor_torque_limit') or {}
+    battery = yaml.safe_load((ROOT / 'configs/params/battery_6s.yaml').read_text(encoding='utf-8'))['battery']
+    result = {}
+    for (profile, vanes), (mass, thrust) in PLANT_THRUST.items():
+        overrides = hardware_overrides(dict(hardware_profile=profile))
+        omega_max = float(overrides.get('edf', {}).get('omega_max', edf['omega_max']))
+        shaft = float(overrides.get('battery', {}).get('shaft_power_at_max_w', battery['shaft_power_at_max_w']))
+        limited = limit.get('enabled', False)
+        result[f'{profile}/{vanes}'] = dict(
+            mass_kg=mass, full_thrust_n=thrust, rotor_inertia=float(edf['rotor_inertia']), omega_max=omega_max,
+            motor_time_constant_s=float(edf['tau_motor']),
+            motor_torque_limit_nm=float(limit['max_torque_nm']) if limited else None,
+            aero_torque_at_max_nm=shaft / omega_max, max_tilt_deg=float(tilt))
     return result
 
 
@@ -239,15 +268,14 @@ def hardware_overrides(mission):
 
 
 def vane_model_overrides(mission):
-    """Physics and dynamics sections for a classical-controller mission.
+    """Physics and dynamics sections for a convex mission.
 
-    'momentum' takes them from the waypoint_flight training config, so these
-    missions fly exactly the plant the PPO policies train on: coupled-jet
-    vanes, no artificial damper, and the coupled Cayley gyro integration with
-    PhysX external forces applied once per step (which that integration needs).
+    They come from the waypoint_flight training config, so these missions fly
+    exactly the plant the PPO policies train on: coupled-jet vanes, no
+    artificial damper, the torque-limited motor, and the coupled Cayley gyro
+    integration with PhysX external forces applied once per step (which that
+    integration needs).
     """
-    if mission.get('vane_model', 'momentum') == 'legacy':
-        return {}
     source = yaml.safe_load((ROOT / 'configs/env/train_waypoint_flight.yaml').read_text(encoding='utf-8'))
     return {key: copy.deepcopy(source[key]) for key in ('physics', 'dynamics')}
 
