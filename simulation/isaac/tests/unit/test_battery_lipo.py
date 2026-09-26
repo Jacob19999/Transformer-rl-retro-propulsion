@@ -126,3 +126,19 @@ def test_pack_and_esc_ratings_bound_current_and_profiles_are_explicit():
 def test_mission_rejects_unsafe_or_inconsistent_inputs(bad):
     with pytest.raises(ValueError):
         validate_mission(bad)
+
+
+def test_a_rotor_spawned_at_speed_starts_on_its_loaded_bus():
+    # Isaac mission 0a04e2549b26: an open-circuit bus at a warm-rotor spawn
+    # sagged 3% on the first substep, and the rotor spun down.
+    b = pack()
+    edf = EDFModel(max_thrust=48, omega_max=4649.56, rotor_inertia=.0002)
+    omega = torch.tensor([0., .84 * 4649.56])
+    b.carry_load(torch.tensor([1]), omega, edf)
+    assert b.voltage_v[0] == b.ocv()[0] and b.current_a[0] == 0      # untouched env
+    loaded = float(b.voltage_v[1])
+    assert loaded < float(b.ocv()[1]) - .5 and float(b.current_a[1]) > 40
+    # Holding the rotor at speed, the first substep finds the same bus.
+    duty = torch.tensor([0., .84 * b.config['reference_voltage_v'] / loaded])
+    b.update_motor(edf, omega, duty, 1 / 480)
+    assert float(b.voltage_v[1]) == pytest.approx(loaded, abs=.02)

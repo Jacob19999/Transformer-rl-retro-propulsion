@@ -245,7 +245,8 @@ def main():
                 motor_efficiency=float(electrical['motor_efficiency']),
                 auxiliary_power_w=float(electrical['auxiliary_power_w']),
                 rotor_inertia=float(env._edf_model.rotor_inertia), omega_max=float(env._edf_model.omega_max),
-                vane_authority_nm_per_rad=roll_authority, yaw_authority_nm_per_rad=yaw_authority)
+                vane_authority_nm_per_rad=roll_authority, yaw_authority_nm_per_rad=yaw_authority,
+                **env.attitude_model())
             touchdown = float(config.config['task']['descent_reward']['touchdown_root_height'])
             servo_deadband = float(env._servo_model.deadband) if env._servo_model.apply_deadband else 0.
             convex = ConvexGuidanceController(convex_settings, vehicle, env._target_position[0].tolist(), touchdown,

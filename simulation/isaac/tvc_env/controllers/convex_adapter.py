@@ -6,10 +6,11 @@ route SOCP from the measured state, as the paper intends for onboard use.
 Inner loop (control rate): the plan's thrust acceleration is the
 feedforward; position/velocity feedback (with slow integrators for
 thrust-model bias and wind) corrects deviations between replans. The thrust
-vector sets the desired body axis (geometric SO(3) attitude error, the PID
-baseline's fin-effort gains and mixer, then an inverse of the vane servos'
-deadband from the measured vane angles) and, projected on the actual body
-axis, the throttle through the EDF duty/bus-voltage model.
+vector sets the desired body axis (geometric SO(3) attitude error, a
+full-state gyroscopic LQR over the body and vane-actuator model
+(attitude_lqr.py), the radial-vane mixer, then an inverse of the vane
+servos' deadband from the measured servo state) and, projected on the actual
+body axis, the throttle through the EDF duty/bus-voltage model.
 
 Flight phases:
   SPOOL_UP          rotor below the planner's minimum thrust (cold start):
@@ -37,6 +38,7 @@ from torch import Tensor
 from tvc_env.common.constants import ContactState
 from tvc_env.common.frames import get_frd_to_isaac_matrix
 from tvc_env.common.quaternions import to_rotation_matrix
+from tvc_env.controllers.attitude_lqr import AttitudePlant, GyroAttitudeLQR, LQRWeights
 from tvc_env.controllers.base import BaseController
 from tvc_env.controllers.convex_guidance import (
     HOVER, ConvexGuidance, EnergyModel, GuidanceLimits, LandingGate, RouteWaypoint,
@@ -64,6 +66,12 @@ class VehicleModel:
     # fraction squared); 0 = unknown. TVCDirectRLEnv.vane_authority() probes it.
     vane_authority_nm_per_rad: float = 0.0   # roll/pitch
     yaw_authority_nm_per_rad: float = 0.0    # common mode
+    # Attitude dynamics for the LQR attitude law (attitude_lqr.py); 0 = unknown.
+    inertia_rp_kg_m2: float = 0.0            # transverse moment of inertia
+    inertia_yaw_kg_m2: float = 0.0
+    angular_damping_nm_s_per_rad: float = 0.0
+    servo_lag_s: float = 0.0                 # vane servo first-order time constant
+    vane_joint_lag_s: float = 0.0            # vane linkage lag behind the servo
     gravity: float = 9.81
 
     @property
@@ -119,8 +127,15 @@ class ConvexGuidanceController(BaseController):
                                 velocity=(0.0, 0.0, -self.touchdown_speed),
                                 apex=(self.pad[0], self.pad[1], self.touchdown_z))
         self._servo_limit = float(max_command_angle)
-        self._max_fin_angle = min(float(att['max_fin_angle']), self._servo_limit)
-        self._mixer = PIDFinMixer(max_fin_angle=self._max_fin_angle)
+        # Attitude efforts stay inside the vane limit; the deadband inverse may
+        # add its deadband on top, up to the servo's range (validate_action).
+        self._vane_limit = min(float(att['max_fin_angle']), self._servo_limit)
+        self._max_fin_angle = self._servo_limit
+        self._mixer = PIDFinMixer(max_fin_angle=self._vane_limit)
+        self._law = str(att.get('law', 'pd'))
+        if self._law not in ('pd', 'lqr'):
+            raise ValueError(f"attitude.law must be 'pd' or 'lqr', not {self._law!r}")
+        self._lqr = self._attitude_lqr(vehicle, att, dt) if self._law == 'lqr' else None
         # Vane servo deadband inverse (_deadband_inverse): the servo's
         # deadband is a hardware property, the compensated share a setting.
         self._vane_deadband = float(att.get('deadband_compensation', 0.0)) * max(float(servo_deadband_rad), 0.0)
@@ -213,7 +228,13 @@ class ConvexGuidanceController(BaseController):
         if not fraction or v.yaw_authority_nm_per_rad <= 0.0 or v.rotor_inertia <= 0.0 or v.omega_max <= 0.0:
             return self.throttle_rate
         rotor = v.hover_throttle          # rotor fraction at hover, reference voltage
-        torque = float(fraction) * v.yaw_authority_nm_per_rad * rotor * rotor * self._max_fin_angle
+        torque = float(fraction) * v.yaw_authority_nm_per_rad * rotor * rotor * self._vane_limit
+        if self._lqr is not None:
+            # The yaw loop is designed around its design torque, however
+            # strong the vanes: the legacy vanes' 0.25 /s slew (8x that
+            # torque) spun the body and wobbled roll/pitch at 13-23 deg/s
+            # in the offline replica; at the momentum vanes' rate, 2-7 deg/s.
+            torque = min(torque, float(fraction) * float(self.att['lqr']['yaw_design_torque_nm']))
         reaction = v.rotor_inertia * v.omega_max * max(bus_voltage_v, 1e-3) / v.reference_voltage_v
         return min(self.throttle_rate, torque / reaction)
 
@@ -228,7 +249,25 @@ class ConvexGuidanceController(BaseController):
             return 0.0
         rotor = v.hover_throttle
         reaction = v.rotor_inertia * v.omega_max * bus_voltage_v / v.reference_voltage_v * duty_rate
-        return min(self._max_fin_angle, reaction / (v.yaw_authority_nm_per_rad * rotor * rotor))
+        return min(self._vane_limit, reaction / (v.yaw_authority_nm_per_rad * rotor * rotor))
+
+    @staticmethod
+    def _attitude_lqr(vehicle: VehicleModel, att: dict, dt: float) -> GyroAttitudeLQR:
+        v = vehicle
+        if v.inertia_rp_kg_m2 <= 0.0 or v.vane_authority_nm_per_rad <= 0.0 or v.servo_lag_s <= 0.0:
+            raise ValueError("attitude.law 'lqr' needs the vehicle's inertia, vane authority and servo lag")
+        w = att['lqr']
+        plant = AttitudePlant(
+            inertia_rp_kg_m2=v.inertia_rp_kg_m2, inertia_yaw_kg_m2=v.inertia_yaw_kg_m2,
+            rp_authority_nm_per_rad=v.vane_authority_nm_per_rad, yaw_authority_nm_per_rad=v.yaw_authority_nm_per_rad,
+            rotor_momentum_max_nms=v.rotor_inertia * v.omega_max, servo_lag_s=v.servo_lag_s,
+            joint_lag_s=v.vane_joint_lag_s, damping_nms_per_rad=v.angular_damping_nm_s_per_rad)
+        # Bryson's rule on the input: R = 1 / (design torque)^2.
+        weights = LQRWeights(error=float(w['error_weight']), rate=float(w['rate_weight']),
+                             integral=float(w['integral_weight']), torque=float(w['design_torque_nm']) ** -2,
+                             yaw_rate=float(w['yaw_rate_weight']), yaw_torque=float(w['yaw_design_torque_nm']) ** -2,
+                             yaw_integral=float(w.get('yaw_integral_weight', 0.0)))
+        return GyroAttitudeLQR(plant, weights, dt)
 
     @staticmethod
     def _authority_ratio(reference, actual) -> float:
@@ -248,7 +287,7 @@ class ConvexGuidanceController(BaseController):
         if not fraction or v.vane_authority_nm_per_rad <= 0.0 or v.rotor_inertia <= 0.0 or v.omega_max <= 0.0:
             return None
         rotor = v.hover_throttle          # rotor fraction at hover, reference voltage
-        torque = v.vane_authority_nm_per_rad * rotor * rotor * self._max_fin_angle
+        torque = v.vane_authority_nm_per_rad * rotor * rotor * self._vane_limit
         return float(fraction) * torque / (v.rotor_inertia * v.omega_max * rotor)
 
     def _tilt_rate_limit(self) -> float | None:
@@ -270,6 +309,7 @@ class ConvexGuidanceController(BaseController):
         self._phase = None
         self._plan = None
         self._plan_t0 = 0.0
+        self._previous_plan = None      # (plan, t0) replaced at the last re-plan: feedforward cross-fade
         self._plan_id = 0
         self._plan_route_len = None
         self._new_plan = False
@@ -280,10 +320,15 @@ class ConvexGuidanceController(BaseController):
         self._hold_position = None
         self._integral = np.zeros(3)
         self._vz_integral = 0.0
+        self._attitude_integral = np.zeros(2)   # LQR: integral of the roll/pitch attitude error
+        self._yaw_integral = 0.0                # LQR: integral of the yaw rate (heading drift, rad)
+        self._R_plan_prev = None                # LQR: the plan's attitude last step (rate feedforward)
+        self._rate_ref = np.zeros(2)            # LQR: filtered desired roll/pitch rate (FRD, rad/s)
         self._touchdown = False
         self._emergency = False
         self._velocity = np.zeros(3)
         self._throttle = None
+        self._rotor_command = None      # duty x V_bus / V_ref: the rotor speed the duty asks for
         self.last_telemetry: dict = {}
 
     @property
@@ -314,7 +359,7 @@ class ConvexGuidanceController(BaseController):
         R = to_rotation_matrix(torch.as_tensor(o[3:7])).numpy()
         velocity = R @ (_FRD_TO_ISAAC @ o[7:10])
         rates = o[10:13]
-        vanes = o[14:18]
+        vanes, vane_rates = o[14:18], o[18:22]
         rotor = float(o[22])
         contact = int(round(float(o[23])))
         volts = self.vehicle.reference_voltage_v if bus_voltage_v is None else float(bus_voltage_v)
@@ -327,7 +372,7 @@ class ConvexGuidanceController(BaseController):
         if contact == int(ContactState.LANDED):
             # The flight executive disarms after LANDED; never push on the pad.
             self._phase = 'LANDED'
-            self._throttle = 0.0
+            self._throttle = self._rotor_command = 0.0
             action = torch.zeros(1, 5, dtype=obs.dtype, device=obs.device)
             self._record(position, velocity, position, np.zeros(3), np.zeros(3), 0.0, 0.0)
             self._t += self.dt
@@ -339,7 +384,7 @@ class ConvexGuidanceController(BaseController):
             self._phase = POWERED_DESCENT
 
         if self._phase == SPOOL_UP:
-            return self._spool_up(obs, R, rates, vanes, volts, position, velocity)
+            return self._spool_up(obs, R, rates, vanes, vane_rates, volts, position, velocity)
 
         # Present thrust: magnitude from rotor speed, direction the body axis.
         self._velocity = velocity
@@ -413,7 +458,16 @@ class ConvexGuidanceController(BaseController):
         if not limited:
             self._integral = candidate
         b3_des = thrust_vec / np.linalg.norm(thrust_vec)
-        fins = self._attitude_fins(R, b3_des, rates, rotor, vanes)
+        # Rate feedforward direction: the plan's thrust direction plus a
+        # share of the feedback correction (see _update_rate_reference). Only
+        # an optimal plan's turn is fed forward: soft-terminal fallbacks (no
+        # feasible plan) swing between re-plans, and chasing them tipped a 6S
+        # vehicle (T/W 1.15) 14 deg off its command (Isaac 766270f3320d).
+        plan_dir = (u_ff / np.linalg.norm(u_ff) if self._plan is not None and self._plan.mode == 'optimal'
+                    else np.array([0.0, 0.0, 1.0]))
+        share = float(self.att['lqr'].get('feedback_rate_fraction', 0.0)) if self._lqr is not None else 0.0
+        b3_ref = (1.0 - share) * plan_dir + share * b3_des
+        fins = self._attitude_fins(R, b3_des, rates, rotor, vanes, vane_rates, b3_ref=b3_ref / np.linalg.norm(b3_ref))
         self._b3_des, self._attitude_error = b3_des, math.degrees(math.acos(min(1.0, max(-1.0, float(b3_des @ R[:, 2])))))
 
         # Throttle realizes the thrust component along the actual body axis.
@@ -428,8 +482,7 @@ class ConvexGuidanceController(BaseController):
             self._emergency = True
         elif abs(duty - self._throttle) < 0.03:
             self._emergency = False
-        step = (self.spool_rate if self._emergency else self._duty_rate(volts)) * self.dt
-        self._throttle = float(min(max(duty, self._throttle - step, 0.0), self._throttle + step, 1.0))
+        self._slew_duty(duty, self.spool_rate if self._emergency else self._duty_rate(volts), volts)
         action = torch.tensor([[*fins, self._throttle]], dtype=obs.dtype, device=obs.device)
         tilt = math.degrees(math.acos(min(1.0, max(-1.0, b3_des[2]))))
         self._record(position, velocity, r_ref, v_ref, thrust_vec, tilt, available)
@@ -438,16 +491,32 @@ class ConvexGuidanceController(BaseController):
 
     # ---- phases ----
 
-    def _spool_up(self, obs, R, rates, vanes, volts, position, velocity):
+    def _spool_up(self, obs, R, rates, vanes, vane_rates, volts, position, velocity):
         """Cold rotor: hold level and ramp the duty toward hover, then plan."""
-        fins = self._attitude_fins(R, np.array([0.0, 0.0, 1.0]), rates, float(obs[0, 22]), vanes)
-        hover = self.vehicle.throttle_for_thrust(self.vehicle.weight_n, volts)
-        step = self.spool_rate * self.dt
-        self._throttle = float(min(max(hover, self._throttle - step), self._throttle + step, 1.0))
+        fins = self._attitude_fins(R, np.array([0.0, 0.0, 1.0]), rates, float(obs[0, 22]), vanes, vane_rates)
+        self._slew_duty(self.vehicle.throttle_for_thrust(self.vehicle.weight_n, volts), self.spool_rate, volts)
         self._record(position, velocity, position, np.zeros(3), np.zeros(3), 0.0,
                      self.vehicle.available_thrust_n(volts))
         self._t += self.dt
         return self.validate_action(torch.tensor([[*fins, self._throttle]], dtype=obs.dtype, device=obs.device))
+
+    def _slew_duty(self, duty, rate_per_s, volts):
+        """Move the duty toward `duty`, slewing the rotor command (duty x V_bus / V_ref) at `rate_per_s` x V_bus / V_ref.
+
+        The slew bounds the rotor's acceleration, whose reaction torque yaws
+        the body, and the rotor follows the rotor command, not the raw duty: a
+        duty change that only offsets a bus-voltage change moves no rotor
+        speed, so it passes at once. Slewing the raw duty held that
+        compensation back. A warm-rotor start computed its first duty on the
+        unloaded 33.6 V pack, the loaded bus sagged 3%, and the rotor spun
+        down 1600 rpm, yawing the body to 30 deg/s (Isaac mission 0a04e2549b26).
+        """
+        ratio = max(volts, 1e-3) / self.vehicle.reference_voltage_v
+        command = self._throttle * ratio if self._rotor_command is None else self._rotor_command
+        step = rate_per_s * ratio * self.dt
+        command = min(max(duty * ratio, command - step, 0.0), command + step, ratio)   # duty <= 1
+        self._rotor_command = command
+        self._throttle = float(command / ratio)
 
     @staticmethod
     def _route(route, hold_elapsed_s):
@@ -515,6 +584,7 @@ class ConvexGuidanceController(BaseController):
                     self._hold_position = position.copy()
                 self._phase = HOLD
             return
+        self._previous_plan = None if plan is None or self._phase == HOLD else (plan, self._plan_t0)
         self._plan, self._plan_t0 = new, self._t
         self._plan_id += 1
         self._plan_route_len = len(waypoints)
@@ -548,6 +618,17 @@ class ConvexGuidanceController(BaseController):
                 self._phase = ROUTE if waypoints else POWERED_DESCENT
                 r_ref, v_ref, _ = plan.sample(elapsed)
                 _, _, u_ff = plan.sample(elapsed + self.lead_s)
+                # A new plan starts at the present thrust but with its own
+                # slope, so the lead-sampled feedforward stepped at re-plans:
+                # up to 1.4 deg of tilt (mean 0.36 deg against 0.11 deg per
+                # step otherwise, 21 re-plans on the route, offline replica),
+                # each a small attitude kick. Cross-fade from the replaced plan.
+                blend = float(self.g.get('replan_blend_s', 0.0))
+                if self._previous_plan is not None and elapsed < blend:
+                    old, old_t0 = self._previous_plan
+                    _, _, u_old = old.sample(self._t - old_t0 + self.lead_s)
+                    weight = elapsed / blend
+                    u_ff = (1.0 - weight) * u_old + weight * u_ff
                 return r_ref, v_ref, u_ff
         # Constant-rate vertical descent over the pad; pause while off center.
         # The reference never leads the vehicle by more than terminal_lead_m,
@@ -606,7 +687,7 @@ class ConvexGuidanceController(BaseController):
         The servo moves only while |command - position| exceeds its deadband
         b, and stops b short of the command, so each vane trails its command
         by up to b. Commanding desired + b sat((desired - measured) / band)
-        from the measured vane angle lands the vane on the desired angle;
+        from the measured servo position lands the vane on the desired angle;
         inside the linear band a vane already there is left alone.
 
         Evidence (Isaac mission 0289417f5d60, planned 8S, no disturbances):
@@ -623,30 +704,74 @@ class ConvexGuidanceController(BaseController):
         offset = b * np.clip((fins - measured) / self._deadband_band, -1.0, 1.0)
         return np.clip(fins + offset, -self._servo_limit, self._servo_limit)
 
-    def _attitude_fins(self, R, b3_des, rates_frd, rotor_fraction, measured_fins=None):
-        """Geometric attitude error -> PID fin efforts -> radial-vane mixer.
+    def _attitude_fins(self, R, b3_des, rates_frd, rotor_fraction, measured_fins=None, measured_fin_rates=None,
+                       b3_ref=None):
+        """Geometric attitude error -> roll/pitch/yaw vane efforts -> radial-vane mixer.
 
         Heading is free: the desired frame keeps the current body heading,
-        so yaw is rate-damped only. FRD sign conventions match
-        PIDController (validated by tests against its Euler errors).
-        With the measured vane angles, the servo deadband is pre-compensated.
+        so yaw is rate-controlled only. FRD sign conventions match
+        PIDController (validated by tests against its Euler errors). With the
+        measured vane angles and rates, the servo deadband is pre-compensated
+        from the servo state they imply. `b3_ref`, the direction whose turn
+        rate is fed forward, sets the LQR's rate reference.
         """
-        b1 = R[:, 0] - (R[:, 0] @ b3_des) * b3_des
-        if np.linalg.norm(b1) < 1e-6:
-            b1 = np.array([1.0, 0.0, 0.0]) - b3_des[0] * b3_des
-        b1 /= np.linalg.norm(b1)
-        R_des = np.column_stack((b1, np.cross(b3_des, b1), b3_des))
+        R_des = self._frame(R, b3_des)
         error = _FRD_TO_ISAAC.T @ _vee_error(R_des, R)   # Isaac body -> FRD components
+        joint = servo = None
+        if measured_fins is not None:
+            joint = np.asarray(measured_fins, dtype=float)
+            # The vane joint trails the servo by a first-order lag, j' = (s - j) / tau_j,
+            # so the servo angle is s = j + tau_j j' (Isaac mission e9c203457bba: 0.009 deg RMS).
+            servo = joint if measured_fin_rates is None else (
+                joint + self.vehicle.vane_joint_lag_s * np.asarray(measured_fin_rates, dtype=float))
+        if self._lqr is not None:
+            self._update_rate_reference(None if b3_ref is None else self._frame(R, b3_ref), rotor_fraction)
+            roll, pitch, yaw_demand, error_used = self._lqr_efforts(error, rates_frd, rotor_fraction, joint, servo)
+        else:
+            roll, pitch, yaw_demand = self._pd_efforts(error, rates_frd, rotor_fraction)
+        # Each vane carries roll or pitch plus the common-mode yaw. Roll/pitch
+        # have priority, except for a yaw reserve sized to hold the rotor's
+        # reaction to duty changes (_yaw_reserve). On momentum-bounded vanes a
+        # body left to spin up lost roll/pitch control: with a CoM trim
+        # saturating roll/pitch, the offline replica spun to 400 deg/s. The
+        # reserve must not grow past that: reserving the swirl trim as well
+        # starved a 5 mm CoM trim, and the vehicle tipped 20 deg (a spinning
+        # but upright vehicle recovers; a tilted one does not).
+        cap = self._vane_limit - min(abs(yaw_demand), self._yaw_reserve)
+        largest = max(abs(roll), abs(pitch))
+        saturated = largest > cap
+        if saturated:
+            roll, pitch = roll * cap / largest, pitch * cap / largest   # keep the torque direction
+        free = max(0.0, self._vane_limit - max(abs(roll), abs(pitch)))
+        yaw = min(max(yaw_demand, -free), free)
+        if self._lqr is not None and not self._touchdown:
+            if not saturated:
+                self._integrate_attitude(error_used, rotor_fraction)
+            if abs(yaw) >= abs(yaw_demand) - 1e-12:   # yaw effort not clipped (anti-windup)
+                self._integrate_yaw(float(rates_frd[2]), rotor_fraction)
+        efforts = torch.tensor([[roll, pitch, yaw]], dtype=torch.float32)
+        fins = self._mixer.mix(efforts[:, 0], efforts[:, 1], efforts[:, 2])[0].double().numpy()
+        if servo is not None:
+            fins = self._deadband_inverse(fins, servo)
+        return [float(x) for x in fins]
+
+    @staticmethod
+    def _frame(R, b3):
+        """Attitude with body axis b3 that keeps the current heading (heading is free)."""
+        b1 = R[:, 0] - (R[:, 0] @ b3) * b3
+        if np.linalg.norm(b1) < 1e-6:
+            b1 = np.array([1.0, 0.0, 0.0]) - b3[0] * b3
+        b1 /= np.linalg.norm(b1)
+        return np.column_stack((b1, np.cross(b3, b1), b3))
+
+    def _pd_efforts(self, error, rates_frd, rotor_fraction):
+        """PID-baseline fin-effort law (attitude.law 'pd'), scaled to the plant's vane authority."""
         p, q, r = rates_frd
         kp, kd, comp = float(self.att['kp_att']), float(self.att['kd_att']), self._gyro_compensation(rotor_fraction)
         # Cascade form of the PD law: the attitude error sets a body-rate
         # command, clamped to the slew the vanes can sustain against the
-        # rotor's momentum (_slew_rate_limit), and the rate loop tracks it.
-        # Unclamped, -kd (w - w_cmd) with w_cmd = -(kp/kd) e is the PD law
-        # exactly. Clamped, a large error becomes a controlled slew instead of
-        # saturated vanes. Momentum-bounded vanes saturate at ~1.5 deg of
-        # error under the PD law, and a descent with saturated vanes went into
-        # a gyroscopic oscillation in the offline replica.
+        # rotor's momentum, and the rate loop tracks it. Unclamped,
+        # -kd (w - w_cmd) with w_cmd = -(kp/kd) e is the PD law exactly.
         command = -(kp / kd) * error[:2]
         norm = float(np.linalg.norm(command))
         if norm > self._slew_rate:
@@ -654,23 +779,113 @@ class ConvexGuidanceController(BaseController):
         # Efforts in the reference plant's units, converted to this plant's.
         roll = (-kd * (p - command[0]) + comp * q) * self._rp_scale
         pitch = (-kd * (q - command[1]) - comp * p) * self._rp_scale
-        yaw_demand = -float(self.att['yaw_damper_gain']) * r * self._yaw_scale
-        # Each vane carries roll or pitch plus the common-mode yaw. Roll/pitch
-        # have priority, except for a yaw reserve sized to hold the rotor's
-        # reaction to duty changes (_yaw_reserve). On momentum-bounded vanes a
-        # body left to spin up lost roll/pitch control: with a CoM trim
-        # saturating roll/pitch, the offline replica spun to 400 deg/s.
-        cap = self._max_fin_angle - min(abs(yaw_demand), self._yaw_reserve)
-        largest = max(abs(roll), abs(pitch))
-        if largest > cap:
-            roll, pitch = roll * cap / largest, pitch * cap / largest   # keep the torque direction
-        free = max(0.0, self._max_fin_angle - max(abs(roll), abs(pitch)))
-        yaw = min(max(yaw_demand, -free), free)
-        efforts = torch.tensor([[roll, pitch, yaw]], dtype=torch.float32)
-        fins = self._mixer.mix(efforts[:, 0], efforts[:, 1], efforts[:, 2])[0].double().numpy()
-        if measured_fins is not None:
-            fins = self._deadband_inverse(fins, np.asarray(measured_fins, dtype=float))
-        return [float(x) for x in fins]
+        yaw = -float(self.att['yaw_damper_gain']) * r * self._yaw_scale
+        return roll, pitch, yaw
+
+    @staticmethod
+    def _effort_space(fins):
+        """Mixer inverse: vane angles (+X, +Y, -X, -Y) -> (roll, pitch, yaw) efforts."""
+        return np.array([(fins[2] - fins[0]) / 2.0, (fins[3] - fins[1]) / 2.0, float(np.mean(fins))])
+
+    def _lqr_efforts(self, error, rates_frd, rotor_fraction, joint, servo):
+        """Full-state gyroscopic LQR (attitude.law 'lqr'); returns roll, pitch, yaw and the error used.
+
+        The attitude error is clamped so that its share of the effort stays
+        within error_effort_fraction of the vane limit: a large error becomes
+        a precession at a bounded rate, and the rest of the travel keeps
+        damping the nutation through the rate and actuator-state feedback.
+        """
+        gain = self._lqr.roll_pitch_gain(rotor_fraction)
+        e = np.asarray(error[:2], dtype=float)
+        stiffness = float(np.linalg.svd(gain[:, 2:4], compute_uv=False)[0])
+        limit = float(self.att['lqr']['error_effort_fraction']) * self._vane_limit / max(stiffness, 1e-9)
+        norm = float(np.linalg.norm(e))
+        if norm > limit:
+            e = e * limit / norm
+        j = np.zeros(3) if joint is None else self._effort_space(joint)
+        s = j if servo is None else self._effort_space(servo)
+        p, q, r = (float(x) for x in rates_frd)
+        # Tracking a turning attitude: regulate the rates about the desired
+        # rate, and the vanes about the effort that sustains it. A steady
+        # precession at (p_d, q_d) takes K f^2 j = (H q_d + c p_d, c q_d - H p_d).
+        v = self.vehicle
+        f = max(float(rotor_fraction), 0.05)
+        rate_ref = self._rate_ref
+        hold = np.array([v.rotor_inertia * v.omega_max * f * rate_ref[1] + v.angular_damping_nm_s_per_rad * rate_ref[0],
+                         v.angular_damping_nm_s_per_rad * rate_ref[1] - v.rotor_inertia * v.omega_max * f * rate_ref[0]])
+        hold /= v.vane_authority_nm_per_rad * f * f
+        x = np.concatenate([self._attitude_integral, e, [p - rate_ref[0], q - rate_ref[1]], s[:2] - hold, j[:2] - hold])
+        roll, pitch = hold + gain @ x
+        yaw = float((self._lqr.yaw_gain(rotor_fraction) @ np.array([self._yaw_integral, r, s[2], j[2]]))[0])
+        return float(roll), float(pitch), yaw, e
+
+    def _update_rate_reference(self, R_plan, rotor_fraction):
+        """Filtered roll/pitch rate of the reference direction, bounded by the slew the vanes sustain.
+
+        Without it the regulator treats a turning target as a growing error:
+        the attitude then lagged the landing leg's tilt commands, and the
+        vehicle circled the pad (offline replica, 2026-09-26). The
+        reference is the plan's thrust direction plus only a share
+        (attitude.lqr.feedback_rate_fraction) of the feedback correction.
+        The lateral velocity feedback carries the vanes' own
+        (non-minimum-phase) side force: differentiated whole, it closed a
+        1.3 Hz loop through the vanes (linear hover model: zeta 0.03 at
+        kd_xy 1.6, 0.18 at 1.2; Isaac: 4-5 deg/s of wobble in terminal
+        descent). Left out entirely, the weak 6S vanes lagged every
+        correction and the vehicle circled the pad (Isaac 766270f3320d).
+        """
+        previous, self._R_plan_prev = self._R_plan_prev, R_plan
+        if R_plan is None:
+            self._rate_ref = np.zeros(2)
+            return
+        if previous is None:
+            return
+        M = previous.T @ R_plan
+        raw = (_FRD_TO_ISAAC.T @ (0.5 * np.array([M[2, 1] - M[1, 2], M[0, 2] - M[2, 0], M[1, 0] - M[0, 1]])))[:2] / self.dt
+        tau = float(self.att['lqr']['rate_reference_filter_s'])
+        self._rate_ref = self._rate_ref + (raw - self._rate_ref) * self.dt / (tau + self.dt)
+        v = self.vehicle
+        f = max(float(rotor_fraction), 0.05)
+        bound = float(self.att['lqr']['error_effort_fraction']) * v.vane_authority_nm_per_rad * f * self._vane_limit / max(
+            v.rotor_inertia * v.omega_max, 1e-9)
+        if self._limits.tilt_rate_rad_s is not None:
+            # A plan never turns faster than its tilt-rate bound; anything
+            # faster is a re-plan step, not a turn to anticipate.
+            bound = min(bound, float(self._limits.tilt_rate_rad_s))
+        norm = float(np.linalg.norm(self._rate_ref))
+        if norm > bound:
+            self._rate_ref = self._rate_ref * bound / norm
+
+    def _integrate_attitude(self, error, rotor_fraction):
+        """Anti-windup integration: only on unsaturated steps, of the error saturated at a window.
+
+        The integral holds the trim torque of a CoM offset; its effort is
+        bounded by the vane limit. It takes the proportional path's clamped
+        error (~2 deg at hover), so a large manoeuvring error cannot wind it
+        up: the raw error saturated at 4-5 deg learned the long legs'
+        tracking lag and missed the pad by up to 1.8 m (offline replica),
+        and gating on the plan's tilt rate kept a mid-air start from ever
+        learning a CoM trim. The price is a slow trim from a mid-air start
+        (5.8 mm offset: 1.3 s, tipping ~13 deg); a disturbance-torque
+        observer would separate trim from manoeuvre lag.
+        """
+        window = math.radians(float(self.att['lqr']['integrate_max_error_deg']))
+        e = np.asarray(error, dtype=float)
+        norm = float(np.linalg.norm(e))
+        if norm > window:
+            e = e * window / norm
+        z = self._attitude_integral + e * self.dt
+        effort = float(np.linalg.norm(self._lqr.roll_pitch_gain(rotor_fraction)[:, 0:2] @ z))
+        if effort > self._vane_limit:
+            z *= self._vane_limit / effort
+        self._attitude_integral = z
+
+    def _integrate_yaw(self, rate, rotor_fraction):
+        """Integral of the yaw rate, its effort bounded by the yaw reserve (anti-windup)."""
+        gain = float(self._lqr.yaw_gain(rotor_fraction)[0, 0])
+        z = self._yaw_integral + rate * self.dt
+        bound = max(self._yaw_reserve, 0.25 * self._vane_limit) / max(abs(gain), 1e-9)
+        self._yaw_integral = min(max(z, -bound), bound)
 
     # ---- telemetry ----
 

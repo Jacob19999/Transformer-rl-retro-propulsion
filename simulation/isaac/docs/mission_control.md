@@ -167,8 +167,12 @@ is a deterministic classical controller with no checkpoint.
 - **Closed loop.** The plan is re-solved every 0.5 s from the measured
   state. A tracking loop and a geometric attitude loop fly it, ending in a
   velocity-commanded terminal descent. The planned thrust is continuous
-  (first-order hold). The attitude loop pre-compensates the vane servos' 1°
-  deadband, which had kept every flight in a ~1 Hz, 3° coning wobble.
+  (first-order hold). Attitude is a full-state LQR over the body, the rotor
+  gyro and the vane actuators (`attitude_lqr.py`), scheduled on rotor speed.
+  On momentum-bounded vanes every PD law is unstable: the rotor's nutation
+  (~2.5 Hz) sits where the vanes lag. That PD instability was the 1–4 Hz
+  wobble. The attitude loop also pre-compensates the vane servos' 1°
+  deadband.
 - **Flight page.** The Convex optimization panel compares the recorded plan
   with the flown ground track, altitude and thrust. It shows planned energy,
   time to gate, tracking error, solve time, relaxation gap and instantaneous
@@ -194,21 +198,31 @@ is a deterministic classical controller with no checkpoint.
 - **Requirements.** The Clarabel solver from `requirements.txt`. Waypoint
   missions also need the LiPo model enabled.
 - **Vane physics.** The launch form's VANE PHYSICS selector (request field
-  `vane_model`) picks the plant for PID and convex missions:
-  - *Momentum-bounded jet* is the default: the coupled-jet model the
-    waypoint_flight PPO trains on.
+  `vane_model`) picks the plant:
+  - *Momentum-bounded jet* is the default for convex missions: the
+    coupled-jet model the waypoint_flight PPO trains on, with a
+    torque-limited motor. The motor applies at most 0.76 N·m, and at zero
+    throttle (ESC brake off) the rotor coasts. That removed a 430–710°/s
+    pad spin after every landing.
   - *Legacy airfoils + damper* has 8.5× too much vane torque per degree; it
     is kept to reproduce missions flown before 2026-09-25.
 
-  PPO missions always fly their training plant. On momentum vanes, start
-  with the rotor at hover: a cold in-air spool-up spins the body.
+  PID is the legacy-vane reference: the selector locks to legacy for it,
+  and the service rejects PID on momentum vanes. PPO missions always fly
+  their training plant. On momentum vanes, start in the air with the rotor
+  spinning, or spool up on the pad: a cold in-air spool-up spins the body,
+  and the launch board warns about it. A spawned spinning rotor now starts
+  on its loaded bus; the open-circuit voltage had made every warm start
+  yaw 30°/s.
 
 Convex missions raise the landing task's 30 m altitude fail-stop to 105 m,
-so starts up to the planner's 100 m ceiling are flyable. On 2026-09-25 it
-landed the default mission (18 m, cold rotor) at 0.146 m/s, 0.08 m from
-centre, with 1.7°/s roll/pitch RMS. The PID baseline hit at 1.50 m/s.
-Formulation, the plant identification behind every gain, the wobble
-diagnosis and the full validation table are in
+so starts up to the planner's 100 m ceiling are flyable. On 2026-09-26, on
+momentum-bounded vanes, it landed nine of nine validation missions
+0.004–0.15 m from centre at 0.14–0.18 m/s. They include the waypoint route,
+the 120 s mission trial, the 6S pack and wind + sensor noise + CoM shift.
+Terminal-descent body rates were 0.7–4.6°/s, against 15–30°/s limit cycles
+before. Formulation, the plant audit, the plant identification behind every
+gain, the wobble diagnosis and the full validation table are in
 `docs/convex_guidance_2026-09-25.md`.
 
 ## Hardware provenance

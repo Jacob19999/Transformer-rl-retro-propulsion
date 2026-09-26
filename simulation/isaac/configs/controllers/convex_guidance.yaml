@@ -77,6 +77,11 @@ guidance:
   replan_error_m: 0.75
   replan_velocity_error_m_s: 0.75
   freeze_time_s: 0.8            # no re-solve in the last 0.8 s before the gate
+  # After a re-plan the thrust feedforward fades from the replaced plan to
+  # the new one over this time. Each new plan starts at the present thrust
+  # but with its own slope, and the feedforward (sampled thrust_lead_s ahead)
+  # stepped by up to 1.4 deg of tilt at the re-plans (offline replica, route).
+  replan_blend_s: 0.3
   # Powered descent ends at a gate above the pad, then a constant-rate
   # vertical descent to contact (success gate: impact <= 0.25 m/s).
   gate_height_m: 0.5            # above touchdown body height (0.3125 m)
@@ -99,19 +104,22 @@ guidance:
   thrust_lead_s: 0.15           # feedforward the plan's thrust one spool lag (tau_motor) ahead
 tracking:
   # Feedback around the plan (world frame). Integrators absorb thrust-model
-  # bias and wind. Lateral gains from an Isaac sweep (2026-09-25): the vanes
-  # also push the vehicle sideways directly (~59 m/s^2 per rad of effort at
-  # full rotor, identified R^2 0.995), so lateral velocity feedback also
-  # excites the attitude limit cycle (see attitude.kd_att). At 1.0/1.8 the
-  # lateral velocity RMS near the pad was 0.39 m/s (body rates 30 deg/s RMS);
-  # 0.5/0.8 gave 0.23 m/s / 15 deg/s and landed 0.10 m from center, while a
-  # 0.25 s low-pass made it worse (0.82 m/s). That sweep ran with the
-  # servo-deadband coning present (attitude.deadband_compensation). Without
-  # it, 1.0/1.8 landed 0.01-0.04 m from center in the offline replica,
-  # but diverged there with a 1.4 cm CoM offset: re-sweep in Isaac first.
-  kp_xy: 0.5
-  kd_xy: 0.8
-  ki_xy: 0.15                   # 0.05 never removed a CoM-shift offset; 0.25 overshot (same sweep)
+  # bias and wind. The vanes also push the vehicle sideways directly, against
+  # the tilt they command (non-minimum phase), so lateral velocity feedback
+  # closes a fast loop through them. The first sweep (Isaac, 2026-09-25)
+  # chose 0.5/0.8/0.15 against the PD law's limit cycles. With the attitude
+  # LQR (2026-09-26): a linear hover model of the whole loop (lateral +
+  # attitude + vane actuators + side force + the rate feedforward's
+  # feedback share) damps that loop at zeta 0.37 on 8S and 6S at 1.0/1.2/0.3
+  # with attitude.lqr.feedback_rate_fraction 0.5. With the whole feedback
+  # fed forward, zeta 0.18 at kd 1.2 and 0.03 at kd 1.6; in Isaac, kd 1.6
+  # left 4-5 deg/s of 1.2-1.3 Hz retrograde wobble in terminal descent
+  # (missions 4252a591e3f0, 505384611d48, 09aeb773ca80). Offline, 1.0/1.2/0.3
+  # landed six 8S missions at worst 0.08 m from centre and three 6S missions
+  # at worst 0.04 m, against 0.19 m at 0.5/0.8/0.15.
+  kp_xy: 1.0
+  kd_xy: 1.2
+  ki_xy: 0.3                    # 0.15 left a CoM-offset trim bias through the landing (same sweep)
   kp_z: 1.5
   kd_z: 2.5
   ki_z: 0.3
@@ -134,7 +142,73 @@ tracking:
   max_tilt_deg: 22.0            # command limit (plans use <= 15 deg)
   thrust_min_weight_fraction: 0.5
 attitude:
-  # PID baseline's fin-effort structure (pid_radial.yaml) applied to a
+  # Attitude law. lqr: full-state gyroscopic regulator (attitude_lqr.py),
+  # a discrete LQR over the body, rotor gyro and vane-actuator model, scheduled
+  # on rotor fraction. pd: the PID baseline's fin-effort structure below,
+  # kept to reproduce missions flown before 2026-09-26.
+  # Why lqr (2026-09-26): the rotor's angular momentum makes the roll/pitch
+  # nutation ~2.5 Hz at hover, where the vanes lag ~0.075 s (servo 0.05 s +
+  # vane joint 0.025 s, both fitted to Isaac recordings to 0.3 deg RMS). The
+  # linearized PD loop below is unstable on momentum-bounded vanes at every
+  # rotor speed: a ~4 Hz nutation (+1.1 to +2.8 /s) and a ~1.6 Hz mode
+  # (+0.6 to +1.9 /s), which Isaac showed as saturation-bounded limit
+  # cycles: 4 Hz, 25-30 deg/s in terminal descent (missions addd8752dc7c,
+  # fa66253416c8) and 1.0-1.4 Hz retrograde, 11-17 deg/s with 16-38% of
+  # vane commands saturated (e9c203457bba, 3d413ec4468b, ae7ec094fb49). On
+  # the legacy vanes it was stable only thanks to their 0.27 N m s/rad
+  # artificial damper, with 0.1 /s of margin at full rotor. No PD retune
+  # fixes it: the best (kp 0.05) decays at 1.0 /s with a 10x slower attitude
+  # loop. The LQR feeds back the servo and joint states, which gives the
+  # phase lead the PD lacks. At hover its slowest roll/pitch modes decay at
+  # 1.9 /s (trim integral) and 3.9 /s, and nutation damping is zeta >= 0.46
+  # (>= 0.40 from 30% to 100% rotor). Every single +/-30% authority, +50%
+  # servo or joint lag, 8 ms extra delay, +/-20% inertia or +20% rotor
+  # momentum error keeps zeta >= 0.24 (worst: inertia -20%).
+  law: lqr
+  lqr:
+    # Weights: attitude error per rad^2, rates per (rad/s)^2, integral per
+    # (rad s)^2. The input is weighted by Bryson's rule on the vanes' torque
+    # at full rotor speed, R = 1 / design_torque^2, so the design is the
+    # same torque loop on any vanes. (Weighted per rad of effort, the legacy
+    # vanes' 8.5x authority made it 72x more aggressive: a 7 Hz loop that
+    # limit-cycled on the servo slew limit in the offline replica.)
+    error_weight: 1000.0
+    rate_weight: 30.0
+    # Attitude-error integral: holds a CoM trim at zero attitude error.
+    # Actuator-state feedback halves the DC stiffness, so without it a 1 cm
+    # CoM offset would stand ~9 deg off the commanded attitude. At 3000 the
+    # trim converges at 1.9 /s.
+    integral_weight: 3000.0
+    design_torque_nm: 0.24        # R 17.4 per (N m)^2 (~100 per rad^2 of effort on 2.365 N m/rad vanes)
+    # Yaw (common mode): same actuator model; damping zeta 0.83 at the old
+    # damper's rate gain (the damper alone: zeta 0.23).
+    yaw_rate_weight: 3.0
+    # R 11.1 per (N m)^2 (~30 per rad^2 of common mode on 1.72 N m/rad vanes).
+    # Also caps the yaw torque the duty slew may claim
+    # (guidance.throttle_rate_yaw_authority_fraction of it).
+    yaw_design_torque_nm: 0.3
+    # Integral of the yaw rate. The jet's residual swirl is a steady yaw
+    # torque (~0.05 N m at hover), which rate feedback alone leaves as a 15-27
+    # deg/s spin (offline replica). The spinning body then rotated the
+    # roll/pitch trim integral, and the landing leg of the route orbited the
+    # pad for 20 s. At 30 the integral settles at 3.2 /s.
+    yaw_integral_weight: 30.0
+    # The attitude error's share of the effort is capped at this fraction of
+    # the vane limit (a large error becomes a bounded-rate precession, ~15 deg/s
+    # at hover on momentum-bounded vanes), leaving the rest for damping.
+    error_effort_fraction: 0.6
+    # The integral takes the proportional path's clamped attitude error,
+    # saturated at this window, and only on unsaturated steps (anti-windup).
+    # Wider windows on the raw error trimmed a mid-air CoM offset faster but
+    # learned the long legs' tracking lag (4-5 deg: up to 1.8 m off the pad,
+    # offline replica). See _integrate_attitude.
+    integrate_max_error_deg: 3.0
+    # Rate feedforward: the turn rate (low-pass filtered) of the plan's thrust
+    # direction plus this share of the feedback correction, and the vane
+    # effort that sustains that precession (see _update_rate_reference).
+    rate_reference_filter_s: 0.1
+    feedback_rate_fraction: 0.5
+  # law: pd -- PID baseline's fin-effort structure (pid_radial.yaml) applied to a
   # geometric (SO(3)) attitude error instead of Euler angles. The rate gain
   # sets the loop gain at ~29 rad/s, where the vanes are slew-limited
   # (~2.5 rad/s identified): at the PID's 0.10 the loop limit-cycled at
@@ -161,7 +235,11 @@ attitude:
   # frequency; 0.03 leaves a gain margin of ~2.4 (~1.9 at full rotor speed)
   # and holds the 0.25 /s spool torque to ~25 deg/s.
   yaw_damper_gain: 0.03
-  max_fin_angle: 0.20           # rad; servo limit is 0.262
+  # Vane effort limit (rad). The servo limit is 0.262 and the deadband
+  # inverse adds up to its 0.017 deadband on top, so 0.245 uses the whole
+  # travel: 22% more torque than the PID's 0.20, which the momentum-bounded
+  # vanes need (a 1 cm CoM offset takes ~0.17 rad of trim at hover).
+  max_fin_angle: 0.245
   # Every gain above is a vane effort tuned and identified on the legacy
   # vanes. These are that plant's authorities (planned 8S, torque per rad of
   # effort at full rotor speed, as TVCDirectRLEnv.vane_authority() probes

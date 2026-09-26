@@ -171,6 +171,8 @@ class ResetManager:
                 battery = self._battery_model
                 battery.soc[env_ids] = low + torch.rand(len(env_ids), device=device) * (high - low)
                 battery.voltage_v[env_ids] = battery.ocv()[env_ids]
+            if self._omega_state is not None:
+                self._battery_model.carry_load(env_ids, self._omega_state, self._edf)
 
         # Isaac Lab requires reset() after state writers so actuator caches and
         # wrench composers cannot carry state across the episode boundary.

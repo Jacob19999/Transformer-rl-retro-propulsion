@@ -1,4 +1,4 @@
-# Convex (SOCP) guidance controller — 2026-09-25
+# Convex (SOCP) guidance controller — 2026-09-25 (fourth pass 2026-09-26)
 
 Mission control can now fly the drone with **convex optimization**: a
 second-order cone program (SOCP) plans the thrust trajectory from the
@@ -8,6 +8,7 @@ separate from PPO, and nothing in PPO training uses it.
 
 - Planner: `tvc_env/controllers/convex_guidance.py`
 - Flight controller (tracking, attitude, phases): `tvc_env/controllers/convex_adapter.py`
+- Attitude regulator (gyroscopic LQR over the vane actuators): `tvc_env/controllers/attitude_lqr.py`
 - Settings, each with its evidence: `configs/controllers/convex_guidance.yaml`
 - Mission runner branch: `apps/run_mission.py` (`controller == 'convex'`)
 - Tests: `tests/unit/test_convex_guidance.py`, `tests/unit/test_mission_service.py`
@@ -86,16 +87,24 @@ Flight phases:
 
 Inner loops:
 
-- **Tracking.** The plan's thrust acceleration is the feedforward. PID
-  feedback wraps it, with integrators bounded by the acceleration they may
-  command and conditional integration (anti-windup).
-- **Attitude.** Geometric SO(3) error. It uses the PID baseline's
-  fin-effort structure and mixer, with roll/pitch priority over yaw. Yaw
-  is rate-damped only. Heading does not matter for this axisymmetric
-  vehicle. The vane servos' deadband is pre-compensated from the measured
-  vane angles (a backlash inverse, see the second pass below).
+- **Tracking.** The plan's thrust acceleration is the feedforward, faded
+  from the replaced plan over 0.3 s after each re-plan. PID feedback wraps
+  it, with integrators bounded by the acceleration they may command and
+  conditional integration (anti-windup).
+- **Attitude.** Geometric SO(3) error into a full-state discrete LQR
+  (fourth pass below). It feeds back the attitude-error integral, the
+  error, the body rates and both vane actuator states (servo and joint,
+  measured from the vane angles and rates), scheduled on rotor speed.
+  The turn rate of the plan's thrust direction, plus half the feedback
+  correction's, is fed forward with the vane effort that sustains that
+  precession. Yaw is a separate LQR channel on the yaw rate and its
+  integral; heading is free for this axisymmetric vehicle. Roll/pitch have
+  priority over yaw, except for a yaw reserve. The vane servos' deadband is
+  pre-compensated from the servo state (a backlash inverse, see the second
+  pass). `attitude.law: pd` restores the earlier PD law.
 - **Throttle.** Inverts `T = T_full (duty V_bus/V_ref)^2` at the measured
-  bus voltage.
+  bus voltage. The slew limits act on the rotor command (duty × V_bus/V_ref),
+  so a bus-voltage change is compensated at once.
 
 The controller reads only the observation (sensor noise included), the
 mission sequencer's remaining route and the measured bus voltage.
@@ -300,6 +309,158 @@ re-flown with the rotor at hover):
   the rotor's spin-down reaction, with no damper to absorb it.
 - **PID baseline.** Not plant-aware, so it cannot fly these vanes.
 
+## Fourth pass: plant audit and a gyroscopic attitude regulator (2026-09-26)
+
+Goal: remove the remaining wobble on the momentum-bounded vanes, make
+waypoint flight land on the pad, and check that the plant physics is right.
+PID stays the legacy-vane reference: mission validation now rejects PID on
+momentum vanes, and the launch form locks its vane selector to legacy.
+
+### Plant audit
+
+Open-loop Isaac tests (no controller; scripted vanes and duty, from 40 m):
+
+| Test | 120 Hz physics | 480 Hz physics | Theory |
+|---|---|---|---|
+| Nutation, neutral vanes | 2.489 Hz, decay 0.019 /s | 2.492 Hz, 0.018 /s | H/I = 2.48 Hz, undamped |
+| Roll step (0.05 rad effort) → steady pitch rate | 3.70°/s | 3.72°/s | τ/H = 6.1°/s × (1 − 1° deadband / 0.05 rad) ≈ 3.9°/s |
+| Yaw step (0.05 rad common mode) | 110.6°/s² | 111.1°/s² | 173°/s² × 0.66 (deadband) = 114°/s² |
+| Throttle cut, in the air | body +2242°/s | +2242°/s | ΔH / I_zz = 2233°/s |
+
+A regression of Isaac's measured angular acceleration on the model's terms
+(missions `e9c203457bba`, `addd8752dc7c`) gave coefficients of 0.9–1.03 on
+the vane torque and gyroscopic coupling, and 1.0 on the yaw vane and spool
+reaction torques. The gyro, the coupled-jet vane forces and the momentum
+bookkeeping are right, and 120 Hz is converged. Two defects:
+
+- **Motor torque.** The first-order spool lag (0.15 s) was unbounded: a
+  throttle cut stopped the rotor in ~0.5 s, which takes 5.2 N·m. The planned
+  4075 KV1500 motor on its 120 A ESC can apply at most Kt·I = 0.76 N·m, and an
+  EDF ESC with the brake off applies none at zero throttle, so the rotor
+  coasts on its drag (0.47 N·m at hover, a ~1.7 s time constant). The
+  unbounded spin-down spun every landed momentum-vane vehicle at
+  430–710°/s on the pad after disarm. The torque is now bounded
+  (`dynamics.motor_torque_limit` in `train_waypoint_flight.yaml`, which is
+  also the PPO training plant), and the pad spin fell to 2–4°/s.
+- **Warm-rotor spawns** started the battery at its open-circuit voltage
+  while the rotor already drew hover power. The first substep dropped the
+  bus 3% (33.6 → 32.6 V), and a flight computer reading 33.6 V under-drove
+  the rotor. It spun down 1600 rpm, and the reaction yawed the body to 30°/s
+  within 0.1 s of every warm start. Resets now put a spinning rotor on its
+  loaded bus (`LiPoBattery.carry_load`).
+
+The offline replica now matches these open-loop tests within a few
+percent. Its forward-Euler gyro had been adding energy (nutation growing
+at 0.24 /s), and is now implicit midpoint, as Isaac's coupled Cayley step
+is.
+
+### Why the wobble survived the third pass
+
+Linearizing the roll/pitch loop (body, rotor gyro, servo 0.05 s, vane
+joint 0.025 s, zero-order hold at 30 Hz) shows the third pass's PD law was
+**unstable on momentum-bounded vanes at every rotor speed**:
+
+| Mode | Growth rate (rotor 0.78 → 0.95) |
+|---|---|
+| ~4 Hz nutation | +1.1 → +2.8 /s |
+| ~1.6 Hz precession | +0.6 → +1.9 /s |
+
+Only saturation and the deadband kept the flights bounded, as limit cycles:
+the 4 Hz, 25–30°/s terminal-descent oscillation (`addd8752dc7c`,
+`fa66253416c8`) and the 1.0–1.4 Hz retrograde wobble with 16–38% of vane
+commands saturated (`e9c203457bba`, `3d413ec4468b`, `ae7ec094fb49`). The
+cause is the gyroscope. The nutation sits at H/I ≈ 2.5 Hz, and the vanes
+lag ~0.075 s there, so rate feedback passes 90° of phase and stops damping.
+On the legacy vanes the 0.27 N·m·s/rad artificial damper had covered this,
+with 0.1 /s of margin at full rotor. No PD retune works: the best found
+decays at 1.0 /s with a 10× slower attitude loop.
+
+### The attitude regulator
+
+`attitude_lqr.py` solves a discrete LQR on that model, scheduled on rotor
+fraction (both K·f² and H change with it). It feeds back:
+
+- the attitude-error integral, which holds a CoM trim;
+- the attitude error and body rates;
+- the servo and joint angles in effort space. The joint is the measured
+  vane angle. The servo is `j + τ_j·j'` from the measured vane rate, which
+  matches the servo model in Isaac to 0.009° RMS.
+
+The actuator states supply the phase lead a PD law lacks, and the gain
+rotates the torque about 43° toward the precession direction. Nominal
+closed-loop damping is ζ ≥ 0.46 at hover and ≥ 0.40 from 30% to 100% rotor.
+Any single model error keeps ζ ≥ 0.24: ±30% authority, +50% servo or joint
+lag, 8 ms of extra delay, ±20% inertia or +20% rotor momentum.
+
+Details that mattered, each found offline or in Isaac:
+
+| Choice | Evidence |
+|---|---|
+| Input weight by Bryson's rule on vane *torque*, R = 1/τ², τ = 0.24 N·m (yaw 0.3) | Weighted per rad of effort, the legacy vanes' 8.5× authority made the design 72× more aggressive: a 7 Hz loop that limit-cycled on the servo slew limit |
+| Yaw: LQR on rate and its integral; the yaw design torque also caps the duty slew | The jet's residual swirl is a steady ~0.05 N·m of yaw torque. Rate feedback alone left a 15–27°/s spin that rotated the body-frame trim integral, and the landing leg circled the pad for 20 s. On legacy vanes a 0.25 /s duty slew (8× the yaw design torque) wobbled roll/pitch at 13–23°/s |
+| Rate feedforward: the plan's thrust direction plus *half* the feedback correction; optimal plans only, capped at the planner's tilt-rate bound | Differentiating the whole command closed a loop through the vanes' own non-minimum-phase side force: a 1.3 Hz mode at ζ 0.03, seen as 4–5°/s of wobble in Isaac terminal descents. The plan alone left the weak 6S vanes lagging every correction, and the vehicle circled the pad until timeout (`766270f3320d`). Half gives ζ 0.37 on both packs. Soft-terminal fallback plans swing between re-plans and are not fed forward |
+| Attitude error clamped to 60% of the vane limit | A large error becomes a bounded-rate precession, leaving travel for damping |
+| Integral on the clamped error, only while unsaturated | Wider windows trimmed a mid-air CoM offset faster but learned the long legs' tracking lag (up to 1.8 m off the pad) |
+| Vane effort limit 0.245 rad (servo 0.262 minus the deadband headroom) | 22% more torque than the PID's 0.20. `validate_action` had also clipped every command at 0.20, discarding the deadband inverse exactly when the vanes saturated |
+| Feedforward faded over 0.3 s after each re-plan | Each plan starts at the present thrust with its own slope: tilt steps of up to 1.6° at re-plans on the route. With the fade, 0.4° |
+| Duty slew applied to the rotor command (duty × V_bus/V_ref) | The yaw-safe slew had held back the duty that compensates bus sag |
+
+Lateral gains are now 1.0/1.2/0.3 (from 0.5/0.8/0.15). A linear hover
+model of the whole loop (lateral + attitude + actuators + vane side force +
+feedforward) damps the side-force/velocity loop at ζ 0.37 on 8S and 6S.
+With the plan-only feedforward, ζ is 0.33 at kd 1.2, 0.18 at kd 1.6 and 0.08
+at kd 2.0, because the side force opposes the tilt it commands, which caps
+the velocity gain. Offline, the worst miss fell from 0.19 m to 0.08 m over
+six 8S missions, and to 0.04 m over three 6S missions.
+
+### Results (Isaac, final code)
+
+All missions are momentum-bounded vanes, rotor already spinning, unless
+noted. Body-rate RMS is roll/pitch in flight (manoeuvring included) and in
+the terminal descent. "Third pass" is the same request under the PD law.
+
+| Mission | Outcome | Impact | Pad error | Body rates flight / terminal | Vanes saturated | Third pass | Run |
+|---|---|---|---|---|---|---|---|
+| Default 18 m | **LANDED ✓** | 0.178 m/s | 0.017 m | 0.7 / 0.8°/s | 0.0% | 0.44 m; 4 Hz, 25°/s terminal | `408e6b926eee` |
+| Hot 3 m hop | **LANDED ✓** | 0.154 | 0.045 | 5.6 / 3.9 | 0.1% | 0.23 m; 1.4 Hz, 16°/s | `e2ba15c45abb` |
+| 7 m offset + crosswind | **LANDED ✓** | 0.159 | 0.052 | 6.8 / 2.7 | 0.3% | 0.18 m; 1 Hz, 17°/s | `49cc16aca7f5` |
+| Legacy 6S pack, 8 m | **LANDED ✓** | 0.175 | 0.051 | 7.3 / 1.4 | 0.1% | 0.25 m; 1 Hz, 18°/s | `fdb559daede1` |
+| 50 m start | **LANDED ✓** | 0.152 | 0.004 | 0.7 / 0.7 | 0.0% | 0.33 m; 4 Hz, 30°/s | `c8233615eabf` |
+| Route: fly-through + hover | **LANDED ✓** | 0.152 | 0.098 | 7.3 / 3.3 | 0.2% | ✗ 0.74 m off | `0036c82ca31d` |
+| Mission trial (50 m, 3 hovers), 120 s | **LANDED ✓** at 99 s | 0.148 | 0.063 | 3.8 / 3.2 | 0.1% | ✗ 0.73 m off | `1b9c6c33b85b` |
+| Wind + sensor noise + CoM shift, −5 m/s | **LANDED ✓** | 0.136 | 0.146 | 9.3 / 4.6 | 6.8% | ✗ drifted away | `d4e2b8d8ceac` |
+| Legacy vanes (regression) | **LANDED ✓** | 0.182 | 0.029 | 1.8 / 1.0 | 0.0% | 0.146 m/s, 0.088 m | `3c3f033b00a2` |
+| PID, legacy vanes (reference) | **LANDED ✓** | 0.152 | 0.025 | | | ✗ 11 m off (momentum) | `7cf4e8c1506b` |
+
+The 1–4 Hz limit cycles are gone: every spectrum peaks below 1 Hz
+(manoeuvring), and saturation is ≤ 0.3% except with the ±1 cm CoM shift.
+After landing, a momentum-vane vehicle now sits still (≤ 6°/s), where it
+used to spin at 430–710°/s. Two runs carried yaw into the landing: the route
+touched down yawing 29°/s, stopped within 0.2 s; the all-disturbances run
+was disarmed at 79% rotor with the legs lightly loaded, and the coasting
+rotor spun it briefly to 124°/s, stopped within 0.4 s. On the legacy plant
+(no motor torque limit, kept as recorded) disarm still spins the vehicle,
+to 153°/s.
+
+### Remaining limits
+
+- **Yaw transients of 20–40°/s.** Throttle changes accelerate the rotor,
+  and its reaction yaws the body. The momentum vanes hold ~0.3 N·m of yaw
+  against 0.78 N·m·s of rotor momentum. A 10× yaw-rate weight cut the peaks
+  only from 26 to 22°/s; slower throttle changes would trade descent
+  performance. They are heading excursions, not an oscillation.
+- **CoM tolerance ~5 mm.** A 1 cm offset needs ~10° of trim out of 14°.
+  From a mid-air start with an untrimmed 5.8 mm offset the vehicle tips
+  ~13° while the integral builds (offline harness), and more when the jet
+  swirl and a throttle slew also claim vane travel. A disturbance-torque
+  observer (model-predicted against measured angular acceleration) would
+  separate the trim from manoeuvre lag and trim much faster. It is the next
+  step, together with balancing the airframe.
+- **Cold in-air starts stay infeasible.** The torque-limited motor needs
+  ~1.3 s to reach hover speed, and the body takes the rotor's momentum:
+  1,781°/s of yaw and a 6.8 m/s crash (`ee3f973be19e`). Spool up on the
+  pad. The launch form warns about cold in-air starts on momentum vanes.
+
 ## Mission control
 
 - **Controller option.** **CONVEX · SOCP powered-descent guidance** is
@@ -321,27 +482,21 @@ re-flown with the rotor at hover):
 
 ## Limits and next steps
 
-- **Lateral precision (0.05–0.4 m) is now set by a slow lateral loop.**
-  kp_xy/kd_xy 0.5/0.8 (~0.7 rad/s) were chosen while the coning was
-  present, because higher gains excited it through the vane side force. In
-  the terminal descent the vehicle now coasts across the pad centre and
-  drifts out slowly. In the offline replica, 1.0/1.8 landed 0.01–0.04 m from
-  centre where 0.5/0.8 missed by up to 0.43 m. That needs an Isaac sweep
-  first, because of the next point.
-- **CoM offsets.** The attitude loop is PD only. A CoM offset therefore
-  leaves a steady attitude error (1.7° in `46cb23362484`), and a vane trim
-  whose side force the lateral integrator must cancel. In the replica, a
-  1 cm lateral offset (the edge of `com_shift`'s ±1 cm per axis) drifts off
-  the pad during the terminal descent. At 1.4 cm with higher lateral gains
-  it diverges. A body-frame attitude integrator (ki 0.5, anti-windup) landed
-  the 1 cm case 0.02 m from centre offline. The terminal descent should also
-  hand back to powered descent when the vehicle drifts far off the pad.
+- **CoM offsets** are the tightest limit on momentum-bounded vanes (see the
+  fourth pass). The next steps are a disturbance-torque observer for the
+  trim and balancing the airframe to a few millimetres.
 - **The deadband inverse needs the servo's real deadband** (1° is an
   estimate). Over-compensation only dithers; under-compensation brings the
   coning back in proportion. Measure it on the bench. Estimating it online
   from the measured vane motion is the robust follow-up.
-- The identified numbers come from the simulator's estimated vane and
-  motor models. Re-identify on hardware before trusting any gain.
+- **The attitude LQR is only as good as its model.** Vane authority, servo
+  and joint lags, inertia and rotor momentum come from the simulator. It
+  tolerates any single ±30% authority, +50% lag or ±20% inertia error, but
+  re-identify them on hardware (a step test per axis, as in the fourth
+  pass's open-loop table) before flying it.
+- **The servo state estimate uses the vane rate.** In Isaac that is the
+  PhysX joint velocity. On hardware it would need a vane position sensor,
+  or a model-based estimate from the commands.
 - Real-time use would need a solve-latency state predictor. Solves take
   30–110 ms, against a 33 ms control period.
 - The mission runner now retries its status-file replace. On Windows, the

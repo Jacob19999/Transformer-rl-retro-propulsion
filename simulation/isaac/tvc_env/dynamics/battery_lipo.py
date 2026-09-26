@@ -75,6 +75,23 @@ class LiPoBattery:
         current = torch.where(cutoff, 0., current)
         return voltage, current, cutoff, requested > max_power + 1e-4
 
+    def carry_load(self, env_ids, omega, edf):
+        """Put reset envs on the loaded bus their spinning rotor already draws.
+
+        reset() leaves the open-circuit voltage. A rotor spawned at speed
+        draws its steady aerodynamic power from the first substep, so the bus
+        stepped down by the series-resistance drop (3% at hover on 8S:
+        33.6 -> 32.6 V). A flight computer that read the unloaded voltage
+        under-drove the rotor, which spun down and yawed the body to 30 deg/s
+        (Isaac mission 0a04e2549b26). Polarization still builds from zero.
+        """
+        c = self.config
+        aero = c['shaft_power_at_max_w'] * (omega / edf.omega_max).clamp(0, 1).pow(3)
+        voltage, current, _, _ = self.solve_load(aero / c['motor_efficiency'] + c['auxiliary_power_w'])
+        self.voltage_v[env_ids] = voltage[env_ids]
+        self.current_a[env_ids] = current[env_ids]
+        self.power_w[env_ids] = (voltage * current)[env_ids]
+
     def integrate(self, voltage, current, cutoff, limited, dt):
         c = self.config
         self.voltage_v = voltage

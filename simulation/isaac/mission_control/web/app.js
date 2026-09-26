@@ -335,6 +335,11 @@ function renderBoard(){
   items.push(['PPO TRAINER',state.training?['good',m?.step!=null?`${m.task==='waypoint_flight'?'WAYPOINT':'LANDING'} · ${fmt(m.step/1e6,1)}M · S${m.stage+1}/${m.stages??'—'}`:'STARTING']:['idle','IDLE']]);
   const controller=$('controller').value,policy=config?.policies?.[controller]??controller;
   items.push(['NEXT CONTROLLER',controller==='pid'?['good','PID']:controller==='convex'?['good','CONVEX SOCP']:[/EXPERIMENTAL/i.test(policy)?'warning':'good',controller==='ppo_mission'?'PPO · EXPERIMENTAL':policy.toUpperCase()]]);
+  // A rotor spun up in flight takes its angular momentum (~0.78 N m s at hover)
+  // from the body; momentum-bounded vanes hold ~0.3 N m, so the body spins.
+  // Spool up on the pad, or start in the air with the rotor already turning.
+  const airborne=Number($('position_2')?.value??0)>1,cold=Number($('initial_motor_fraction').value)<50;
+  if(airborne&&cold&&$('vane_model').value==='momentum')items.push(['ROTOR START',['warning','COLD IN AIR · SPIN-UP YAWS THE BODY']]);
   const preflight=checklist.summary();
   items.push(['PRE-FLIGHT',preflight.done===preflight.total?['good',`COMPLETE · ${preflight.total}/${preflight.total}`]:preflight.done?['warning',`HOLD · ${preflight.done}/${preflight.total}`]:['idle','NOT STARTED']]);
   items.push(['TELEMETRY',!state.frames.length?['idle','NO DATA']:state.busy&&state.live?['good',`LIVE · ${state.frames.length} SAMPLES`]:['idle',`REPLAY · ${state.frames.length} SAMPLES`]]);

@@ -207,6 +207,23 @@ class TVCDirectRLEnv(TVCEnvBase):
             raise ValueError(f"Insufficient level thrust: {net_thrust:.3f} N available for {mass * gravity:.3f} N weight")
         return math.sqrt(mass * gravity / net_thrust)
 
+    def attitude_model(self) -> dict:
+        """Attitude-dynamics parameters a flight computer would identify on the bench.
+
+        Transverse and yaw inertia (PhysX body, FRD), the body's linear
+        rotational damping, the servo's first-order lag and the vane joint's
+        lag behind it (drive damping / stiffness: an overdamped drive on a
+        light vane). Fitted to Isaac recordings, servo + joint tracks the
+        vane angles to 0.3 deg RMS (mission e9c203457bba).
+        """
+        inertia = torch.diagonal(self._locked_body_inertia[0]).tolist()
+        damping = float(self._config.config.get('dynamics', {}).get('body_angular_damping', self._body_angular_damping))
+        servo = self._resolved_hardware['servo']
+        stiffness = float(servo.get('drive_stiffness', 80.0))
+        return dict(inertia_rp_kg_m2=0.5 * (inertia[0] + inertia[1]), inertia_yaw_kg_m2=inertia[2],
+                    angular_damping_nm_s_per_rad=damping, servo_lag_s=float(self._servo_model.tau_servo),
+                    vane_joint_lag_s=float(servo.get('drive_damping', 2.0)) / stiffness if stiffness > 0 else 0.0)
+
     def vane_authority(self, effort_rad: float = 0.035) -> tuple[float, float]:
         """Body torque per rad of vane effort at full rotor speed, level and at rest.
 

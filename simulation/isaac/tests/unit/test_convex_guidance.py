@@ -30,13 +30,27 @@ def planner(objective='energy'):
     return ConvexGuidance(limits, EnergyModel(FULL, 3072 / .88, 10.), objective)
 
 
-def settings():
-    return yaml.safe_load((ROOT / 'configs/controllers/convex_guidance.yaml').read_text())
+def settings(law=None):
+    s = yaml.safe_load((ROOT / 'configs/controllers/convex_guidance.yaml').read_text())
+    if law is not None:
+        s['attitude']['law'] = law
+    return s
+
+
+def bare_vehicle():
+    """Planned 8S vehicle without an attitude model (enough for the PD law)."""
+    return VehicleModel(mass_kg=MASS, hover_throttle=.81, reference_voltage_v=29.6,
+                        shaft_power_at_max_w=3072., motor_efficiency=.88, auxiliary_power_w=10.)
+
+
+# Attitude model of the _fly test plant: effort torques (20, 20, 1.1) N m/rad
+# at full rotor, the 0.27 N m s/rad damper, a 0.05 s servo, no rotor gyro.
+FLY_ATTITUDE = dict(vane_authority_nm_per_rad=20., yaw_authority_nm_per_rad=1.1, inertia_rp_kg_m2=.05,
+                    inertia_yaw_kg_m2=.02, angular_damping_nm_s_per_rad=.27, servo_lag_s=.05)
 
 
 def vehicle():
-    return VehicleModel(mass_kg=MASS, hover_throttle=.81, reference_voltage_v=29.6,
-                        shaft_power_at_max_w=3072., motor_efficiency=.88, auxiliary_power_w=10.)
+    return VehicleModel(**{**bare_vehicle().__dict__, **FLY_ATTITUDE})
 
 
 def test_landing_plan_meets_every_constraint_and_is_lossless():
@@ -161,10 +175,10 @@ def test_unreachable_gate_degrades_to_maximum_braking():
 
 
 def test_geometric_attitude_efforts_match_pid_euler_convention():
-    s = settings()
-    controller = ConvexGuidanceController(s, vehicle(), (0., 0., 0.), .3125, 1 / 30)
+    s = settings('pd')
+    controller = ConvexGuidanceController(s, bare_vehicle(), (0., 0., 0.), .3125, 1 / 30)
     kp, kd, comp = (s['attitude'][k] for k in ('kp_att', 'kd_att', 'gyro_comp_rp'))
-    mixer = PIDFinMixer(max_fin_angle=controller._max_fin_angle)
+    mixer = PIDFinMixer(max_fin_angle=controller._vane_limit)
     for roll, pitch in ((.05, 0.), (0., .05), (-.04, .03)):
         q = from_euler(torch.tensor(roll), torch.tensor(pitch), torch.tensor(0.))
         R = to_rotation_matrix(q.double()).numpy()
@@ -184,9 +198,9 @@ def test_geometric_attitude_efforts_match_pid_euler_convention():
 
 
 def test_gyroscopic_cross_feed_cancels_the_identified_rotor_coupling():
-    s = settings()
+    s = settings('pd')
     s['attitude']['vane_rp_authority_nm_per_rad'] = authority = 20.7   # identified value, opt-in
-    with_rotor = VehicleModel(**{**vehicle().__dict__, 'rotor_inertia': 2e-4, 'omega_max': 4649.56})
+    with_rotor = VehicleModel(**{**bare_vehicle().__dict__, 'rotor_inertia': 2e-4, 'omega_max': 4649.56})
     controller = ConvexGuidanceController(s, with_rotor, (0., 0., 0.), .3125, 1 / 30)
     for f in (.6, .88, 1.):
         k = controller._gyro_compensation(f)
@@ -194,8 +208,8 @@ def test_gyroscopic_cross_feed_cancels_the_identified_rotor_coupling():
         assert authority * f * f * k == pytest.approx(2e-4 * 4649.56 * f)
     assert controller._gyro_compensation(.88) == pytest.approx(.051, abs=.002)
     # Without rotor parameters, or by default, the fixed PID cross-feed is used.
-    assert ConvexGuidanceController(s, vehicle(), (0., 0., 0.), .3125, 1 / 30)._gyro_compensation(.88) == s['attitude']['gyro_comp_rp']
-    default = ConvexGuidanceController(settings(), with_rotor, (0., 0., 0.), .3125, 1 / 30)
+    assert ConvexGuidanceController(s, bare_vehicle(), (0., 0., 0.), .3125, 1 / 30)._gyro_compensation(.88) == s['attitude']['gyro_comp_rp']
+    default = ConvexGuidanceController(settings('pd'), with_rotor, (0., 0., 0.), .3125, 1 / 30)
     assert default._gyro_compensation(.88) == settings()['attitude']['gyro_comp_rp']
 
 
@@ -335,10 +349,11 @@ def _coning_rate_rms(controller, deadband, duration=6.):
 
 
 def test_vane_deadband_inverse_removes_the_gyroscopic_coning_limit_cycle():
-    with_rotor = VehicleModel(**{**vehicle().__dict__, 'rotor_inertia': 2e-4, 'omega_max': 4649.56})
+    # The PD law on the legacy vanes (Isaac mission 0289417f5d60).
+    with_rotor = VehicleModel(**{**bare_vehicle().__dict__, 'rotor_inertia': 2e-4, 'omega_max': 4649.56})
 
     def controller(deadband_rad):
-        return ConvexGuidanceController(settings(), with_rotor, (0., 0., 0.), .3125, 1 / 30,
+        return ConvexGuidanceController(settings('pd'), with_rotor, (0., 0., 0.), .3125, 1 / 30,
                                         servo_deadband_rad=deadband_rad)
 
     # Isaac mission 0289417f5d60 coned at ~15 deg/s RMS with the 1 deg servo deadband.
@@ -352,20 +367,23 @@ def test_vane_deadband_inverse_removes_the_gyroscopic_coning_limit_cycle():
 LEGACY_VANES, MOMENTUM_VANES = (20.04, 14.58), (2.365, 1.72)   # probed N m/rad at full rotor (planned 8S)
 
 
-def _with_vanes(authority):
-    return VehicleModel(**{**vehicle().__dict__, 'rotor_inertia': 2e-4, 'omega_max': 4649.56,
-                           'vane_authority_nm_per_rad': authority[0], 'yaw_authority_nm_per_rad': authority[1]})
+def _with_vanes(authority, damping=0.):
+    """Planned 8S vehicle with these vanes, the rotor, and the Isaac attitude model (servo + 25 ms joint lag)."""
+    return VehicleModel(**{**bare_vehicle().__dict__, 'rotor_inertia': 2e-4, 'omega_max': 4649.56,
+                           'vane_authority_nm_per_rad': authority[0], 'yaw_authority_nm_per_rad': authority[1],
+                           'inertia_rp_kg_m2': .05, 'inertia_yaw_kg_m2': .02, 'servo_lag_s': .05,
+                           'vane_joint_lag_s': .025, 'angular_damping_nm_s_per_rad': damping})
 
 
 def test_vane_efforts_scale_to_the_plant_authority():
-    s = settings()
+    s = settings('pd')
     legacy = ConvexGuidanceController(s, _with_vanes(LEGACY_VANES), (0., 0., 0.), .3125, 1 / 30)
     jet = ConvexGuidanceController(s, _with_vanes(MOMENTUM_VANES), (0., 0., 0.), .3125, 1 / 30)
     R = to_rotation_matrix(from_euler(torch.tensor(.01), torch.tensor(-.006), torch.tensor(0.)).double()).numpy()
     rates = np.array([.02, -.01, .05])
     small = np.array(legacy._attitude_fins(R, np.array([0., 0., 1.]), rates, .84))
     # The gains were tuned on the legacy vanes: identical there, 8.47x the deflection on the coupled jet.
-    np.testing.assert_allclose(small, ConvexGuidanceController(s, vehicle(), (0., 0., 0.), .3125, 1 / 30)
+    np.testing.assert_allclose(small, ConvexGuidanceController(s, bare_vehicle(), (0., 0., 0.), .3125, 1 / 30)
                                ._attitude_fins(R, np.array([0., 0., 1.]), rates, .84), atol=1e-9)
     # (Roll/pitch scale by 20.04/2.365, the yaw common mode by 14.58/1.72: 8.474 vs 8.477.)
     np.testing.assert_allclose(jet._attitude_fins(R, np.array([0., 0., 1.]), rates, .84),
@@ -373,25 +391,33 @@ def test_vane_efforts_scale_to_the_plant_authority():
     # A large error becomes a slew at the rate the vanes sustain against the rotor, not saturated vanes.
     R = to_rotation_matrix(from_euler(torch.tensor(.2), torch.tensor(0.), torch.tensor(0.)).double()).numpy()
     fins = np.array(jet._attitude_fins(R, np.array([0., 0., 1.]), np.zeros(3), .84))
-    slew = .6 * 2.365 * .81 * .81 * .2 / (2e-4 * 4649.56 * .81)
+    limit = s['attitude']['max_fin_angle']
+    slew = .6 * 2.365 * .81 * .81 * limit / (2e-4 * 4649.56 * .81)
     assert jet._slew_rate == pytest.approx(slew)
     assert np.abs(fins).max() == pytest.approx(s['attitude']['kd_att'] * slew * 20.04 / 2.365, rel=1e-6)
-    assert np.abs(fins).max() < s['attitude']['max_fin_angle']
+    assert np.abs(fins).max() < limit
     assert legacy._slew_rate > math.radians(120.)          # inactive on the legacy vanes
 
 
 def test_duty_slew_and_yaw_reserve_follow_the_yaw_authority():
     s = settings()
-    legacy = ConvexGuidanceController(s, _with_vanes(LEGACY_VANES), (0., 0., 0.), .3125, 1 / 30)
+    legacy = ConvexGuidanceController(s, _with_vanes(LEGACY_VANES, damping=.27), (0., 0., 0.), .3125, 1 / 30)
     jet = ConvexGuidanceController(s, _with_vanes(MOMENTUM_VANES), (0., 0., 0.), .3125, 1 / 30)
-    assert legacy._duty_rate(29.6) == s['guidance']['throttle_rate_per_s']
+    limit = s['attitude']['max_fin_angle']
     reaction = 2e-4 * 4649.56 * jet._duty_rate(29.6)          # N m of rotor reaction at the slew
-    assert reaction == pytest.approx(.4 * 1.72 * .81 * .81 * .2)
+    assert reaction == pytest.approx(.4 * 1.72 * .81 * .81 * limit)
+    # The yaw LQR is designed around its design torque on any vanes, so the
+    # legacy vanes' authority buys no faster slew (their 0.25 /s wobbled the
+    # legacy replica at 13-23 deg/s); the PD law keeps 0.25 /s there.
+    assert 2e-4 * 4649.56 * legacy._duty_rate(29.6) == pytest.approx(.4 * s['attitude']['lqr']['yaw_design_torque_nm'])
+    pd = ConvexGuidanceController(settings('pd'), _with_vanes(LEGACY_VANES), (0., 0., 0.), .3125, 1 / 30)
+    assert pd._duty_rate(29.6) == s['guidance']['throttle_rate_per_s']
     assert jet._duty_rate(33.6) < jet._duty_rate(29.6)      # a full pack spins the rotor faster per duty
-    assert jet._yaw_reserve == pytest.approx(.4 * .2)
+    assert jet._yaw_reserve == pytest.approx(.4 * limit)
     assert legacy._yaw_reserve < math.radians(1.5)
-    # The plan's tilt rate: ~10 deg/s on the coupled jet, inactive (~83 deg/s) on legacy vanes.
-    assert math.degrees(jet._limits.tilt_rate_rad_s) == pytest.approx(10., abs=1.)
+    # The plan's tilt rate: ~12 deg/s on the coupled jet, inactive (~100 deg/s) on legacy vanes.
+    assert math.degrees(jet._limits.tilt_rate_rad_s) == pytest.approx(
+        math.degrees(.4 * 2.365 * .81 * limit / (2e-4 * 4649.56)), rel=1e-6)
     assert math.degrees(legacy._limits.tilt_rate_rad_s) > 80.
 
 
@@ -403,36 +429,63 @@ def test_planned_tilt_rate_respects_the_attitude_slew_bound():
     assert slew.max() <= G * math.radians(10.) * (1 + 1e-3)
 
 
-def _land_on_vanes(controller, authority, damping, r0=(2., -1.5, 10.), duration=25.):
+def _land_on_vanes(controller, authority, damping, r0=(2., -1.5, 10.), duration=25., com_xy=(0., 0.),
+                   yaw_torque=0., stats=None, route=()):
     """Point mass + rigid body on vanes of the given authority, with the rotor's
-    gyroscopic torque, its spool reaction I_rotor domega/dt, the servo model
-    and a 25 ms vane-joint lag. Returns (touchdown or None, peak |attitude error| deg)."""
+    gyroscopic torque (implicit midpoint, energy-conserving like Isaac's
+    integrator), its spool reaction I_rotor domega/dt, the servo model with its
+    deadband and a 25 ms vane-joint lag; optionally a lateral CoM offset (m)
+    and a steady yaw torque (N m, the jet's residual swirl), and a fixed
+    route handed to the controller (never advanced). Returns
+    (touchdown or None, peak |attitude error| deg); `stats` receives the
+    roll/pitch and yaw rate RMS (deg/s) after the first 2 s."""
     from scipy.spatial.transform import Rotation
     servo, inertia, dt, h = _servo(), np.diag([.05, .05, .02]), 1 / 120, 2e-4 * 4649.56
     r, v, R, w = np.array(r0, float), np.zeros(3), np.eye(3), np.zeros(3)
-    target, fins, rotor, t, worst = torch.zeros(1, 4), np.zeros(4), .81, 0., 0.
+    target, fins, rotor, t, worst, pq, yaw = torch.zeros(1, 4), np.zeros(4), .81, 0., 0., [], []
+    joint_rate = np.zeros(4)
     while t < duration:
         obs = np.concatenate([-r, _quaternion(R), _FRD_TO_ISAAC.T @ (R.T @ v), _FRD_TO_ISAAC.T @ w, [r[2]],
-                              fins, np.zeros(4), [rotor], [0.]])
-        action = controller.compute_action(torch.tensor(obs[None], dtype=torch.float32), bus_voltage_v=29.6)[0].numpy()
+                              fins, joint_rate, [rotor], [0.]])
+        action = controller.compute_action(torch.tensor(obs[None], dtype=torch.float32), bus_voltage_v=29.6,
+                                           route=route)[0].numpy()
         worst = max(worst, controller.last_telemetry.get('attitude_error_deg') or 0.)
+        if t >= 2.:
+            w_frd = np.degrees(_FRD_TO_ISAAC.T @ w)
+            pq.append(w_frd[:2])
+            yaw.append(w_frd[2])
         for _ in range(4):
             target = servo.update(target, torch.tensor(action[None, :4]), dt)
-            fins = fins + np.clip((target[0].double().numpy() - fins) / .025, -6.98, 6.98) * dt
+            joint_rate = np.clip((target[0].double().numpy() - fins) / .025, -6.98, 6.98)
+            fins = fins + joint_rate * dt
             previous = rotor
             rotor = min(1., max(0., rotor + (min(1., float(action[4])) - rotor) / .15 * dt))
             effort = np.array([(fins[2] - fins[0]) / 2, (fins[3] - fins[1]) / 2, fins.mean()])
+            thrust = FULL * rotor ** 2
+            # A CoM offset d (FRD) under the thrust -T z_b (FRD) torques d x (0, 0, -T).
+            com_torque = np.cross([com_xy[0], com_xy[1], 0.], [0., 0., -thrust])
+            torque_frd = (np.array([authority[0], authority[0], authority[1]]) * effort * rotor ** 2 + com_torque
+                          + [0., 0., yaw_torque * rotor ** 2] - [0., 0., h * (rotor - previous) / dt])
+            H = np.array([0., 0., h * rotor])
+            Hx = np.array([[0., -H[2], H[1]], [H[2], 0., -H[0]], [-H[1], H[0], 0.]])
+            I_frd = _FRD_TO_ISAAC.T @ inertia @ _FRD_TO_ISAAC
             w_frd = _FRD_TO_ISAAC.T @ w
-            torque_frd = (np.array([authority[0], authority[0], authority[1]]) * effort * rotor ** 2
-                          - np.cross(w_frd, [0., 0., h * rotor]) - [0., 0., h * (rotor - previous) / dt])
-            torque = _FRD_TO_ISAAC @ torque_frd - damping * w
-            w = w + np.linalg.solve(inertia, torque - np.cross(w, inertia @ w)) * dt
-            R = R @ Rotation.from_rotvec(w * dt).as_matrix()
-            v = v + (FULL * rotor ** 2 / MASS * R[:, 2] + [0., 0., -G]) * dt
+            rhs = I_frd @ w_frd + dt * (torque_frd - damping * w_frd - np.cross(w_frd, I_frd @ w_frd)) + .5 * dt * Hx @ w_frd
+            w_new = _FRD_TO_ISAAC @ np.linalg.solve(I_frd - .5 * dt * Hx, rhs)
+            R = R @ Rotation.from_rotvec(.5 * (w + w_new) * dt).as_matrix()
+            w = w_new
+            v = v + (thrust / MASS * R[:, 2] + [0., 0., -G]) * dt
             r = r + v * dt
             t += dt
             if r[2] <= .3125:
-                return dict(impact=-v[2], pad=float(np.linalg.norm(r[:2]))), worst
+                break
+        if r[2] <= .3125 or abs(w).max() > 20.:
+            break
+    if stats is not None:
+        stats.update(pq_rms=float(np.sqrt(np.mean(np.square(pq)))) if pq else 0.,
+                     r_rms=float(np.sqrt(np.mean(np.square(yaw)))) if yaw else 0.)
+    if r[2] <= .3125:
+        return dict(impact=-v[2], pad=float(np.linalg.norm(r[:2]))), worst
     return None, worst
 
 
@@ -440,14 +493,86 @@ def test_plant_aware_controller_lands_on_momentum_bounded_vanes():
     # Isaac 8abd7233a4ec / offline replica: tuned for the legacy vanes, the
     # controller lost attitude on the coupled jet, whose vanes have 8.5x less
     # authority and no artificial damper.
-    blind = ConvexGuidanceController(settings(), vehicle(), (0., 0., 0.), .3125, 1 / 30, servo_deadband_rad=.017)
+    blind = ConvexGuidanceController(settings('pd'), bare_vehicle(), (0., 0., 0.), .3125, 1 / 30,
+                                     servo_deadband_rad=.017)
     touchdown, worst = _land_on_vanes(blind, MOMENTUM_VANES, damping=0.)
     assert touchdown is None or touchdown['impact'] > .25 or worst > 10.
     aware = ConvexGuidanceController(settings(), _with_vanes(MOMENTUM_VANES), (0., 0., 0.), .3125, 1 / 30,
                                      servo_deadband_rad=.017)
-    touchdown, worst = _land_on_vanes(aware, MOMENTUM_VANES, damping=0.)
-    assert touchdown is not None and touchdown['impact'] <= .25 and touchdown['pad'] <= .3
-    assert worst < 5.
+    stats = {}
+    touchdown, worst = _land_on_vanes(aware, MOMENTUM_VANES, damping=0., stats=stats)
+    assert touchdown is not None and touchdown['impact'] <= .25 and touchdown['pad'] <= .2
+    assert worst < 5. and stats['pq_rms'] < 5.
+
+
+def _pd_and_lqr_modes(fraction):
+    """Slowest closed-loop roll/pitch decay rates (1/s) of the mission PD law and the LQR on the momentum-bounded plant."""
+    import cmath
+    from tvc_env.controllers.attitude_lqr import _zoh
+    controller = ConvexGuidanceController(settings(), _with_vanes(MOMENTUM_VANES), (0., 0., 0.), .3125, 1 / 30)
+    lqr = controller._lqr
+    A, B = lqr.roll_pitch_model(fraction)
+    Ad, Bd = _zoh(A, B, 1 / 30)
+    pd = settings('pd')['attitude']
+    kp, kd, comp, scale = pd['kp_att'], pd['kd_att'], pd['gyro_comp_rp'], 20.04 / 2.365
+    gain = np.zeros((2, 10))                  # u = scale [-kd p - kp ex + comp q, -kd q - kp ey - comp p]
+    gain[0, 2], gain[0, 4], gain[0, 5] = -kp, -kd, comp
+    gain[1, 3], gain[1, 5], gain[1, 4] = -kp, -kd, -comp
+    pd_decay = max((cmath.log(z) * 30).real for z in np.linalg.eigvals(Ad[2:, 2:] + Bd[2:] @ (scale * gain)[:, 2:]))
+    lqr_modes = lqr.modes(fraction)
+    return pd_decay, lqr_modes
+
+
+def test_attitude_lqr_stabilizes_the_gyroscopic_plant_where_the_pd_law_cannot():
+    # 2026-09-26: on momentum-bounded vanes the mission PD law is linearly
+    # unstable at every rotor speed (Isaac: 4 Hz and 1-1.4 Hz limit cycles,
+    # missions addd8752dc7c and e9c203457bba). The rotor's nutation sits at
+    # H / I ~2.5 Hz, where the vane servo + joint lag ~0.075 s.
+    for fraction in (.7, .845, 1.):
+        pd_decay, modes = _pd_and_lqr_modes(fraction)
+        assert pd_decay > .2
+        assert max(decay for decay, _ in modes) < -1.
+        zeta = min(-d / math.hypot(d, 2 * math.pi * hz) for d, hz in modes if hz > .3)
+        assert zeta > .4
+    # Stable (zeta > 0.2) when any single model parameter is off: +/-30% vane
+    # authority, +50% servo or joint lag, +/-20% inertia, 8 ms more delay.
+    import dataclasses
+    lqr = ConvexGuidanceController(settings(), _with_vanes(MOMENTUM_VANES), (0., 0., 0.), .3125, 1 / 30)._lqr
+    base = lqr.plant
+    for change in (dict(rp_authority_nm_per_rad=base.rp_authority_nm_per_rad * .7),
+                   dict(rp_authority_nm_per_rad=base.rp_authority_nm_per_rad * 1.3),
+                   dict(servo_lag_s=base.servo_lag_s * 1.5), dict(servo_lag_s=base.servo_lag_s + 1 / 120),
+                   dict(joint_lag_s=base.joint_lag_s * 1.5), dict(inertia_rp_kg_m2=base.inertia_rp_kg_m2 * .8),
+                   dict(inertia_rp_kg_m2=base.inertia_rp_kg_m2 * 1.2)):
+        modes = lqr.modes(.845, dataclasses.replace(base, **change))
+        assert max(d for d, _ in modes) < 0.
+        assert min(-d / math.hypot(d, 2 * math.pi * hz) for d, hz in modes if hz > .3) > .2, change
+
+
+def test_attitude_lqr_holds_a_com_trim_and_stops_the_swirl_spin():
+    # A 4.5 mm CoM offset needs ~0.09 rad of steady vane trim at hover, and the
+    # jet's residual swirl is a steady ~0.05 N m yaw torque. The attitude
+    # integral and the yaw-rate integral hold both without a standing
+    # attitude error or a steady spin.
+    def land(yaw_integral_weight):
+        s = settings()
+        s['attitude']['lqr']['yaw_integral_weight'] = yaw_integral_weight
+        controller = ConvexGuidanceController(s, _with_vanes(MOMENTUM_VANES), (0., 0., 0.), .3125, 1 / 30,
+                                              servo_deadband_rad=.017)
+        stats = {}
+        touchdown, _ = _land_on_vanes(controller, MOMENTUM_VANES, damping=0., com_xy=(.004, -.002),
+                                      yaw_torque=.07, stats=stats)
+        return controller, touchdown, stats
+
+    controller, touchdown, stats = land(settings()['attitude']['lqr']['yaw_integral_weight'])
+    assert touchdown is not None and touchdown['impact'] <= .25 and touchdown['pad'] <= .25
+    assert stats['pq_rms'] < 8.            # manoeuvring to trim; the PD law's limit cycles ran at 15+ deg/s
+    trim = controller._attitude_integral
+    assert np.linalg.norm(controller._lqr.roll_pitch_gain(.81)[:, :2] @ trim) > .02   # the integral holds the trim
+    # What yaw rate remains is the rotor's reaction to the descent's duty changes;
+    # without the yaw-rate integral the swirl torque doubled it (25 vs 12 deg/s).
+    _, _, spinning = land(0.)
+    assert stats['r_rms'] < 15. and stats['r_rms'] < .6 * spinning['r_rms']
 
 
 def test_cold_rotor_spools_up_before_the_first_plan():
@@ -458,3 +583,65 @@ def test_cold_rotor_spools_up_before_the_first_plan():
     action = controller.compute_action(obs, bus_voltage_v=33.)
     assert controller.phase == 'SPOOL_UP' and controller.plan is None
     assert 0. < float(action[0, 4]) <= settings()['spool_up']['throttle_rate_per_s'] / 30 + 1e-6
+
+
+def test_attitude_lqr_is_the_same_torque_loop_on_any_vanes():
+    # Bryson's rule on vane torque: weighted per rad of effort instead, the
+    # legacy vanes' 8.5x authority made the design 72x more aggressive (a
+    # 7 Hz loop that limit-cycled on the servo slew limit, offline replica).
+    legacy = ConvexGuidanceController(settings(), _with_vanes(LEGACY_VANES), (0., 0., 0.), .3125, 1 / 30)._lqr
+    jet = ConvexGuidanceController(settings(), _with_vanes(MOMENTUM_VANES), (0., 0., 0.), .3125, 1 / 30)._lqr
+    for f in (.5, .845, 1.):
+        a, b = legacy.roll_pitch_gain(f), jet.roll_pitch_gain(f)
+        # Torque per unit of integral, error and rate is the same; the actuator
+        # states are already in effort units, so their gains are equal.
+        np.testing.assert_allclose(a[:, :6] * LEGACY_VANES[0], b[:, :6] * MOMENTUM_VANES[0], rtol=1e-5, atol=1e-9)
+        np.testing.assert_allclose(a[:, 6:], b[:, 6:], rtol=1e-5, atol=1e-9)
+
+
+def test_duty_slew_bounds_the_rotor_command_not_the_voltage_compensation():
+    # Isaac mission 0a04e2549b26: a warm-rotor start computed its first duty
+    # on the unloaded pack; the slew then held back the duty that offsets the
+    # sagging bus, and the rotor spun down 1600 rpm, yawing the body 30 deg/s.
+    controller = ConvexGuidanceController(settings(), _with_vanes(MOMENTUM_VANES), (0., 0., 0.), .3125, 1 / 30)
+    rate = controller._duty_rate(29.6)
+    controller._throttle = .844 * 29.6 / 33.6
+    for volts in (33.6, 32.6, 31.8):
+        controller._slew_duty(.844 * 29.6 / volts, rate, volts)
+        assert controller._throttle * volts / 29.6 == pytest.approx(.844)   # the rotor command holds
+    # A thrust change still slews: rate x V_bus / V_ref of rotor command per second.
+    controller._slew_duty(.95 * 29.6 / 31.8, rate, 31.8)
+    assert controller._rotor_command == pytest.approx(.844 + rate * 31.8 / 29.6 / 30)
+    # The duty never exceeds 1: a sagged bus caps the rotor command.
+    for _ in range(300):
+        controller._slew_duty(2., rate, 25.)
+    assert controller._throttle == pytest.approx(1.) and controller._rotor_command == pytest.approx(25. / 29.6)
+
+
+def test_replans_hand_over_the_thrust_feedforward_smoothly():
+    # Each re-plan starts at the present thrust with its own slope, so the
+    # lead-sampled feedforward stepped at re-plans on route legs (offline
+    # replica: up to 1.6 deg of tilt, against 0.05 deg per step). It now fades
+    # from the replaced plan.
+    class Recorder(ConvexGuidanceController):
+        def _reference(self, position, waypoints):
+            r, v, u = super()._reference(position, waypoints)
+            self.trace.append((self._new_plan, np.asarray(u, dtype=float)))
+            return r, v, u
+
+    route = [dict(position=[6., 3., 6.], type='flypass', radius_m=1., speed_m_s=3.)]
+
+    def jumps(blend_s):
+        s = settings()
+        s['guidance']['replan_blend_s'] = blend_s
+        controller = Recorder(s, _with_vanes(MOMENTUM_VANES), (0., 0., 0.), .3125, 1 / 30, servo_deadband_rad=.017)
+        controller.trace = []
+        _land_on_vanes(controller, MOMENTUM_VANES, damping=0., r0=(0., 0., 8.), duration=3., route=route)
+        pairs = list(zip(controller.trace, controller.trace[1:]))
+        return (max(np.linalg.norm((b[1] - a[1])[:2]) for a, b in pairs if b[0]),
+                float(np.median([np.linalg.norm((b[1] - a[1])[:2]) for a, b in pairs if not b[0]])))
+
+    abrupt, typical = jumps(0.)
+    smooth, _ = jumps(settings()['guidance']['replan_blend_s'])
+    assert abrupt > 3. * typical            # re-plans stepped the feedforward
+    assert smooth < .4 * abrupt
