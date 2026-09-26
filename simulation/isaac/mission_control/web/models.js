@@ -25,7 +25,7 @@ export function createModels(root, api) {
   function render() {
     if (!data) return;
     const flyable = data.flyable.map(p => `<div class="model-card flyable">
-      <div class="model-row"><b>${escape(p.key === 'ppo_mission' ? 'PPO · LANDING + WAYPOINTS (43-OBS)' : p.key.toUpperCase())}</b>
+      <div class="model-row"><b>${escape(p.label ?? (p.key === 'ppo_mission' ? 'PPO · LANDING + WAYPOINTS (43-OBS)' : p.key.toUpperCase()))}</b>
       <span class="badge ${p.validated ? 'go' : 'hold'}">${p.validated ? '✓ VALIDATED' : '▲ ' + escape((p.status ?? 'unqualified').toUpperCase())}</span></div>
       <div class="mono">${escape(p.checkpoint)}</div>
       ${p.note ? `<details><summary>Qualification notes</summary><p>${escape(p.note)}</p></details>` : ''}</div>`).join('')

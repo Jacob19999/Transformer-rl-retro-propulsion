@@ -225,3 +225,40 @@ class TestEDFTorqueScales:
         model = EDFModel.from_yaml(edf_yaml)
         assert model.gyro_torque_scale == pytest.approx(1.0)
         assert model.dynamic_torque_scale == pytest.approx(1.0)
+
+
+def test_torque_limited_motor_coasts_on_disarm_and_bounds_the_spool_reaction():
+    """Plant audit 2026-09-26: the motor applies at most Kt I_max, and none at zero throttle with the brake off.
+
+    Unbounded, the 0.15 s spool lag stopped a hovering rotor with 5.2 N m on
+    the body (landed vehicles spun at 430-710 deg/s on the pad).
+    """
+    from tvc_env.dynamics.propulsion_edf import EDFModel
+    inertia, omega_max, limit = .0002, 4649.56, .76
+
+    def model(brake):
+        return EDFModel(max_thrust=48., tau_motor=.15, omega_max=omega_max, rotor_inertia=inertia,
+                        max_motor_torque=limit, aero_torque_at_max=3072. / omega_max, zero_throttle_brake=brake)
+
+    dt, hover = 1 / 480, torch.tensor([.8437 * omega_max])
+    edf = model(brake=False)
+    drag = float(edf.aero_torque(hover))
+    assert drag == pytest.approx(.47, abs=.005)
+    # Disarmed: I dω/dt = -Q0 (ω/ω0)^2, so ω = ω0 / (1 + t/τc), τc = I ω0 / Q0 (~1.7 s).
+    omega, peak = hover.clone(), 0.
+    for _ in range(480):
+        new = edf.update(omega, torch.zeros(1), dt)
+        peak = max(peak, float(inertia * (omega - new) / dt))
+        omega = new
+    tau_c = inertia * float(hover) / drag
+    assert float(omega) == pytest.approx(float(hover) / (1 + 1 / tau_c), rel=2e-3)
+    assert peak <= drag * (1 + 1e-4)
+    # With the brake, the same cut decelerates with at most the motor's torque plus drag.
+    braked = model(brake=True).update(hover, torch.zeros(1), dt)
+    assert float(inertia * (hover - braked) / dt) == pytest.approx(limit + drag, rel=1e-4)
+    # A cold spool-up is torque-limited, not the 0.15 s lag's 12 N m.
+    assert float(inertia * edf.update(torch.zeros(1), torch.ones(1), dt) / dt) == pytest.approx(limit, rel=1e-4)
+    # Flight-sized duty changes keep the configured first-order response.
+    unbounded = EDFModel(max_thrust=48., tau_motor=.15, omega_max=omega_max, rotor_inertia=inertia)
+    command = torch.tensor([.86])
+    assert torch.allclose(edf.update(hover, command, dt), unbounded.update(hover, command, dt))

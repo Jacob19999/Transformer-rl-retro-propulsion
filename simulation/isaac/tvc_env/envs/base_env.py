@@ -191,6 +191,13 @@ class TVCEnvBase:
             dynamic_torque_scale=edf_params.get("dynamic_torque_scale", 1.0),
             gyro_torque_scale=edf_params.get("gyro_torque_scale", 1.0),
         )
+        motor_limit = self._config.config.get("dynamics", {}).get("motor_torque_limit") or {}
+        if motor_limit.get("enabled", False):
+            # Rotor drag from the same shaft-power law the battery load uses.
+            shaft_power = float(self._config.config["battery"]["shaft_power_at_max_w"])
+            edf_model.max_motor_torque = float(motor_limit["max_torque_nm"])
+            edf_model.aero_torque_at_max = shaft_power / edf_model.omega_max
+            edf_model.zero_throttle_brake = bool(motor_limit.get("zero_throttle_brake", False))
 
         # Wind model (only if disturbance config enables it)
         dist_cfg = self._config.config.get("disturbances", {})

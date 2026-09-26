@@ -1,0 +1,208 @@
+# Convex (SOCP) powered-descent guidance: an explicit classical controller,
+# separate from the learned PPO policy and not used in PPO training.
+# Planner: tvc_env/controllers/convex_guidance.py (Acikmese & Ploen 2007,
+# lossless convexification). Tracking: tvc_env/controllers/convex_adapter.py.
+# Every bound below is a planning constraint, i.e. part of the task
+# definition the optimizer is given, never a correction applied afterwards.
+guidance:
+  # energy: electrical Wh with the simulator's momentum-theory power law
+  #         P = shaft_power_at_max / efficiency * (T / T_full)^1.5 + aux.
+  # delta_v: integral of |T|/m, the paper's fuel analog (propulsive delta-v).
+  objective: energy
+  # rho1 floor. The vanes sit in the EDF jet and their authority scales with
+  # its dynamic pressure, so thrust is never planned below 60% of weight
+  # (descent_brake_ratio below usually raises it further).
+  thrust_min_weight_fraction: 0.60
+  # rho2 = W + (1 - reserve) (T_available - W): the plan keeps half of the
+  # thrust above weight (at the measured bus voltage) for the tracking loop.
+  # That is ~86% of available on the 8S profile (T/W 1.40). A fixed share of
+  # available thrust fell below weight on legacy 6S (T/W 1.15).
+  thrust_excess_reserve_fraction: 0.5
+  # rho1 is also raised so the planned downward acceleration never exceeds
+  # the planned braking acceleration (ratio): W - rho1 <= ratio (rho2 - W).
+  # 8S: floor 0.6 W -> ~0.8 W. Planning a 6S pack (T/W 1.15) to fall at
+  # 3.9 m/s^2 against 0.7 m/s^2 of braking hit the pad at 2.1 m/s after its
+  # current-limited spool-up lagged the plan (mission 201f2c58bb9e).
+  descent_brake_ratio: 1.0
+  # Thrust-rate bound, converted at the lowest planned throttle. Same
+  # flight-computer duty-rate bound as task.waypoint_flight.throttle_command:
+  # rotor reaction torque I_rotor * omega_max * (V_bus/V_ref) * rate stays
+  # inside the vanes' +/-0.30 N m yaw authority (0.25 /s uses 83% of it).
+  throttle_rate_per_s: 0.25
+  # The duty slew is also capped so that its rotor reaction torque,
+  # I_rotor omega_max (V_bus/V_ref) d(duty)/dt, stays inside this share of
+  # the vanes' common-mode yaw authority at hover. That keeps travel free
+  # for roll/pitch. Momentum-bounded vanes: ~0.09 /s. At 0.25 /s, the
+  # spin-down at the gate of Isaac mission 8abd7233a4ec yawed the body to
+  # 34 deg/s. Every vane saturated in common mode, and roll/pitch went into
+  # a 2.5 Hz (nutation) oscillation: 0.29 m/s touchdown, CRASHED. Legacy
+  # vanes: ~0.8 /s, so 0.25 /s applies unchanged.
+  throttle_rate_yaw_authority_fraction: 0.4
+  # Attitude slew the plan may use: this share of the rate at which full vane
+  # deflection precesses the rotor's angular momentum at hover. Tilting at w
+  # needs a vane torque I_rotor omega w. Momentum-bounded vanes: 0.33 N m
+  # against 0.78 N m s, i.e. 24 deg/s at full deflection. The plan gets
+  # ~10 deg/s; the rest is left for disturbance rejection. The thrust-rate
+  # bound alone allowed ~30 deg/s, which saturated every vane and lost the
+  # vehicle in the offline replica (2026-09-25). Legacy vanes: ~83 deg/s,
+  # so the bound is inactive there.
+  tilt_rate_authority_fraction: 0.4
+  max_tilt_deg: 15.0            # thrust-pointing cone (paper Sec. VI)
+  # Approach cone half-angle from vertical (paper eq. 11): horizontal offset
+  # <= height near the pad. At 70 deg a crosswind approach still braked
+  # 2.2 m/s sideways at 1.1 m altitude and missed by 0.58 m (mission
+  # f546162f3741); 45 deg finished lateral motion higher and landed 0.29 m
+  # from center (c2090264e9af); 55 deg missed by 0.68 m.
+  glide_slope_deg: 45.0
+  # A landing leg that starts outside the cone gets a cone widened to contain
+  # its start, narrowing back to glide_slope_deg by this long before the gate.
+  # Widened for the whole leg, every re-plan rode the wide cone down: from 30
+  # m out and 18 m up (60 deg) mission 0289417f5d60 still flew 2 m/s
+  # sideways 1 m above the pad and reached the gate 0.4 m off center.
+  glide_slope_final_s: 3.0
+  # Paper eq. 10. A start at or above it keeps its speed, then brakes back
+  # under it (a single start-speed cap ratcheted 4.0 -> 5.9 m/s over the
+  # re-plans of mission 0289417f5d60).
+  max_speed_m_s: 4.0
+  route_floor_m: 0.8            # body-origin floor on waypoint legs (feet ~0.5 m up)
+  landing_nodes: 24             # ZOH intervals on the powered-descent leg
+  route_dt_s: 0.35              # target interval on waypoint legs
+  max_leg_nodes: 40
+  flypass_capture_fraction: 0.5 # plan fly-throughs inside half the capture radius
+  max_solve_time_s: 0.5         # per SOCP (Clarabel time limit)
+  # Re-solve every period. While tracking error stays inside these bounds the
+  # new plan starts from the current plan's reference state (feedback keeps
+  # the deviation); beyond them it starts from the measured state.
+  replan_period_s: 0.5
+  replan_error_m: 0.75
+  replan_velocity_error_m_s: 0.75
+  freeze_time_s: 0.8            # no re-solve in the last 0.8 s before the gate
+  # Powered descent ends at a gate above the pad, then a constant-rate
+  # vertical descent to contact (success gate: impact <= 0.25 m/s).
+  gate_height_m: 0.5            # above touchdown body height (0.3125 m)
+  touchdown_speed_m_s: 0.15     # landing.yaml descent_reward.touchdown_speed
+  terminal_center_radius_m: 0.2 # full descent rate only while this well centered
+  # Terminal descent is velocity-commanded: position error shapes a rate
+  # command clamped to these bounds (descent stays under the 0.25 m/s gate).
+  terminal_max_descent_m_s: 0.18
+  terminal_max_climb_m_s: 0.5
+  terminal_commit_height_m: 0.15  # below this (above touchdown) the descent never pauses
+  terminal_max_tilt_deg: 8.0    # tilt command limit during terminal descent (leg clearance)
+  # Land detector (contact candidate in the observation): unload the rotor
+  # to this fraction of weight so the contact dwell completes, body level.
+  touchdown_thrust_weight_fraction: 0.5
+  # Hand over to terminal descent early when already at the gate: within
+  # this height band and radius of it, and slower than this.
+  gate_capture_height_m: 0.25
+  gate_capture_radius_m: 0.3    # the plan, not terminal centering, removes lateral error
+  gate_capture_speed_m_s: 0.5
+  thrust_lead_s: 0.15           # feedforward the plan's thrust one spool lag (tau_motor) ahead
+tracking:
+  # Feedback around the plan (world frame). Integrators absorb thrust-model
+  # bias and wind. Lateral gains from an Isaac sweep (2026-09-25): the vanes
+  # also push the vehicle sideways directly (~59 m/s^2 per rad of effort at
+  # full rotor, identified R^2 0.995), so lateral velocity feedback also
+  # excites the attitude limit cycle (see attitude.kd_att). At 1.0/1.8 the
+  # lateral velocity RMS near the pad was 0.39 m/s (body rates 30 deg/s RMS);
+  # 0.5/0.8 gave 0.23 m/s / 15 deg/s and landed 0.10 m from center, while a
+  # 0.25 s low-pass made it worse (0.82 m/s). That sweep ran with the
+  # servo-deadband coning present (attitude.deadband_compensation). Without
+  # it, 1.0/1.8 landed 0.01-0.04 m from center in the offline replica,
+  # but diverged there with a 1.4 cm CoM offset: re-sweep in Isaac first.
+  kp_xy: 0.5
+  kd_xy: 0.8
+  ki_xy: 0.15                   # 0.05 never removed a CoM-shift offset; 0.25 overshot (same sweep)
+  kp_z: 1.5
+  kd_z: 2.5
+  ki_z: 0.3
+  ki_vz: 1.5                    # terminal descent: integral of the rate error (thrust bias)
+  # Largest acceleration any integrator may command (each state is bounded
+  # by this / its gain). A CoM offset d makes the vanes hold a trim torque,
+  # and their identified side force (~59 m/s^2 per rad) then pushes the
+  # vehicle sideways by ~g d / L (~1 m/s^2 for 1-1.7 cm): the old 2 m*s
+  # state clamp capped the lateral integral at 0.1 m/s^2 and the vehicle
+  # hovered ~1 m off the pad, tilted toward it (mission c004e986739d).
+  integral_limit_m_s2: 1.5
+  # Anti-windup: integrate only while the plan's feedforward is within
+  # integrate_max_accel of hover, with the error saturated at
+  # integrate_max_error (a standing offset is still removed, at a bounded
+  # rate); in terminal descent only while the rate error is small.
+  integrate_max_accel_m_s2: 1.0
+  integrate_max_error_m: 0.5
+  integrate_max_rate_error_m_s: 0.1
+  max_correction_m_s2: 3.0      # feedback acceleration bound per axis group
+  max_tilt_deg: 22.0            # command limit (plans use <= 15 deg)
+  thrust_min_weight_fraction: 0.5
+attitude:
+  # PID baseline's fin-effort structure (pid_radial.yaml) applied to a
+  # geometric (SO(3)) attitude error instead of Euler angles. The rate gain
+  # sets the loop gain at ~29 rad/s, where the vanes are slew-limited
+  # (~2.5 rad/s identified): at the PID's 0.10 the loop limit-cycled at
+  # 4.7 Hz, +/-100 deg/s under disturbances (mission 7426488d41c5); 0.08 cut
+  # the body-rate RMS 97 -> 24 deg/s (f5587313dcf0) while 0.05-0.06 lost
+  # attitude accuracy and landed 2-3 m off the pad.
+  kp_att: 0.5
+  kd_att: 0.08
+  # Rotor gyroscopic cross-feed. Identified from Isaac mission f708e98f6031:
+  # I p' = K f^2 e_roll - 0.33 p - 1.05 H q (pitch mirrored, R^2 0.99),
+  # K = 20.7 N m/rad, H = I_rotor omega. Exact cancellation needs
+  # k = I_rotor omega_max / (K f) ~0.051 at hover (set
+  # vane_rp_authority_nm_per_rad to use it), but with the ~0.1 s sampling +
+  # vane lag that delayed cross-feed coned harder (mission d3869dbed58c,
+  # +/-80 deg/s) than the PID's fixed 0.03 (mission 398ee20b8c40).
+  vane_rp_authority_nm_per_rad: null
+  gyro_comp_rp: 0.03
+  # Heading is irrelevant to this axisymmetric vehicle: yaw is rate-damped
+  # only. Gain from system identification of Isaac mission 21d5d94993a4
+  # (landing plant, 2026-09-25): I_zz r' = -0.265 r + 15.0 f^2 d_cm
+  # (R^2 0.996, f = rotor fraction), vanes tau ~0.08 s / ~2.5 rad/s slew.
+  # The waypoint_flight damper gain 0.15 limit-cycled there at ~19 rad/s
+  # (+/-100 deg/s yaw, vanes saturated), a loop gain of ~2.1 at that
+  # frequency; 0.03 leaves a gain margin of ~2.4 (~1.9 at full rotor speed)
+  # and holds the 0.25 /s spool torque to ~25 deg/s.
+  yaw_damper_gain: 0.03
+  max_fin_angle: 0.20           # rad; servo limit is 0.262
+  # Every gain above is a vane effort tuned and identified on the legacy
+  # vanes. These are that plant's authorities (planned 8S, torque per rad of
+  # effort at full rotor speed, as TVCDirectRLEnv.vane_authority() probes
+  # them; flight identification gave 20.7 / 15.0). Efforts are multiplied by
+  # reference / actual, so any plant gets the torques the gains were tuned
+  # for. The momentum-bounded vanes (coupled jet, the mission plant since
+  # 2026-09-25) probe at 2.365 / 1.72: 8.5x the deflection per torque.
+  reference_vane_authority_nm_per_rad: 20.04
+  reference_yaw_authority_nm_per_rad: 14.58
+  # Body-rate command limit of the cascaded attitude loop: this share of the
+  # slew that full vane deflection sustains against the rotor at hover.
+  # Momentum-bounded vanes: ~15 deg/s. Under the plain PD law they saturated
+  # at ~1.5 deg of attitude error, and a descent with saturated vanes went
+  # into a gyroscopic oscillation (offline replica, 2026-09-25). Legacy
+  # vanes: ~125 deg/s, above anything flown, so the law is unchanged there.
+  slew_rate_authority_fraction: 0.6
+  # Vane servo deadband inverse. The servo (actuator_servo.py; MG996R 1 deg
+  # deadband, hardware profile) moves only while |command - position| > b and
+  # stops b short of its command. The attitude loop's retrograde precession
+  # mode sits at ~176 deg of phase, so it is conditionally stable: the
+  # gain and phase lost to that play kept it in a 1.0-1.1 Hz coning limit
+  # cycle in every recorded mission (3 deg tilt, 15 deg/s body-rate RMS,
+  # +/-0.5 m/s lateral velocity through the vane side force; the terminal
+  # descent of mission 0289417f5d60 stalled off-center until timeout).
+  # Gains alone do not remove it (offline replica, 2026-09-25: kd_att
+  # 0.08-0.12 and gyro_comp 0-0.051 all coned at 8-17 deg/s). Commanding
+  # desired + b sat((desired - measured) / (smoothing b)) from the measured
+  # vane angle (observation) cut it to ~1.2 deg/s / 0.2 deg in the replica.
+  # Over-compensating is benign (true deadband 0: 1.7 deg/s dither);
+  # under-compensating leaves proportionally more coning, so re-measure the
+  # deadband on the bench before trusting this on hardware.
+  deadband_compensation: 1.0    # share of the servo deadband pre-compensated (0 disables)
+  deadband_smoothing: 0.25      # linear band, as a share of the deadband (0.1: 7 Hz dither)
+spool_up:
+  # Cold rotor: attitude hold and a fast duty ramp to hover before the first
+  # plan. A spin-up yaws the body regardless (the rotor's angular momentum
+  # comes from the body), so this trades a yaw transient against altitude
+  # lost while falling: at 4 /s hover duty takes ~0.18 s, near the 0.15 s
+  # spool lag. At 2 /s a cold start at 12 m descending 2 m/s lost enough
+  # height that full braking grazed the pad at 0.6 m/s (mission
+  # d69499da1fd7); 4 /s landed it at 0.19 m/s (e416a5e8350f). The same slew
+  # applies while flying a soft-terminal (no safe plan) fallback, which may
+  # also use the full available thrust, until the duty has converged.
+  throttle_rate_per_s: 4.0

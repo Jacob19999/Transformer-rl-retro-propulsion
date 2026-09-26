@@ -207,6 +207,43 @@ class TVCDirectRLEnv(TVCEnvBase):
             raise ValueError(f"Insufficient level thrust: {net_thrust:.3f} N available for {mass * gravity:.3f} N weight")
         return math.sqrt(mass * gravity / net_thrust)
 
+    def vane_authority(self, effort_rad: float = 0.035) -> tuple[float, float]:
+        """Body torque per rad of vane effort at full rotor speed, level and at rest.
+
+        Probes the vane model this plant flies (independent-airfoil legacy
+        vanes or the momentum-bounded coupled jet) the way a thrust-stand test
+        would: a roll effort on the X vanes (the mixer's -e/+e pair) and a
+        common-mode yaw effort on all four, torques about the nominal COM.
+        Returns (roll/pitch N m/rad, yaw N m/rad), each proportional to rotor
+        fraction squared in flight. A flight computer divides its attitude
+        efforts by these, as it inverts the throttle-to-thrust model.
+        """
+        device = self.device
+        full = torch.ones(1, device=device)
+        omega = torch.full((1,), float(self._edf_model.omega_max), device=device)
+        raw = self._edf_model.compute_thrust(omega)
+        cops = self._fin_dispatch.cop_positions.to(device)
+        com = torch.tensor(self._resolved_hardware['vehicle'].get('body_com_offset', [0.0, 0.0, 0.0]),
+                           dtype=cops.dtype, device=device)
+
+        def torque(angles):
+            if self._coupled_jet is not None:
+                forces = self._coupled_jet.compute(angles, full, omega, raw, cops[None],
+                                                   torch.zeros(1, 4, 3, device=device),
+                                                   torch.zeros(1, 3, device=device)).forces[0]
+            else:
+                forces = self._fin_dispatch.compute_body_frame_forces(angles, full).forces_body[0]
+            return torch.linalg.cross(cops - com, forces).sum(0)
+
+        # Central differences: residual swirl gives the vanes a yaw torque at
+        # zero deflection (they partly de-swirl the jet), which is not authority.
+        e = float(effort_rad)
+        roll = float(torque(torch.tensor([[-e, 0.0, e, 0.0]], device=device))[0]
+                     - torque(torch.tensor([[e, 0.0, -e, 0.0]], device=device))[0]) / (2.0 * e)
+        yaw = float(torque(torch.full((1, 4), e, device=device))[2]
+                    - torque(torch.full((1, 4), -e, device=device))[2]) / (2.0 * e)
+        return roll, yaw
+
     def step(self, action: Tensor) -> tuple[dict, Tensor, Tensor, Tensor, dict]:
         """Execute one RL step: pre-physics → decimated substeps → obs/reward/done.
 

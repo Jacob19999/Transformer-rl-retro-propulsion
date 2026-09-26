@@ -1,9 +1,11 @@
 {
-  "checkpoint": "runs/ppo_waypoints_staged_v5/ppo_landing_seed0_20260917_132759/ppo_final.pt",
-  "sha256": "a3ebb6ef8871b23754159602c7da0771a23c7211be51fe12c0df4e15ac486f24",
+  "checkpoint": "runs/waypoint_flight/ppo_waypoint_flight_seed0_20260925_050023/ppo_step_750256128.pt",
+  "sha256": "baf70dc35aecf754d893e8cdc868568796cef6523b1e3b9719447c0c1ce9f13a",
+  "observation_contract": "waypoint_flight_v1",
+  "hover_rotor_fraction": 0.8409,
   "status": "experimental",
   "validated": false,
-  "note": "Final save of the 200,278,016-transition staged waypoint run. Trained only through curriculum stage 1 (+/-3 m XY, 8-15 m altitude, +/-0.15 rad tilt, zero waypoints); that stage ended at 36.1% mission success, 60.0% landed, 0.412 m mean pad distance, 0.197 m/s mean touchdown. The uncurricularised full-task evaluation scored 0/8192 -- expected, since the policy never trained beyond stage 1. Whole-flight peak yaw stays near 1625 deg/s against a 180 deg/s soft limit and a 172 deg/s contact gate, which is the open defect driving the remaining 40% crash rate. Recovery, rotation quality and waypoint routes are all unqualified.",
-  "training_run": "runs/ppo_waypoints_staged_v5/ppo_landing_seed0_20260917_132759",
+  "note": "waypoint_flight v26 at 750,256,128 transitions, paused in curriculum stage 11 (landing_soft, 0.25 m/s touchdown gate). Rate-throttle contract (0.25 duty/s, integrated by the flight computer) with the yaw-rate damper that removes the policy's vane common mode. Passed the mixed hover/land landing ladder at a 1.0 m/s gate (landing stage: hover 0.68, land 0.49 success). Not yet soft: landing_soft land success was 0.0 after 36M transitions, so touchdowns typically exceed the 0.25 m/s mission criterion. Long routes are not retrained yet: the 700M full-task evaluation scored 1.3% (hover missions 2.1%, land 0%). Spawns at hover rotor speed; a stopped rotor is outside its training envelope.",
+  "training_run": "runs/waypoint_flight/ppo_waypoint_flight_seed0_20260925_050023",
   "follow_training_run": false
 }

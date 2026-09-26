@@ -16,6 +16,26 @@ def test_read_only_api_and_path_validation():
     assert client.get('/', headers={'Host':'external.example'}).status_code == 400
 
 
+def test_convex_guidance_is_offered_and_may_fly_routes(monkeypatch):
+    import pytest
+    from mission_control import models
+    monkeypatch.setattr(models, 'policy_paths', lambda: {})
+    monkeypatch.setattr(server, 'policy_paths', lambda: {})
+    monkeypatch.setattr(server, 'convex_available', lambda: True)
+    client = TestClient(server.app)
+    assert 'convex' in client.get('/api/config').json()['policies']
+    assert any(p['key'] == 'convex' for p in client.get('/api/models').json()['flyable'])
+    route = [{'type': 'hover', 'position': [4, 2, 5]}]
+    assert models.validate_mission({'controller': 'convex', 'waypoints': route})['waypoints'][0]['hold_s'] == 2
+    with pytest.raises(ValueError, match='waypoint-flight PPO policy or convex guidance'):
+        models.validate_mission({'controller': 'pid', 'waypoints': route})
+    with pytest.raises(ValueError, match='enable the LiPo model'):
+        models.validate_mission({'controller': 'convex', 'waypoints': route, 'battery': {'enabled': False}})
+    # Landing-only convex missions do not need the battery model.
+    assert models.validate_mission({'controller': 'convex', 'battery': {'enabled': False},
+                                    'hardware_profile': 'legacy_6s'})['controller'] == 'convex'
+
+
 def test_stream_reader_ignores_incomplete_final_line(tmp_path, monkeypatch):
     monkeypatch.setattr(server, 'RUNS', tmp_path)
     p = tmp_path / '123456abcdef'
@@ -98,6 +118,20 @@ def test_mission_envelope_uses_current_curriculum_not_only_final_bounds():
     assert training_envelope_violations(request, saved) == ['position']
 
 
+def test_waypoint_flight_envelope_resolves_hover_rotor_and_counts_the_landing():
+    from mission_control.models import validate_mission, training_envelope_violations
+    saved = {'observation_contract': 'waypoint_flight_v1', 'reward_budget': {'hover_fraction': .84},
+             'task_config': {'task': {
+                 'spawn': {'position_range': [[-40,-40,3],[40,40,25]], 'initial_motor_omega_fraction': 'hover',
+                           'initial_motor_omega_jitter': .05, 'initial_soc_range': [.5, 1.]},
+                 'waypoint_flight': {'generator': {'count_range': [1, 2]}}}}}
+    request = validate_mission({'position': [0,0,18], 'initial_motor_fraction': .86})
+    assert training_envelope_violations(request, saved) == []
+    request.update(initial_motor_fraction=0., waypoints=[{'position': [1,0,5]}] * 2)
+    request['battery']['initial_soc'] = .2
+    assert training_envelope_violations(request, saved) == ['initial_motor_fraction', 'waypoint_count', 'initial_soc']
+
+
 def test_experimental_policy_follows_completed_saves_only(tmp_path, monkeypatch):
     import json
     import os
@@ -166,3 +200,53 @@ def test_models_api_lists_runs_and_downsampled_history(tmp_path, monkeypatch):
     assert history['series'][0]['step'] == 1000 and history['series'][-1]['step'] == 30000
     assert len(history['series']) <= 11 and history['series'][0]['spin'] == .75
     assert client.get('/api/models/..%5C..%5Cetc/history').status_code == 404
+
+
+def test_mission_status_replace_retries_while_a_reader_holds_the_file(tmp_path, monkeypatch):
+    # Windows refuses os.replace while another process (the service polling
+    # status.json) has the target open; that aborted mission aea16ce345d4.
+    import json
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(server.__file__).resolve().parents[1] / 'apps'))
+    import run_mission
+    real, calls = Path.replace, []
+
+    def held_twice(self, target):
+        calls.append(target)
+        if len(calls) < 3:
+            raise PermissionError(5, 'Access is denied')
+        return real(self, target)
+
+    monkeypatch.setattr(Path, 'replace', held_twice)
+    monkeypatch.setattr(run_mission.time, 'sleep', lambda s: None)
+    run_mission.atomic_json(tmp_path / 'status.json', {'state': 'running'})
+    assert json.loads((tmp_path / 'status.json').read_text()) == {'state': 'running'} and len(calls) == 3
+
+
+def test_vane_physics_defaults_to_the_training_plant_except_for_the_pid_reference(tmp_path, monkeypatch):
+    import json
+    import pytest
+    from mission_control import models
+    monkeypatch.setattr(models, 'policy_paths', lambda: {'ppo_mission': 'new.pt'})
+    assert models.validate_mission({'controller': 'convex'})['vane_model'] == 'momentum'
+    assert models.validate_mission({'controller': 'ppo_mission'})['vane_model'] == 'momentum'
+    assert models.validate_mission({'controller': 'convex', 'vane_model': 'legacy'})['vane_model'] == 'legacy'
+    # PID is the legacy-vane reference only.
+    assert models.validate_mission({'controller': 'pid'})['vane_model'] == 'legacy'
+    for bad in ({'controller': 'convex', 'vane_model': 'cfd'}, {'controller': 'ppo_mission', 'vane_model': 'legacy'},
+                {'controller': 'pid', 'vane_model': 'momentum'}):
+        with pytest.raises(ValueError):
+            models.validate_mission(bad)
+    # The same physics and dynamics sections the waypoint_flight policies train on.
+    plant = models.vane_model_overrides({'vane_model': 'momentum'})
+    assert plant['dynamics']['coupled_jet']['enabled'] and plant['dynamics']['body_angular_damping'] == 0.
+    assert plant['dynamics']['gyro_integration'] == 'coupled_cayley'
+    assert plant['dynamics']['motor_torque_limit'] == dict(enabled=True, max_torque_nm=.76, zero_throttle_brake=False)
+    assert plant['physics']['enable_external_forces_every_iteration'] is False
+    assert models.vane_model_overrides({'vane_model': 'legacy'}) == {}
+    # Missions recorded before the field report the plant they actually flew.
+    for dynamics, expected in (({}, 'legacy'), (plant['dynamics'], 'momentum')):
+        (tmp_path / 'metadata.json').write_text(json.dumps({'request': {'name': 'old'}, 'dynamics': dynamics}))
+        (tmp_path / 'request.json').write_text(json.dumps({'name': 'old'}))
+        assert server.recorded_request(tmp_path)['vane_model'] == expected

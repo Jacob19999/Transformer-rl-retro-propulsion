@@ -18,9 +18,15 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from .models import ROOT, DEFAULTS, validate_mission, policy_paths, default_mission
+from .models import ROOT, DEFAULTS, validate_mission, policy_paths, default_mission, convex_available
 
 HERE = Path(__file__).resolve().parent
+CONVEX_LABEL = 'CONVEX · SOCP powered-descent guidance'
+CONVEX_NOTE = ('Deterministic classical controller, no checkpoint. A second-order cone program '
+               '(Acikmese & Ploen 2007, lossless convexification) plans a minimum-energy thrust '
+               'trajectory through the route to the pad with thrust, tilt, glide-slope, speed and '
+               'thrust-rate constraints; it is re-solved every 0.5 s from the measured state and '
+               'tracked by position feedback and a geometric attitude loop. Not flight-qualified.')
 RUNS = ROOT / 'runs/mission_control'
 RUNS.mkdir(parents=True, exist_ok=True)
 app = FastAPI(title='EDF Mission Control', docs_url=None, redoc_url=None)
@@ -222,8 +228,9 @@ def model_summary(run):
 def list_models():
     """Mission-flyable policies plus the latest waypoint_flight training runs.
 
-    waypoint_flight checkpoints use a 54-channel observation contract that
-    run_mission.py does not build yet, so they are listed for inspection only.
+    The registered mission policy may be a waypoint_flight checkpoint
+    (run_mission.py flies it on its own training task); other runs listed
+    here are for inspection only.
     """
     flyable = []
     for key, path in policy_paths().items():
@@ -232,6 +239,9 @@ def list_models():
         flyable.append(dict(key=key, checkpoint=path, status=record.get('status'),
                             validated=record.get('validated', False), note=record.get('note'),
                             training_run=record.get('training_run')))
+    if convex_available():
+        flyable.append(dict(key='convex', checkpoint='configs/controllers/convex_guidance.yaml',
+                            status='deterministic', validated=False, label=CONVEX_LABEL, note=CONVEX_NOTE))
     runs = sorted((p for p in MODEL_RUNS.glob('*') if (p / 'args.json').is_file()),
                   key=lambda p: p.stat().st_mtime, reverse=True) if MODEL_RUNS.is_dir() else []
     training = active_training_command()
@@ -292,6 +302,10 @@ def recorded_request(path, metadata=None):
     resolved.update(supplied)
     if battery:
         resolved['battery'] = battery
+    if 'vane_model' not in resolved and 'dynamics' in metadata:
+        # Recorded before the field existed: report the plant actually flown.
+        coupled = ((metadata['dynamics'] or {}).get('coupled_jet') or {}).get('enabled')
+        resolved['vane_model'] = 'momentum' if coupled else 'legacy'
     return resolved
 
 
@@ -318,10 +332,12 @@ def status(mid):
 def config():
     paths = policy_paths()
     policies = {'pid': 'PID · radial hinges'}
+    if convex_available():
+        policies['convex'] = CONVEX_LABEL
     if 'ppo_radial' in paths:
         policies = {'ppo_radial': 'PPO · radial 8S / battery aware', **policies}
     if 'ppo_mission' in paths:
-        policies = {'ppo_mission': 'EXPERIMENTAL PPO · latest recovery + waypoints', **policies}
+        policies = {'ppo_mission': 'EXPERIMENTAL PPO · waypoint flight + landing', **policies}
     training = active_training_command()
     return dict(defaults=default_mission(paths), hardware=read_json(HERE / 'hardware.json'),
                 policies=policies,

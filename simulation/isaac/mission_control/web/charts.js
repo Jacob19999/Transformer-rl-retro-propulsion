@@ -8,12 +8,15 @@ const sans = 'Bahnschrift, "DIN Alternate", "Segoe UI", Arial, sans-serif';
 const fmt = (n, d = 1) => Number.isFinite(n) ? n.toFixed(d) : '—';
 
 export const CHARTS = [
-  { title: 'ALTITUDE', unit: 'm', digits: 2, zero: true, series: [{ name: 'Z', get: f => f.position[2] }] },
+  // PLAN / COMMAND exist only in convex-guidance recordings (frame.guidance).
+  { title: 'ALTITUDE', unit: 'm', digits: 2, zero: true, series: [
+    { name: 'Z', get: f => f.position[2] }, { name: 'PLAN', get: f => f.guidance?.reference_position?.[2] }] },
   { title: 'VELOCITY', unit: 'm/s', digits: 2, zero: true, series: [
     { name: 'VERTICAL', get: f => f.velocity[2] }, { name: 'HORIZONTAL', get: f => Math.hypot(f.velocity[0], f.velocity[1]) }] },
   { title: 'DISTANCE', unit: 'm', digits: 2, zero: true, series: [
     { name: 'PAD', get: f => f.pad_distance }, { name: 'CROSS-TRACK', get: f => f.mission?.cross_track_error_m }] },
-  { title: 'THRUST', unit: 'N', digits: 1, zero: true, series: [{ name: 'THRUST', get: f => f.thrust_n }], limit: c => c.maxThrust },
+  { title: 'THRUST', unit: 'N', digits: 1, zero: true, series: [
+    { name: 'THRUST', get: f => f.thrust_n }, { name: 'COMMAND', get: f => f.guidance?.thrust_command_n }], limit: c => c.maxThrust },
   { title: 'BODY RATES · FRD', unit: '°/s', digits: 0, zero: true, series: [
     { name: 'P', get: f => f.gyro[0] * deg }, { name: 'Q', get: f => f.gyro[1] * deg }, { name: 'R', get: f => f.gyro[2] * deg }],
     bands: c => c.softLimits },

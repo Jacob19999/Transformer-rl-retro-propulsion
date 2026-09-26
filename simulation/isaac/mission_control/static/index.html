@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>EDF Mission Control</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/fin-labels.css"></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>EDF Mission Control</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/style.css?v=convex-diagnostics-1"><link rel="stylesheet" href="/static/fin-labels.css"></head>
 <body>
 <header class="topbar">
   <a class="brand" href="#flight">EDF<span>/</span>MISSION CONTROL</a>
@@ -28,11 +28,12 @@
 </div>
 <div class="flight-grid">
 <div class="flight-main">
-<div class="viewer panel"><div class="viewer-bar"><span>CAMERA ARRAY</span><span id="sourceBadge">PHYSX POSES · WEBGL RENDER</span></div>
+<div class="viewer panel"><div class="viewer-bar"><span>CAMERA ARRAY</span><div class="camera-modes" role="group" aria-label="Main camera framing"><button id="cameraVehicle" type="button" aria-pressed="true">VEHICLE</button><button id="cameraPlan" type="button" aria-pressed="false" hidden>PLAN OVERVIEW</button></div><span id="sourceBadge">PHYSX POSES · WEBGL RENDER</span></div>
 <div id="views"><canvas id="scene" aria-label="Four synchronized camera views of the Isaac drone"></canvas><div class="camera-tag main-tag">CAM 01 <b>ORBIT / DRAG TO ROTATE</b></div><div class="camera-tag ground-tag">CAM 02 <b>GROUND TRACK</b></div><div class="camera-tag top-tag">CAM 03 <b>OVERHEAD</b></div><div class="camera-tag fin-tag">CAM 04 <b>TVC CUTAWAY</b></div><div id="phaseTag" class="phase-tag" hidden></div><span id="renderNote">CAD GEOMETRY / METRES · FIN VIEW HIDES BODY</span></div>
 <canvas id="webcast" aria-label="Speed, altitude, thrust and battery gauges with the mission timeline"></canvas>
 <div class="transport"><button id="play" aria-label="Play replay">▶</button><input id="timeline" aria-label="Replay time" type="range" min="0" max="1" step="0.001" value="0"><span id="elapsed">0.00 / 0.00 s</span><select id="speed" aria-label="Playback speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select><button id="live">LIVE</button></div>
 <div class="phase-line"><b>MISSION PHASE</b><span id="waypointStatus">No waypoint telemetry loaded.</span><em id="waypointBadge"></em></div></div>
+<section id="optimizationPanel" class="panel optimization-panel" aria-label="Convex optimization diagnostics" hidden></section>
 <section class="panel charts-panel"><div class="panel-title">KEY CHANNELS <span>HOVER TO READ · CLICK TO SEEK · FULL SET ON TELEMETRY PAGE</span></div><div id="flightCharts" class="chart-grid four"></div></section>
 </div>
 
@@ -62,6 +63,7 @@
 <label>MISSION NAME<input id="name" maxlength="80" value="8S landing test" required></label>
 <label>CONTROLLER<select id="controller"><option value="pid">PID · radial hinges</option></select></label>
 <label>HARDWARE PROFILE<select id="hardware_profile"><option value="planned_8s">Planned 8S / 48 N estimate</option><option value="legacy_6s">Legacy 6S / 39.2 N estimate</option></select></label>
+<label>VANE PHYSICS<select id="vane_model" title="Momentum-bounded: each vane turns at most its quarter of the jet (the waypoint_flight training plant). Legacy: independent airfoils plus an artificial damper, 8.5x too much torque per degree; kept to reproduce missions flown before 2026-09-25. PID flies legacy vanes only (it is the legacy-plant reference); PPO policies fly their training plant."><option value="momentum">Momentum-bounded jet (training plant)</option><option value="legacy">Legacy airfoils + damper (pre-audit)</option></select></label>
 <div class="pair"><label>SEED<input id="seed" type="number" min="0" max="2147483647" step="1" value="2026" required></label><label>DURATION / s<input id="duration_s" type="number" min="1" max="180" value="120" required></label></div>
 <button id="run" class="primary" type="submit">RUN ISAAC SIMULATION <span>↗</span></button>
 <div id="launchMessage" class="hint" role="status">Launching opens the Flight page with live telemetry.</div>
@@ -109,4 +111,4 @@
 
 <footer><span>EDF RESEARCH / MISSION CONTROL</span><span id="footerProfile">8S PLANNED · 3.104 kg · 120 Hz PHYSICS</span><span>LOCAL HOST / NO HARDWARE ACTUATION</span></footer></main>
 <dialog id="hardwareDialog"><div class="dialog-head"><div><div class="eyebrow">CONFIGURATION / PROVENANCE</div><h2>Vehicle & hardware</h2></div><button id="closeHardware" aria-label="Close hardware details">✕</button></div><p id="hardwareStatus"></p><div id="hardwareParts"></div><p class="hint">Source files: Paper/Reference/parts.md; CAD/EDF Drone v1/Parts List/Master Parts List.xlsx; simulation/isaac/configs. Scene appearance is a WebGL rendering of actual Isaac states; it is not an Isaac RTX camera feed.</p></dialog>
-<script type="module" src="/static/app.js"></script></body></html>
+<script type="module" src="/static/app.js?v=convex-diagnostics-1"></script></body></html>

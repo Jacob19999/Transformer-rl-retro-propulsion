@@ -7,6 +7,8 @@ import { attitude, drawAdi, drawWebcast, fitCanvas, series } from './instruments
 import { createCharts } from './charts.js';
 import { createModels } from './models.js';
 import { createChecklist } from './checklist.js';
+import { createRotorAnimation } from './rotor.js';
+import { collectPlans, planAt, createGuidancePanel } from './guidance.js';
 
 const $ = id => document.getElementById(id);
 const deg = 180 / Math.PI;
@@ -48,6 +50,7 @@ function updateTraining(c){
   if(JSON.stringify([...$('controller').options].map(o=>[o.value,o.text]))!==JSON.stringify(choices)){
     $('controller').replaceChildren(...choices.map(([key,name])=>new Option(name,key)));
     $('controller').value=choice in c.policies?choice:c.defaults.controller;
+    syncVaneModel();
   }
   state.connected=true;state.training=!!c.training;state.trainingMetrics=c.training_metrics;
   text('connection',state.training?'TRAINER ACTIVE / REPLAY READY':'ISAAC SERVICE ONLINE');
@@ -87,6 +90,7 @@ const batteryFields = [['voltage_v','BUS VOLTAGE','V',2],['current_a','CURRENT',
 $('batteryMetrics').innerHTML = batteryFields.map(([key,name,unit])=>`<div><span>${name}</span><b id="b_${key}">—</b><small>${unit}</small></div>`).join('');
 $('batteryMetrics').insertAdjacentHTML('beforeend','<div><span>PROPULSIVE ΔV</span><b id="propulsiveDv">—</b><small>m/s</small></div>');
 const seekTo=t=>{state.live=false;state.playing=false;state.time=THREE.MathUtils.clamp(t,0,state.frames.at(-1)?.t??0);};
+const guidancePanel=createGuidancePanel($('optimizationPanel'),{onSeek:seekTo});
 const charts=createCharts($('charts'),{onSeek:seekTo});
 const flightCharts=createCharts($('flightCharts'),{onSeek:seekTo,titles:['ALTITUDE','VELOCITY','THRUST','BODY RATES · FRD']});
 const models=createModels($('models'),api);
@@ -123,6 +127,17 @@ for (const angle of [0,Math.PI/2]) { const line = new THREE.Mesh(new THREE.Plane
 const groundObjects = scene.children.filter(object=>object.isMesh||object===grid);
 const trajectory = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({color:0xf4f6f7,transparent:true,opacity:.55})); scene.add(trajectory);
 const plannedRoute=new THREE.Line(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:0x3987e5,transparent:true,opacity:.75}));scene.add(plannedRoute);
+// Convex guidance: the optimized trajectory in force at the replay time (the
+// SOCP is re-solved every 0.5 s, so the drawn plan changes as the flight runs).
+const guidancePath=new THREE.Line(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:0x2fbf71,transparent:true,opacity:.9}));scene.add(guidancePath);
+const guidanceMarkers=new THREE.Group();scene.add(guidanceMarkers);
+const guidanceMarker=(color,wireframe=false)=>{const mesh=new THREE.Mesh(new THREE.SphereGeometry(1,12,8),new THREE.MeshBasicMaterial({color,wireframe,depthTest:false}));mesh.renderOrder=5;guidanceMarkers.add(mesh);return mesh;};
+const vehicleMarker=guidanceMarker(0xf4f6f7),referenceMarker=guidanceMarker(0x6ab7ff,true),endpointMarker=guidanceMarker(0x48dba2,true);
+let guidancePlanShown=null;
+function updateGuidancePath(){
+  const plan=planAt(state.plans??[],state.time);
+  if(plan===guidancePlanShown)return;guidancePlanShown=plan;setLinePoints(guidancePath,plan?.positions??[]);
+}
 function setLinePoints(line,points){
   line.geometry.dispose();line.geometry=new THREE.BufferGeometry();
   line.geometry.setAttribute('position',new THREE.Float32BufferAttribute(points.flat(),3));sceneDirty=true;
@@ -140,13 +155,26 @@ cameras[3] = new THREE.OrthographicCamera(-.18,.18,.10,-.10,.001,5);
 const finLabels = document.createElement('canvas');finLabels.id='finLabels';$('views').append(finLabels);
 document.querySelector('.fin-tag b').textContent='FINS / BOTTOM';
 const controls = new OrbitControls(cameras[0],$('scene')); controls.enableDamping = true; controls.dampingFactor=.1;controls.minDistance=.3;controls.maxDistance=40;controls.enablePan=false;
+let cameraMode='vehicle',overviewPlan=null,overviewSize='';
+function setCameraMode(mode){
+  cameraMode=mode;overviewPlan=null;orbitInitialized=false;
+  $('cameraVehicle').setAttribute('aria-pressed',mode==='vehicle');$('cameraPlan').setAttribute('aria-pressed',mode==='plan');
+  document.querySelector('.main-tag b').textContent=mode==='plan'?'PLAN OVERVIEW / DRAG TO ROTATE':'ORBIT / DRAG TO ROTATE';
+  controls.maxDistance=mode==='plan'?600:40;invalidate();
+}
+$('cameraVehicle').onclick=()=>setCameraMode('vehicle');$('cameraPlan').onclick=()=>setCameraMode('plan');
 // Drags and damping dispatch 'change' until the orbit settles; each one earns a render.
 controls.addEventListener('change',()=>{sceneDirty=true;});
 // Detailed CAD/Blender render model (export_visual_model.py), one node per
 // rigid link in the same local frames as the physics USD in geometry.json.
-const model = await new GLTFLoader().loadAsync('/static/drone_visual.glb');
+// Version the model together with the rotor animation so browser caches do
+// not reuse the older export, whose fan was baked into the Body mesh.
+const model = await new GLTFLoader().loadAsync('/static/drone_visual.glb?v=edf-rotor-1');
 const geometry = await (await fetch('/static/geometry.json')).json();
 const links = Object.fromEntries(['Body',...linkNames].map(name=>[name,model.scene.getObjectByName(name)]));
+const rotor = model.scene.getObjectByName('EDFRotor');
+const rotorAnimation = createRotorAnimation(rotor);
+$('rpm').title = 'Recorded rotor RPM. Fan blade animation is slowed 200× for visibility.';
 // Fins take their UI series colour so CAM 04 labels match the hardware. CAD
 // tessellation has open shells (both faces drawn), and the studio reflections
 // are scoped to the drone so the glossy prints read without relighting the pad.
@@ -167,15 +195,39 @@ function sampleAt(t) {
   let lo=0,hi=frames.length-1;
   while(lo<hi){const m=Math.ceil((lo+hi)/2);if(frames[m].t<=t)lo=m;else hi=m-1;}
   const a=frames[lo],b=frames[Math.min(lo+1,frames.length-1)];
-  return {a,b,alpha:a===b?0:THREE.MathUtils.clamp((t-a.t)/(b.t-a.t),0,1)};
+  return {a,b,index:lo,alpha:a===b?0:THREE.MathUtils.clamp((t-a.t)/(b.t-a.t),0,1)};
 }
 function renderViews(width=$('views').clientWidth,height=$('views').clientHeight) {
   if(renderer.domElement.width!==Math.round(width*renderer.getPixelRatio())||renderer.domElement.height!==Math.round(height*renderer.getPixelRatio()))renderer.setSize(width,height,false);
-  const sample=sampleAt(state.time);
+  const sample=sampleAt(state.time);updateGuidancePath();
+  rotorAnimation.update(sample);
   if(sample){const {a,b,alpha}=sample;pose(links.Body,a.position,a.quaternion,b.position,b.quaternion,alpha);linkNames.forEach((name,i)=>pose(links[name],a.fin_positions[i],a.fin_quaternions[i],b.fin_positions[i],b.fin_quaternions[i],alpha));}
   const pos=scratch.pos.copy(links.Body.position);
-  if(!orbitInitialized){controls.target.copy(pos);cameras[0].position.copy(pos).add(scratch.v.set(.85,-1.05,.43));orbitInitialized=true;previousPosition.copy(pos);}
-  const movement=scratch.move.copy(pos).sub(previousPosition);cameras[0].position.add(movement);controls.target.add(movement);previousPosition.copy(pos);controls.update();
+  if(cameraMode==='plan'&&guidancePlanShown){
+    if(!orbitInitialized||overviewPlan!==guidancePlanShown||overviewSize!==`${width}:${height}`){
+      const bounds=new THREE.Box3().setFromPoints([...guidancePlanShown.positions.map(p=>new THREE.Vector3(...p)),pos.clone(),new THREE.Vector3()]);
+      const center=bounds.getCenter(new THREE.Vector3()),radius=Math.max(1,bounds.getSize(new THREE.Vector3()).length()/2);
+      const aspect=Math.max(.2,width*.66/height),halfFov=Math.atan(Math.tan(cameras[0].fov/2/deg)*Math.min(1,aspect));
+      const distance=radius/Math.sin(halfFov)*1.18;
+      const direction=orbitInitialized?scratch.v.copy(cameras[0].position).sub(controls.target).normalize():scratch.v.set(1,-1,.65).normalize();
+      controls.target.copy(center);cameras[0].position.copy(center).add(direction.multiplyScalar(distance));
+      cameras[0].far=Math.max(300,distance+radius*3);overviewPlan=guidancePlanShown;overviewSize=`${width}:${height}`;orbitInitialized=true;
+    }
+    previousPosition.copy(pos);controls.update();
+  }else{
+    if(!orbitInitialized){controls.target.copy(pos);cameras[0].position.copy(pos).add(scratch.v.set(.85,-1.05,.43));orbitInitialized=true;previousPosition.copy(pos);}
+    const movement=scratch.move.copy(pos).sub(previousPosition);cameras[0].position.add(movement);controls.target.add(movement);previousPosition.copy(pos);controls.update();
+  }
+  const guidance=sample?.a.guidance;
+  guidancePath.material.color.set(guidance?.solver?.mode==='soft_terminal'?0xfab219:0x48dba2);
+  guidancePath.material.opacity=['TERMINAL_DESCENT','LANDED','HOLD'].includes(guidance?.phase) ? .3 : .9;
+  trajectory.geometry.setDrawRange(0,sample?sample.index+1:0);
+  const markerSize=Math.max(.04,cameras[0].position.distanceTo(controls.target)*.003);
+  vehicleMarker.position.copy(pos);vehicleMarker.scale.setScalar(markerSize);
+  referenceMarker.visible=!!guidance?.reference_position;
+  if(referenceMarker.visible){referenceMarker.position.fromArray(guidance.reference_position);referenceMarker.scale.setScalar(markerSize*1.7);}
+  endpointMarker.visible=!!guidancePlanShown;
+  if(endpointMarker.visible){endpointMarker.position.fromArray(guidancePlanShown.positions.at(-1));endpointMarker.scale.setScalar(markerSize*1.7);endpointMarker.material.color.copy(guidancePath.material.color);}
   cameras[1].position.set(3,-5,.25);cameras[1].lookAt(pos);cameras[1].fov=THREE.MathUtils.clamp(2*Math.atan(.7/cameras[1].position.distanceTo(pos))*deg,4,45);
   cameras[2].position.copy(pos).add(scratch.v.set(0,0,1.6));cameras[2].up.set(0,1,0);cameras[2].lookAt(pos);
   const q=links.Body.quaternion;
@@ -188,7 +240,7 @@ function renderViews(width=$('views').clientWidth,height=$('views').clientHeight
   const split=Math.floor(width*.66),right=width-split,third=height/3;
   const rects=[[0,0,split-1,height],[split+1,2*third,right-1,third-1],[split+1,third,right-1,third-1],[split+1,0,right-1,third-1]];
   renderer.setScissorTest(true);
-  rects.forEach(([x,y,w,h],i)=>{renderer.setViewport(x,y,w,h);renderer.setScissor(x,y,w,h);cameras[i].aspect=w/h;if(i===3){cameras[i].left=-.1*w/h;cameras[i].right=.1*w/h;}cameras[i].updateProjectionMatrix();links.Body.visible=i!==3;trajectory.visible=i<3;plannedRoute.visible=i<3;thrustVector.visible=i===0;groundObjects.forEach(object=>{object.visible=i!==3;});renderer.render(scene,cameras[i]);});
+  rects.forEach(([x,y,w,h],i)=>{renderer.setViewport(x,y,w,h);renderer.setScissor(x,y,w,h);cameras[i].aspect=w/h;if(i===3){cameras[i].left=-.1*w/h;cameras[i].right=.1*w/h;}cameras[i].updateProjectionMatrix();links.Body.visible=i!==3;trajectory.visible=i<3;plannedRoute.visible=i<3;guidancePath.visible=i<3;guidanceMarkers.visible=i===0&&cameraMode==='plan'&&!!guidance;thrustVector.visible=i===0;groundObjects.forEach(object=>{object.visible=i!==3;});renderer.render(scene,cameras[i]);});
   links.Body.visible=true;groundObjects.forEach(object=>{object.visible=true;});renderer.setScissorTest(false);
   drawBottomLabels(fitCanvas(finLabels,width,height),width,height,sample);
 }
@@ -218,7 +270,16 @@ function computeMilestones(){
   const result=[],frames=state.frames;if(!frames.length)return result;
   result.push({t:frames[0].t,label:'START'});
   let contact=frames[0].contact,waypoint=frames[0].mission?.waypoint_index,phase=frames[0].control_phase,ready=!!frames[0].mission?.ready_to_land;
+  let guidancePhase=frames[0].guidance?.phase,fallback=false;
+  const guidanceLabels={SPOOL_UP:'SPOOL UP',ROUTE:'ROUTE',POWERED_DESCENT:'PDG',TERMINAL_DESCENT:'TERMINAL',HOLD:'HOLD'};
   for(const f of frames){
+    // Convex guidance phase changes and soft-terminal (no safe plan) fallbacks.
+    const g=f.guidance;
+    if(g?.phase&&g.phase!==guidancePhase&&guidanceLabels[g.phase])result.push({t:f.t,label:guidanceLabels[g.phase],detail:`CONVEX GUIDANCE · ${g.phase.replaceAll('_',' ')}`,tone:g.phase==='HOLD'?'critical':undefined});
+    guidancePhase=g?.phase??guidancePhase;
+    const soft=g?.solver?.mode==='soft_terminal';
+    if(soft&&!fallback)result.push({t:f.t,label:'FALLBACK',detail:'NO SAFE PLAN · SOFT-TERMINAL MAXIMUM-BRAKING PLAN',tone:'warning'});
+    if(g?.solver)fallback=soft;
     const index=f.mission?.waypoint_index;
     if(index!=null&&waypoint!=null&&index>waypoint){for(let k=waypoint;k<index;k++)result.push({t:f.t,label:`WP ${k+1}`,detail:`WAYPOINT ${k+1} CAPTURED`});}
     waypoint=index??waypoint;
@@ -253,6 +314,11 @@ function webcastMaxima(){
 let maxima=webcastMaxima(),dataVersion=0;
 function dataChanged(){
   dataVersion++;invalidate();
+  rotorAnimation.setFrames(state.frames);
+  state.plans=collectPlans(state.frames);guidancePlanShown=undefined;
+  guidancePanel.setData(state.frames,state.plans);
+  $('cameraPlan').hidden=!state.plans.length;
+  if(!state.plans.length&&cameraMode==='plan')setCameraMode('vehicle');
   state.milestones=computeMilestones();maxima=webcastMaxima();
   const events=state.milestones.filter(m=>m.label!=='START'),context=chartContext();
   charts.setData(state.frames,context,events);flightCharts.setData(state.frames,context,events);
@@ -268,7 +334,7 @@ function renderBoard(){
   const m=state.trainingMetrics;
   items.push(['PPO TRAINER',state.training?['good',m?.step!=null?`${m.task==='waypoint_flight'?'WAYPOINT':'LANDING'} · ${fmt(m.step/1e6,1)}M · S${m.stage+1}/${m.stages??'—'}`:'STARTING']:['idle','IDLE']]);
   const controller=$('controller').value,policy=config?.policies?.[controller]??controller;
-  items.push(['NEXT CONTROLLER',controller==='pid'?['good','PID']:[/EXPERIMENTAL/i.test(policy)?'warning':'good',controller==='ppo_mission'?'PPO · EXPERIMENTAL':policy.toUpperCase()]]);
+  items.push(['NEXT CONTROLLER',controller==='pid'?['good','PID']:controller==='convex'?['good','CONVEX SOCP']:[/EXPERIMENTAL/i.test(policy)?'warning':'good',controller==='ppo_mission'?'PPO · EXPERIMENTAL':policy.toUpperCase()]]);
   const preflight=checklist.summary();
   items.push(['PRE-FLIGHT',preflight.done===preflight.total?['good',`COMPLETE · ${preflight.total}/${preflight.total}`]:preflight.done?['warning',`HOLD · ${preflight.done}/${preflight.total}`]:['idle','NOT STARTED']]);
   items.push(['TELEMETRY',!state.frames.length?['idle','NO DATA']:state.busy&&state.live?['good',`LIVE · ${state.frames.length} SAMPLES`]:['idle',`REPLAY · ${state.frames.length} SAMPLES`]]);
@@ -286,16 +352,17 @@ function setBar(el,value,limit){
   el.style.left=`${50+Math.min(0,v)*50}%`;el.style.width=`${Math.abs(v)*50}%`;
 }
 function updateTelemetry() {
-  const sample=sampleAt(state.time),f=sample?.a;renderBoard();if(!f)return;
+  const sample=sampleAt(state.time),f=sample?.a;renderBoard();guidancePanel.update(f,state.time);if(!f)return;
   const lerp=(a,b)=>THREE.MathUtils.lerp(a,b,sample.alpha);
   text('clock',clock(state.time));text('telemetryTime',clock(f.t));
   text('hudAlt',fmt(f.position[2],2));text('hudVz',fmt(f.velocity[2],2));text('hudVh',fmt(Math.hypot(f.velocity[0],f.velocity[1]),2));text('hudPad',fmt(f.pad_distance,2));
   const att=attitude(f.quaternion);drawAdi($('adi'),att);
   text('attRoll',fmt(att.roll,1));text('attPitch',fmt(att.pitch,1));text('attYaw',fmt((att.yaw+360)%360,0));text('attTilt',fmt(att.tilt,1));
-  const mission=f.mission;
-  const phaseLine=mission?mission.ready_to_land?`LAND · ${mission.waypoint_count} waypoints completed · Soft contact required`:`${mission.phase} · Waypoint ${mission.waypoint_index+1}/${mission.waypoint_count} · Cross-track ${fmt(mission.cross_track_error_m,2)} m${mission.phase==='HOVER'?' · Hold '+fmt(mission.hold_elapsed_s,1)+' / '+fmt(mission.waypoints[mission.waypoint_index].hold_s,1)+' s':''}`:'Waypoint telemetry was not recorded in this replay.';
-  text('waypointStatus',phaseLine);text('waypointBadge',mission?`${Math.min(mission.waypoint_index,mission.waypoint_count)}/${mission.waypoint_count} CAPTURED`:'');
-  $('phaseTag').hidden=!mission;if(mission)text('phaseTag',mission.ready_to_land?'LANDING PHASE':`${mission.phase} · WP ${mission.waypoint_index+1}/${mission.waypoint_count}`);
+  const mission=f.mission,g=f.guidance,guidancePhase=g?.phase?.replaceAll('_',' ');
+  const guidanceLine=g?`CONVEX · ${guidancePhase}${g.time_to_go_s!=null?' · gate in '+fmt(g.time_to_go_s,1)+' s':''}${g.solver?` · plan #${g.plan_id} ${g.solver.mode==='soft_terminal'?'SOFT-TERMINAL FALLBACK':(g.solver.status??'status unavailable')} · ${fmt(g.solver.solve_ms,0)} ms / ${g.solver.solves} SOCPs`:''}`:null;
+  const phaseLine=mission?mission.ready_to_land?`LAND · ${mission.waypoint_count} waypoints completed · Soft contact required`:`${mission.phase} · Waypoint ${mission.waypoint_index+1}/${mission.waypoint_count} · Cross-track ${fmt(mission.cross_track_error_m,2)} m${mission.phase==='HOVER'?' · Hold '+fmt(mission.hold_elapsed_s,1)+' / '+fmt(mission.waypoints[mission.waypoint_index].hold_s,1)+' s':''}`:guidanceLine??'Waypoint telemetry was not recorded in this replay.';
+  text('waypointStatus',mission&&g?`${phaseLine} · CONVEX ${guidancePhase}`:phaseLine);text('waypointBadge',mission?`${Math.min(mission.waypoint_index,mission.waypoint_count)}/${mission.waypoint_count} CAPTURED`:'');
+  $('phaseTag').hidden=!mission&&!g;if(mission)text('phaseTag',mission.ready_to_land?'LANDING PHASE':`${mission.phase} · WP ${mission.waypoint_index+1}/${mission.waypoint_count}`);else if(g)text('phaseTag',`CONVEX · ${guidancePhase}`);
   const physics=state.metadata?.physics_parameters,maxThrust=physics?.edf?.max_thrust??48,mass=physics?.vehicle?.total_mass??3.104;
   text('thrust',fmt(f.thrust_n,1));text('thrustWeight',`T/W ${fmt(f.thrust_n/(mass*9.81),2)}`);text('throttle',fmt(f.throttle*100,1));text('rpm',fmt(f.rotor_rpm,0));$('thrustBar').style.width=`${Math.min(100,f.thrust_n/maxThrust*100)}%`;
   const finLimit=(physics?.vehicle?.fins?.max_deflection??.262)*deg;text('finLimitLabel',fmt(finLimit,0));
@@ -307,7 +374,8 @@ function updateTelemetry() {
     setBar($('gb'+i),value,scale);});
   rotationFields.forEach(([key,,precision])=>[0,1,2].forEach(i=>text(`rotation_${key}_${i}`,fmt(f.rotation?.[key]?.[i],precision))));
   text('rotationNote',`Soft limits: ${rotationLimits.map(v=>fmt(v,0)).join(' / ')} °/s; gyro bars span ±2× each limit. ${f.rotation?'Travel counts turns and reversals; excess counts rotation above each limit.':'Cumulative rotation was not recorded in this older replay.'}`);
-  const rateNote=state.metadata?.policy.controller==='pid'?'PID uses attitude feedback and fin mixing; its internal mix commands are not calibrated body-rate setpoints.':'PPO commands fin angles and throttle directly; no body-rate setpoint is generated.';
+  const recordedController=state.metadata?.policy.controller;
+  const rateNote=recordedController==='pid'?'PID uses attitude feedback and fin mixing; its internal mix commands are not calibrated body-rate setpoints.':recordedController==='convex'?'Convex guidance plans a thrust-vector trajectory (SOCP); a geometric attitude loop turns the thrust direction into fin efforts. No body-rate setpoint is generated.':'PPO commands fin angles and throttle directly; no body-rate setpoint is generated.';
   text('rateNote',`${rateNote}${f.observed_gyro?' Sensor P/Q/R: '+f.observed_gyro.map(v=>fmt(v*deg,1)).join(' / ')+' °/s.':''}`);
   text('soc',f.battery?fmt(f.battery.soc*100,1):'OFF');$('socBar').style.width=`${(f.battery?.soc??0)*100}%`;
   text('batteryState',!f.battery?'IDEAL BUS':f.battery.cutoff?'CUTOFF':f.battery.current_limited?'CURRENT LIMIT':'DISCHARGING');
@@ -372,7 +440,7 @@ async function poll(){
   text('flightStatus',m.summary?.success?'✓ LANDED / PASS':m.summary?.outcome==='LANDED'?'✕ LANDED / FAIL':m.summary?.outcome?(failed?'✕ ':'')+m.summary.outcome:m.state.toUpperCase());
   $('flightStatus').className=`status${failed?' fail':m.summary?.success?' pass':''}`;
   $('run').disabled=state.busy||state.recording||state.training;$('stop').disabled=!state.busy;$('export').disabled=state.busy||state.frames.length<2||state.recording;
-  const profile=m.request.hardware_profile==='planned_8s'?'8S PLANNED':'6S LEGACY';text('footerProfile',`${profile} · 3.104 kg${m.metadata?.physics_dt?' · '+fmt(1/m.metadata.physics_dt,0)+' Hz PHYSICS':''}`);
+  const profile=m.request.hardware_profile==='planned_8s'?'8S PLANNED':'6S LEGACY';const vanes=m.request.vane_model==='legacy'?'LEGACY VANES':'MOMENTUM VANES';text('footerProfile',`${profile} · ${vanes} · 3.104 kg${m.metadata?.physics_dt?' · '+fmt(1/m.metadata.physics_dt,0)+' Hz PHYSICS':''}`);
   const recordedPolicy=m.metadata?.policy;
   text('notice',`${profile} · ${m.request.battery.enabled?'LiPo coupled to EDF':'Ideal voltage, battery disabled'}${m.metadata?.hinge_layout==='radial_span_v1'?' · Radial hinges':' · ARCHIVE: OLD HINGE AXES'}${recordedPolicy?.step?' · Recorded PPO '+fmt(recordedPolicy.step/1e6,2)+'M / '+recordedPolicy.action_mode:''}${recordedPolicy?.diagnostic_checkpoint_override||m.metadata?.experimental_policy?' · Experimental replay; full-task qualification pending':''} · Hardware calibration pending${m.metadata?.initial_conditions_outside_training?' · Outside checkpoint training bounds':''}`);
   message(state.requestError??m.error??(state.busy?`${m.phase} · ${m.frames??0} samples received`:m.summary?`${m.summary.outcome} · impact ${fmt(m.summary.impact_speed,3)} m/s · pad error ${fmt(m.summary.pad_distance,3)} m`:'Mission loaded'),!!(state.requestError||m.error));
@@ -381,10 +449,22 @@ async function poll(){
   if(state.frames.length)updateTelemetry();
   return m;
 }
+// Vane physics each controller flies (mission_control/models.py): PID is the
+// legacy-vane reference, PPO policies replay their momentum-bounded training
+// plant, and only the convex controller offers the choice.
+let convexVaneModel='momentum';
+function syncVaneModel(){
+  const controller=$('controller').value,select=$('vane_model');
+  const fixed=controller==='pid'?'legacy':controller==='convex'?null:'momentum';
+  select.value=fixed??convexVaneModel;select.disabled=!!fixed;
+}
+$('vane_model').onchange=()=>{if($('controller').value==='convex')convexVaneModel=$('vane_model').value;};
 function fillMissionForm(request){
   for(const key of ['name','controller','hardware_profile','seed','duration_s'])$(key).value=request[key];
+  if(request.controller==='convex')convexVaneModel=request.vane_model??'momentum';
   // Replays can name a retired policy; keep the next run on an available one.
   if(!$('controller').value)$('controller').value=config?.defaults?.controller??'pid';
+  syncVaneModel();
   for(const key of ['position','velocity','attitude_deg','angular_rate_deg_s'])request[key].forEach((v,i)=>{$(`${key}_${i}`).value=v;});
   $('initial_motor_fraction').value=request.initial_motor_fraction*100;
   const selected=Array.isArray(request.disturbance)?request.disturbance:[request.disturbance];
@@ -396,7 +476,7 @@ function fillMissionForm(request){
   planner.setWaypoints(request.waypoints??[]);checklist.update();
 }
 function missionRequest(){
-  const result={};for(const key of ['name','controller','hardware_profile'])result[key]=$(key).value;
+  const result={};for(const key of ['name','controller','hardware_profile','vane_model'])result[key]=$(key).value;
   result.disturbance=[...document.querySelectorAll('input[name="disturbance"]:checked')].map(input=>input.value);
   for(const key of ['seed','duration_s'])result[key]=Number($(key).value);
   for(const key of ['position','velocity','attitude_deg','angular_rate_deg_s'])result[key]=[0,1,2].map(i=>Number($(`${key}_${i}`).value));
@@ -411,7 +491,7 @@ $('history').onchange=()=>{if($('history').value)selectMission($('history').valu
 $('play').onclick=()=>{if(!state.frames.length)return;state.live=false;if(state.time>=state.frames.at(-1).t)state.time=0;state.playing=!state.playing;};
 $('timeline').oninput=()=>{state.live=false;state.playing=false;state.time=Number($('timeline').value);};
 $('live').onclick=()=>{state.live=true;state.playing=false;state.time=state.frames.at(-1)?.t??0;};
-$('controller').onchange=renderBoard;
+$('controller').onchange=()=>{syncVaneModel();renderBoard();};
 $('hardware_profile').onchange=()=>text('packLabel',$('hardware_profile').value==='planned_8s'?'8S / ESTIMATED':'6S / ESTIMATED');
 $('hardwareButton').onclick=()=>$('hardwareDialog').showModal();$('closeHardware').onclick=()=>$('hardwareDialog').close();
 document.addEventListener('keydown',e=>{
@@ -469,7 +549,7 @@ async function recordVideo(){
   }finally{if(recorder.state==='recording')recorder.stop();stream.getTracks().forEach(t=>t.stop());state.recording=false;invalidate();$('export').disabled=false;$('run').disabled=state.busy||state.training;$('history').disabled=false;}
 }
 $('export').onclick=()=>recordVideo().catch(e=>message(e.message,true));
-window.missionControl={state,seek(t){seekTo(t);renderViews();updateTelemetry();drawPlots();},recordVideo,captureFrame,selectMission,geometry};
+window.missionControl={state,seek(t){seekTo(t);renderViews();updateTelemetry();drawPlots();},recordVideo,captureFrame,selectMission,geometry,rotor};
 // Render on demand: the four cameras redraw only when replay time, data, the
 // orbit camera or the layout changed, and the 2D instruments (≤12 Hz) only
 // when anything they show changed. A paused replay costs no GPU or DOM work.
@@ -491,7 +571,7 @@ function animate(now){
 requestAnimationFrame(animate);
 try{
   config=await api('/api/config');updateTraining(config);text('hardwareStatus',config.hardware.status);
-  $('controller').replaceChildren(...Object.entries(config.policies).map(([key,name])=>new Option(name,key)));$('controller').value=config.defaults.controller;checklist.update();
+  $('controller').replaceChildren(...Object.entries(config.policies).map(([key,name])=>new Option(name,key)));$('controller').value=config.defaults.controller;syncVaneModel();checklist.update();
   for(const part of config.hardware.parts){const el=document.createElement('div');el.className='hardware-part';const heading=document.createElement('h3');heading.textContent=part.part;const body=document.createElement('div');const name=document.createElement('strong');name.textContent=part.name;const spec=document.createElement('p');spec.textContent=part.spec;const basis=document.createElement('p');basis.textContent=part.basis;body.append(name,spec,basis);if(part.source){const a=document.createElement('a');a.href=part.source;a.target='_blank';a.rel='noreferrer';a.textContent='MANUFACTURER SOURCE ↗';body.append(a);}el.append(heading,body);$('hardwareParts').append(el);}
   if(page==='models')pageShown.models();
   const missions=await refreshHistory(),requested=new URLSearchParams(location.search).get('mission');const selected=requested??config.active??missions.find(m=>m.hinge_layout==='radial_span_v1'&&m.summary?.success)?.id??missions.find(m=>m.hinge_layout==='radial_span_v1'&&m.state==='complete')?.id??missions.find(m=>m.state==='complete')?.id;

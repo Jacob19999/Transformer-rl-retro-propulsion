@@ -5,6 +5,9 @@ Implements:
   - Throttle-to-RPM mapping: ω_target = throttle * ω_max
   - First-order motor spool lag: dω/dt = (ω_target - ω) / τ_motor
   - Optional RPM rate limiting: clamp(dω, -dω_max, dω_max)
+  - Optional motor torque limit: I_rotor dω/dt = Q_motor - Q_aero(ω), with
+    |Q_motor| bounded by the motor's current-limited torque and, with the
+    ESC brake disabled, Q_motor = 0 at zero throttle (the rotor coasts)
   - Thrust: T = k_T * ω²
 
 Vectorized for (num_envs,) arrays.
@@ -33,8 +36,14 @@ class EDFModel:
         dynamic_torque_scale: float = 1.0,
         gyro_torque_scale: float = 1.0,
         thrust_axis: list[float] | None = None,  # in body-FRD frame
+        max_motor_torque: float | None = None,  # N·m, current-limited motor torque (None: unbounded)
+        aero_torque_at_max: float = 0.0,   # N·m, rotor aerodynamic drag torque at omega_max
+        zero_throttle_brake: bool = True,  # False: zero throttle applies no motor torque (coast)
     ):
         self.tau_motor = tau_motor
+        self.max_motor_torque = max_motor_torque
+        self.aero_torque_at_max = aero_torque_at_max
+        self.zero_throttle_brake = zero_throttle_brake
         self.omega_max = omega_max
         self.d_omega_max = d_omega_max
         self.rotor_inertia = rotor_inertia
@@ -122,10 +131,33 @@ class EDFModel:
         if self.d_omega_max is not None:
             d_omega = d_omega.clamp(-self.d_omega_max, self.d_omega_max)
 
+        if self.max_motor_torque is not None and self.rotor_inertia > 0.0:
+            d_omega = self._torque_limited(omega_state, throttle, d_omega)
+
         new_omega = omega_state + d_omega * dt
         new_omega = new_omega.clamp(0.0, self.omega_max)
 
         return new_omega
+
+    def aero_torque(self, omega: Tensor) -> Tensor:
+        """Rotor aerodynamic drag torque, Q = Q_max (omega / omega_max)^2 (shaft power ~ omega^3)."""
+        return self.aero_torque_at_max * (omega / self.omega_max).square()
+
+    def _torque_limited(self, omega: Tensor, throttle: Tensor, d_omega: Tensor) -> Tensor:
+        """Spool acceleration the motor can deliver: I dω/dt = Q_motor - Q_aero.
+
+        The first-order response is what the ESC asks for. The motor applies
+        at most its current-limited torque, accelerating or braking. With the
+        brake disabled (EDF ESC practice) zero throttle applies none, and the
+        rotor coasts down on its aerodynamic drag. The body's spool reaction,
+        -I dω/dt, is bounded accordingly.
+        """
+        drag = self.aero_torque(omega)
+        motor = self.rotor_inertia * d_omega + drag
+        limit = torch.full_like(motor, float(self.max_motor_torque))
+        if not self.zero_throttle_brake:
+            limit = torch.where(throttle <= 0.0, torch.zeros_like(limit), limit)
+        return (torch.maximum(torch.minimum(motor, limit), -limit) - drag) / self.rotor_inertia
 
     def compute_thrust(self, omega: Tensor) -> Tensor:
         """Compute thrust from current rotor speed.

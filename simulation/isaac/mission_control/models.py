@@ -12,8 +12,26 @@ ROOT = Path(__file__).resolve().parents[1]
 # mission choices on 2026-09-17; the checkpoints remain in git history under
 # runs/ppo_exploration_anneal and runs/ppo_kl_consolidation for reference.
 POLICIES: dict[str, str] = {}
+# Explicit classical controllers (no checkpoint). 'convex' is the SOCP
+# powered-descent guidance in tvc_env/controllers/convex_guidance.py.
+CLASSICAL_CONTROLLERS = ('pid', 'convex')
+# Vane physics for classical-controller missions. 'momentum' is the
+# momentum-bounded coupled jet the waypoint_flight policies train on: each
+# vane turns at most its quarter of the jet, so its side force cannot exceed
+# (T/4) sin(angle). 'legacy' is the pre-audit plant: independent q*S*CNa
+# airfoils plus a 0.27 N m s/rad artificial damper. The 2026-09-14 audit
+# (tvc_env/dynamics/coupled_jet.py) found those forces exceed the jet's
+# momentum: 8.5x the momentum-bounded torque per degree at hover. Kept only
+# to reproduce missions flown before 2026-09-25.
+VANE_MODELS = ('momentum', 'legacy')
+# Vane physics each controller may fly, its default first. PID stays the
+# legacy-plant reference: its fin gains are fixed angles tuned on the legacy
+# vanes, with no scaling to a weaker plant, and on momentum-bounded vanes it
+# drifted 11 m off the pad (Isaac mission 6421f6ec55a4). PPO policies replay
+# the momentum-bounded plant they were trained on (any controller not listed).
+CONTROLLER_VANE_MODELS = dict(pid=('legacy',), convex=('momentum', 'legacy'))
 DEFAULTS = dict(name='Landing test', controller='pid', seed=2026, duration_s=30.,
-                hardware_profile='planned_8s',
+                hardware_profile='planned_8s', vane_model=None,  # None: the controller's default
                 position=[-.28, .82, 18.], velocity=[0., 0., -1.],
                 attitude_deg=[0., 0., 0.], angular_rate_deg_s=[0., 0., 0.],
                 initial_motor_fraction=0., disturbance=[],
@@ -62,7 +80,7 @@ def validate_mission(value):
     if not isinstance(result['name'], str) or not 1 <= len(result['name'].strip()) <= 80:
         raise ValueError('Mission name must contain 1–80 characters')
     result['name'] = result['name'].strip()
-    if result['controller'] not in (*policy_paths(), 'pid'):
+    if result['controller'] not in (*policy_paths(), *CLASSICAL_CONTROLLERS):
         raise ValueError('Unknown controller')
     selected = result['disturbance']
     if isinstance(selected, str):  # Existing recorded requests remain replayable.
@@ -72,6 +90,16 @@ def validate_mission(value):
     result['disturbance'] = sorted(set(selected))
     if result['hardware_profile'] not in ('planned_8s', 'legacy_6s'):
         raise ValueError('Unknown hardware profile')
+    allowed = CONTROLLER_VANE_MODELS.get(result['controller'], ('momentum',))
+    if result['vane_model'] is None:
+        result['vane_model'] = allowed[0]
+    if result['vane_model'] not in VANE_MODELS:
+        raise ValueError('Unknown vane model')
+    if result['vane_model'] not in allowed:
+        if result['controller'] == 'pid':
+            raise ValueError('The PID baseline is the legacy-vane reference; its fin gains are not scaled '
+                             'to the momentum-bounded vanes')
+        raise ValueError('PPO policies fly the plant they were trained on (momentum-bounded vanes)')
     seed = finite(result['seed'], 0, 2**31 - 1, 'Seed')
     if seed != int(seed):
         raise ValueError('Seed must be an integer')
@@ -103,8 +131,8 @@ def validate_mission(value):
             speed_m_s=finite(item.get('speed_m_s',3.),.1,15,'Path reference speed')))
     result['waypoints']=waypoints
     validate_spline_clearance(result['position'], waypoints)
-    if waypoints and result['controller'] != 'ppo_mission':
-        raise ValueError('Waypoints require the experimental recovery + waypoints policy; legacy policies do not observe route targets')
+    if waypoints and result['controller'] not in ('ppo_mission', 'convex'):
+        raise ValueError('Waypoints require the waypoint-flight PPO policy or convex guidance; other controllers do not observe route targets')
     result['initial_motor_fraction'] = finite(result['initial_motor_fraction'], 0, 1, 'Initial motor fraction')
     b = copy.deepcopy(DEFAULTS['battery'])
     if not isinstance(result['battery'], dict) or set(result['battery']) - set(b):
@@ -118,7 +146,15 @@ def validate_mission(value):
     result['battery'] = b
     if result['controller'] in ('ppo_radial', 'ppo_mission') and (result['hardware_profile'] != 'planned_8s' or not b['enabled']):
         raise ValueError('The radial 8S policy requires the 8S hardware profile and coupled battery observations')
+    if result['controller'] == 'convex' and waypoints and not b['enabled']:
+        raise ValueError('Convex waypoint missions use the battery-coupled mission sequencer; enable the LiPo model')
     return result
+
+
+def convex_available():
+    """Convex guidance needs the Clarabel conic solver in the Isaac Python."""
+    import importlib.util
+    return importlib.util.find_spec('clarabel') is not None
 
 
 def battery_config(mission):
@@ -130,12 +166,45 @@ def battery_config(mission):
     return c
 
 
+def flight_envelope_violations(mission, saved):
+    """waypoint_flight: compare against the full task the policy is trained toward.
+
+    The saved task_config is the un-curricularized task (stages only narrow
+    it). The mission route is its waypoints plus the landing on the pad.
+    """
+    task = saved['task_config']['task']
+    spawn = task['spawn']
+    violations = []
+    for field, key, scale in (('position', 'position_range', 1.),
+            ('velocity', 'velocity_range', 1.), ('attitude_deg', 'attitude_range', math.pi/180),
+            ('angular_rate_deg_s', 'angular_velocity_range', math.pi/180)):
+        limits = spawn.get(key)
+        if limits and any(not low-1e-5 <= value*scale <= high+1e-5
+                          for value, low, high in zip(mission[field], *limits)):
+            violations.append(field)
+    rotor = spawn.get('initial_motor_omega_fraction')
+    if rotor == 'hover':
+        rotor = (saved.get('reward_budget') or {}).get('hover_fraction')
+    jitter = float(spawn.get('initial_motor_omega_jitter', 0.))
+    if rotor is not None and abs(mission['initial_motor_fraction']-float(rotor)) > jitter+1e-5:
+        violations.append('initial_motor_fraction')
+    low, high = task['waypoint_flight']['generator']['count_range']
+    if not low <= len(mission.get('waypoints', []))+1 <= high:
+        violations.append('waypoint_count')
+    soc_low, soc_high = spawn.get('initial_soc_range', [0., 1.])
+    if not soc_low-1e-5 <= mission['battery']['initial_soc'] <= soc_high+1e-5:
+        violations.append('initial_soc')
+    return violations
+
+
 def training_envelope_violations(mission, saved):
     """Compare against the checkpoint's current curriculum, not a fixed 18 m box.
 
     Being within these bounds is not proof the policy has mastered them.
     Explicit routes can differ from random training routes even with equal count.
     """
+    if saved.get('observation_contract') == 'waypoint_flight_v1':
+        return flight_envelope_violations(mission, saved)
     task = saved.get('task_config', {}).get('task', {})
     spawn = dict(task.get('spawn', {}))
     curriculum = saved.get('curriculum') or {}
@@ -167,6 +236,20 @@ def hardware_overrides(mission):
     if mission['hardware_profile'] == 'legacy_6s':
         return {}
     return yaml.safe_load((ROOT / 'configs/hardware/planned_8s.yaml').read_text())
+
+
+def vane_model_overrides(mission):
+    """Physics and dynamics sections for a classical-controller mission.
+
+    'momentum' takes them from the waypoint_flight training config, so these
+    missions fly exactly the plant the PPO policies train on: coupled-jet
+    vanes, no artificial damper, and the coupled Cayley gyro integration with
+    PhysX external forces applied once per step (which that integration needs).
+    """
+    if mission.get('vane_model', 'momentum') == 'legacy':
+        return {}
+    source = yaml.safe_load((ROOT / 'configs/env/train_waypoint_flight.yaml').read_text(encoding='utf-8'))
+    return {key: copy.deepcopy(source[key]) for key in ('physics', 'dynamics')}
 
 
 def disturbance_config(mission):
@@ -224,6 +307,13 @@ def policy_paths():
     return result
 
 
+def mission_policy_record():
+    try:
+        return json.loads((ROOT / 'mission_control/mission_policy_registry.json').read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
 def default_mission(paths=None):
     paths = policy_paths() if paths is None else paths
     result = copy.deepcopy(DEFAULTS)
@@ -231,4 +321,10 @@ def default_mission(paths=None):
         result['controller'] = 'ppo_radial'
     if 'ppo_mission' in paths:
         result['controller'] = 'ppo_mission'
+        hover = mission_policy_record().get('hover_rotor_fraction')
+        if hover is not None:
+            # waypoint_flight policies are trained from a spun-up rotor; the
+            # 0.25 duty/s throttle-rate contract cannot spool a stopped rotor
+            # to hover (~3.4 s) before the vehicle falls.
+            result['initial_motor_fraction'] = float(hover)
     return result

@@ -1,6 +1,7 @@
 """One real Isaac mission, streaming replay poses and telemetry to disk."""
 from __future__ import annotations
 import argparse
+import copy
 import hashlib
 import json
 import math
@@ -12,13 +13,89 @@ from runner_safety import WallClockWatchdog, force_process_exit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from mission_control.models import validate_mission, battery_config, hardware_overrides, disturbance_config, policy_paths, training_envelope_violations
+from mission_control.models import validate_mission, battery_config, hardware_overrides, disturbance_config, policy_paths, training_envelope_violations, vane_model_overrides
+
+FLIGHT_CONTRACT = 'waypoint_flight_v1'
+PAD_RADIUS_M = .5  # the mission success criterion's pad radius
+
+
+CONVEX_ALTITUDE_FAIL_STOP_M = 105.0
 
 
 def atomic_json(path, value):
     temporary = path.with_suffix('.tmp')
     temporary.write_text(json.dumps(value, allow_nan=False), encoding='utf-8')
-    temporary.replace(path)
+    for attempt in range(40):
+        try:
+            temporary.replace(path)
+            return
+        except PermissionError:
+            # Windows refuses the replace while a reader (the mission service
+            # polling status.json) has the target open; that aborted mission
+            # aea16ce345d4 at t = 37 s. Readers hold it for milliseconds.
+            if attempt == 39:
+                raise
+            time.sleep(0.05)
+
+
+def flight_overrides(request, saved):
+    """A waypoint_flight checkpoint flies its own training plant and task.
+
+    Only the mission's initial state, battery, disturbances and duration
+    replace training values. The throttle-rate integrator and yaw damper in
+    the saved task config are the flight computer the policy was trained with.
+    """
+    from tvc_env.envs.task_registry import deep_merge
+    if request['hardware_profile'] != 'planned_8s' or not request['battery']['enabled']:
+        raise ValueError('waypoint_flight policies fly the planned 8S plant and observe its coupled battery')
+    trained = copy.deepcopy(saved['task_config'])
+    config = {key: trained[key] for key in ('env', 'edf', 'servo', 'battery', 'physics', 'dynamics', 'task')}
+    config['env'].update(num_envs=1, replicate_physics=False, reset_on_crash=False, gizmos_enabled=False)
+    spawn = config['task']['spawn']
+    spawn.update(position_range=[request['position']] * 2, velocity_range=[request['velocity']] * 2,
+                 attitude_range=[[math.radians(x) for x in request['attitude_deg']]] * 2,
+                 angular_velocity_range=[[0., 0., 0.]] * 2,  # body rates are written after reset
+                 initial_motor_omega_fraction=request['initial_motor_fraction'], initial_motor_omega_jitter=0.,
+                 initial_soc_range=[request['battery']['initial_soc']] * 2)
+    if 'wind' in request['disturbance']:
+        spawn.pop('wind_speed_range', None)  # the selected wind disturbance defines the wind
+    else:
+        spawn['wind_speed_range'] = [0., 0.]
+    config['task']['episode_length_s'] = request['duration_s']
+    battery = config['battery']
+    battery.update({key: request['battery'][key] for key in
+                    ('capacity_ah', 'c_rating', 'initial_soc', 'cell_resistance_ohm', 'max_current_a')})
+    battery['max_current_a'] = min(battery['max_current_a'], battery['capacity_ah'] * battery['c_rating'], 120.)
+    return deep_merge(config, disturbance_config(request))
+
+
+def flight_route(request, max_waypoints):
+    """Mission waypoints, then a landing on the pad at the origin."""
+    if len(request['waypoints']) > max_waypoints - 1:
+        raise ValueError(f'waypoint_flight policies observe up to {max_waypoints - 1} waypoints before the landing')
+    route = [dict(position=w['position'], type=w['type'], radius_m=w['radius_m'],
+                  **({'hold_s': w['hold_s']} if w['type'] == 'hover' else {})) for w in request['waypoints']]
+    return route + [dict(position=[0., 0., 0.], type='land', radius_m=PAD_RADIUS_M)]
+
+
+def flight_record(env):
+    """waypoint_flight mission state in the navigation record the UI reads.
+
+    The final LAND waypoint is the landing phase, not a route waypoint.
+    """
+    from tvc_env.envs.waypoint_flight import segment_distance
+    task = env._flight
+    record = task.record()
+    route = [w for w in record['waypoints'] if w['type'] != 'land']
+    index = int(task.index[0])
+    previous = task.start[:1] if index == 0 else task.positions[:1, index - 1]
+    position = env._body_iface.get_root_position()[:1]
+    cross_track = float(segment_distance(position, previous, task.positions[:1, index])[0])
+    return dict(waypoint_index=min(index, len(route)), waypoint_count=len(route),
+                ready_to_land=record['phase'] == 'LAND' or index >= len(route),
+                phase=record['phase'], target_position=record['target_position'],
+                hold_elapsed_s=record['hold_elapsed_s'], cross_track_error_m=cross_track,
+                outcome=record['outcome'], waypoints=route)
 
 
 def main():
@@ -28,9 +105,12 @@ def main():
     parser.add_argument('--checkpoint', type=Path, default=None,
                         help='Local diagnostic checkpoint override; does not publish or qualify a policy')
     parser.add_argument('--action-mode', choices=['stochastic','deterministic','mean'], default=None)
+    parser.add_argument('--convex-settings', type=Path, default=None,
+                        help='Local diagnostic YAML deep-merged over configs/controllers/convex_guidance.yaml; '
+                             'recorded in metadata, never used by the mission service')
     args = parser.parse_args()
     request = validate_mission(json.loads(args.request.read_text()))
-    if args.checkpoint is not None and request['controller'] == 'pid':
+    if args.checkpoint is not None and request['controller'] in ('pid', 'convex'):
         raise ValueError('Checkpoint diagnostics require a PPO mission')
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -66,9 +146,15 @@ def main():
                          battery=battery_config(request))
         policies = policy_paths()
         saved = None
+        flight = False
         if request['controller'] in policies:
             checkpoint = ROOT / (args.checkpoint or policies[request['controller']])
             saved = torch.load(checkpoint, map_location='cpu', weights_only=False)
+            flight = saved.get('observation_contract') == FLIGHT_CONTRACT
+        if flight:
+            overrides = flight_overrides(request, saved)
+            obs_dim = saved['obs_dim']
+        elif saved is not None:
             obs_dim = saved['model']['actor.0.weight'].shape[1]
             if saved.get('args', {}).get('residual_pid') or saved.get('args', {}).get('landing_guidance'):
                 raise ValueError('This mission runner requires a direct-action PPO checkpoint')
@@ -87,20 +173,37 @@ def main():
                 overrides['env'].update(num_envs=1, replicate_physics=False)
                 overrides['task']['spawn']['curriculum'] = {'enabled':False}
             overrides['task']['navigation'] = dict(enabled=obs_dim==43,waypoints=request.get('waypoints',[]))
+        elif request['controller'] == 'convex':
+            # The mission sequencer (WaypointMission) referees the route; its
+            # observation contract needs the battery channels.
+            if request.get('waypoints'):
+                overrides['env']['observe_battery'] = True
+                overrides['task']['navigation'] = dict(enabled=True, waypoints=request['waypoints'])
+            # The landing task's 30 m altitude fail-stop is a training geofence;
+            # planned missions start up to 100 m, so guard just above that.
+            overrides['task']['termination'] = dict(max_altitude_error=CONVEX_ALTITUDE_FAIL_STOP_M)
         elif request.get('waypoints'):
             raise ValueError('Waypoint missions require the mission PPO policy; the PID baseline is landing-only')
+        if saved is None:
+            # Classical controllers fly the requested vane physics; PPO
+            # policies always replay their own training plant (above).
+            from tvc_env.envs.task_registry import deep_merge
+            overrides = deep_merge(overrides, vane_model_overrides(request))
         torch.manual_seed(request['seed'])
-        config = BaseEnvConfig(task_name='landing', sim_root=ROOT,
-                               env_config_path=ROOT / 'configs/env/single_env_debug.yaml',
-                               overrides=overrides)
+        if flight:
+            config = BaseEnvConfig(task_name='waypoint_flight', sim_root=ROOT, overrides=overrides)
+        else:
+            config = BaseEnvConfig(task_name='landing', sim_root=ROOT,
+                                   env_config_path=ROOT / 'configs/env/single_env_debug.yaml',
+                                   overrides=overrides)
         update(phase='Building physics scene')
         env = TVCDirectRLEnv(config)
         dt = config.physics_dt * config.decimation
         device = env.device
-        model = pid = guidance = None
+        model = pid = guidance = decode = convex = None
         policy_meta = dict(controller=request['controller'])
         if saved is not None:
-            model = ActorCritic(obs_dim).to(device)
+            model = (ActorCritic(obs_dim, saved['act_dim']) if flight else ActorCritic(obs_dim)).to(device)
             model.load_state_dict(saved['model'])
             model.eval()
             policy_meta.update(checkpoint=str(checkpoint), step=saved['step'],
@@ -108,8 +211,55 @@ def main():
                                checkpoint_sha256=hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
                                body_frame_position_error=saved['args'].get('body_frame_position_error', False),
                                observation_dim=obs_dim,
-                               action_mode=args.action_mode or 'stochastic')
-        else:
+                               # waypoint_flight evaluations and deployment use the actor mean.
+                               action_mode=args.action_mode or ('deterministic' if flight else 'stochastic'))
+        if flight:
+            from tvc_env.envs import waypoint_flight as wf
+            contract = saved['action_contract']
+            max_angle = float(env._servo_model.max_command_angle)
+            if contract['throttle'] == 'rate':
+                decode = lambda raw: wf.policy_to_env_rate_action(raw, max_angle)
+            else:
+                decode = lambda raw: wf.policy_to_env_action(raw, max_angle, contract['throttle_center'],
+                                                             contract['throttle_span'])
+            env._flight.set_explicit_missions([flight_route(request, wf.MAX_WAYPOINTS)])
+            policy_meta.update(observation_contract=FLIGHT_CONTRACT, action_contract=contract,
+                               curriculum_stage=(saved.get('curriculum') or {}).get('stage_index'))
+        elif request['controller'] == 'convex':
+            import dataclasses
+            import clarabel
+            import yaml
+            from tvc_env.controllers.convex_adapter import ConvexGuidanceController, VehicleModel
+            convex_settings = yaml.safe_load((ROOT / 'configs/controllers/convex_guidance.yaml').read_text())
+            if args.convex_settings is not None:
+                from tvc_env.envs.task_registry import deep_merge
+                convex_settings = deep_merge(convex_settings, yaml.safe_load(args.convex_settings.read_text()))
+            electrical = config.config['battery']
+            # Thrust-stand-style calibration of this plant's vanes (hardware:
+            # measure it); the controller scales its vane efforts by it.
+            roll_authority, yaw_authority = env.vane_authority()
+            vehicle = VehicleModel(
+                mass_kg=float(env._vehicle_mass[0]), hover_throttle=env.nominal_hover_throttle(),
+                reference_voltage_v=float(electrical['reference_voltage_v']) if env._battery_model is not None else 1.0,
+                shaft_power_at_max_w=float(electrical['shaft_power_at_max_w']),
+                motor_efficiency=float(electrical['motor_efficiency']),
+                auxiliary_power_w=float(electrical['auxiliary_power_w']),
+                rotor_inertia=float(env._edf_model.rotor_inertia), omega_max=float(env._edf_model.omega_max),
+                vane_authority_nm_per_rad=roll_authority, yaw_authority_nm_per_rad=yaw_authority)
+            touchdown = float(config.config['task']['descent_reward']['touchdown_root_height'])
+            servo_deadband = float(env._servo_model.deadband) if env._servo_model.apply_deadband else 0.
+            convex = ConvexGuidanceController(convex_settings, vehicle, env._target_position[0].tolist(), touchdown,
+                                              dt, max_command_angle=float(env._servo_model.max_command_angle),
+                                              servo_deadband_rad=servo_deadband)
+            policy_meta.update(
+                guidance='Convex SOCP powered-descent guidance (Acikmese & Ploen 2007 lossless convexification), '
+                         're-solved in closed loop; geometric attitude tracking',
+                parameters=convex_settings, solver=f'Clarabel {clarabel.__version__}',
+                vehicle_model=dict(dataclasses.asdict(vehicle), full_thrust_n=vehicle.full_thrust_n,
+                                   servo_deadband_rad=servo_deadband),
+                touchdown_root_height_m=touchdown, altitude_fail_stop_m=CONVEX_ALTITUDE_FAIL_STOP_M,
+                diagnostic_settings_override=args.convex_settings is not None)
+        elif saved is None:
             from tvc_env.controllers.pid_adapter import PIDController
             from tvc_env.controllers.landing_guidance import LandingGuidance
             import yaml
@@ -130,6 +280,8 @@ def main():
         if guidance:
             pid.reset()
             guidance.reset(obs=obs)
+        if convex:
+            convex.reset()
         metadata = dict(schema_version=2, request=request, policy=policy_meta, dt=dt,
                         physics_dt=config.physics_dt, decimation=config.decimation,
                         hinge_layout='radial_span_v1',
@@ -141,6 +293,9 @@ def main():
                         physics_parameters=env._resolved_hardware,
                         dynamics=config.config.get('dynamics', {}),
                         physics=config.config.get('physics', {}),
+                        vane_model=('momentum' if config.config.get('dynamics', {}).get('coupled_jet', {}).get('enabled')
+                                    else 'legacy'),
+                        vane_authority_nm_per_rad=dict(zip(('roll_pitch', 'yaw'), env.vane_authority())),
                         coordinate_frame='World XYZ, Z up; body rates FRD; quaternion wxyz',
                         source='Isaac Sim / PhysX', model_asset='drone_visual.glb',
                         battery_calibration='Estimated 1-RC LiPo model; voltage and power coupled to EDF',
@@ -172,6 +327,10 @@ def main():
                 debug = env._last_dynamics_debug if hasattr(env, '_last_dynamics_debug') else {}
                 raw = float(env._edf_model.compute_thrust(state.motor_omega)[0])
                 applied = float(debug['edf_applied_thrust_N'][0]) if debug else raw
+                if flight and env._pending_actions is not None:
+                    # Record what the flight computer commanded: integrated
+                    # throttle duty and vane targets after the yaw damper.
+                    action = env._pending_actions
                 battery = {k: v[0].item() for k, v in env._battery_model.telemetry().items()} if env._battery_model else None
                 frame = dict(t=t, control_phase=control_phase, position=vec(state.position), quaternion=vec(state.quaternion_wxyz),
                              velocity=vec(state.linear_vel_world), gyro=vec(state.angular_vel_frd),
@@ -186,12 +345,19 @@ def main():
                              contact_force_n=float(env._landing_contact_force_step[0]),
                              propulsive_delta_v_m_s=cumulative_delta_v,
                              rotation=env._rotation.record(),
-                             mission=env._navigation.record() if env._navigation else None,
+                             mission=(flight_record(env) if flight else
+                                      env._navigation.record() if env._navigation else None),
+                             # Convex guidance: phase, plan reference and solver
+                             # statistics; the planned path only on replan frames.
+                             guidance=(convex.last_telemetry or None) if convex and control_phase == 'CONTROLLER' else None,
                              body_rate_command=None)
                 stream.write(json.dumps(frame, allow_nan=False) + '\n')
                 frames += 1
                 latest = frame
-            capture(0., torch.zeros(1, 5, device=device), torch.zeros(1, 4, device=device))
+            initial = torch.zeros(1, 5, device=device)
+            if flight:
+                initial[0, 4] = env._throttle_state[0]  # the duty holding the spawned rotor
+            capture(0., initial, torch.zeros(1, 4, device=device))
             update(state='running', phase='Simulating', frames=frames)
             cancelled = False
             terminated = truncated = torch.tensor([False], device=device)
@@ -205,7 +371,22 @@ def main():
                         if policy_meta['body_frame_position_error']:
                             po[:, :3] = isaac_position_to_frd(rotate_vector(inverse(normalize(obs[:, 3:7])), obs[:, :3]))
                         raw = model.act(po, policy_meta['action_mode'])
-                        action = torch.cat([raw[:, :4] * env._servo_model.max_command_angle, (raw[:, 4:] + 1) / 2], dim=-1)
+                        if decode is not None:
+                            action = decode(raw)
+                        else:
+                            action = torch.cat([raw[:, :4] * env._servo_model.max_command_angle, (raw[:, 4:] + 1) / 2], dim=-1)
+                    elif convex:
+                        # Mission sequencer state: obs[:, :3] refers to its
+                        # active goal; the controller gets the remaining route.
+                        nav = env._navigation
+                        record = nav.record() if nav else None
+                        origin = env._env_origins[0].tolist()
+                        route = [dict(w, position=[p + o for p, o in zip(w['position'], origin)])
+                                 for w in record['waypoints'][record['waypoint_index']:]] if record else []
+                        action = convex.compute_action(
+                            obs, reference_position=(nav.goal[0] if nav else env._target_position[0]).tolist(),
+                            route=route, hold_elapsed_s=record['hold_elapsed_s'] if record else 0.,
+                            bus_voltage_v=float(env._battery_model.voltage_v[0]) if env._battery_model is not None else None)
                     else:
                         if env._battery_model is not None and pid_settings['voltage_feedforward']:
                             # PID-only feedforward: account for the same loaded
@@ -241,6 +422,10 @@ def main():
                             cancelled = True
                             break
                         action = torch.zeros(1, 5, device=device)
+                        if flight:
+                            # A zero rate command would hold throttle; the
+                            # disarm cuts the flight computer's duty directly.
+                            env._throttle_state.zero_()
                         obs_dict, _, _, _, info = env.step(action)
                         cumulative_delta_v += float(info['propulsive_delta_v_step'][0])
                         obs = obs_dict['policy']
@@ -264,8 +449,11 @@ def main():
                                      and (landing_frame['mission'] is None or landing_frame['mission']['ready_to_land']))
         success = landing_event_success and latest['impact_speed'] <= .25 and latest['pad_distance'] <= .5 and settled_after_shutdown is True
         premature = landed and latest['mission'] is not None and not latest['mission']['ready_to_land']
+        failure = 'CRASHED'
+        if flight and latest['mission']['outcome'] not in ('RUNNING', 'SUCCESS', 'CRASH'):
+            failure = latest['mission']['outcome']  # e.g. GEOFENCE, SPIN, TILT
         outcome = ('CANCELLED' if cancelled else 'PREMATURE_LANDING' if premature else 'POST_LANDING_FAILURE' if landed and not settled_after_shutdown
-                   else 'LANDED' if landed else 'CRASHED' if bool(terminated[0]) else 'TIMEOUT')
+                   else 'LANDED' if landed else failure if bool(terminated[0]) else 'TIMEOUT')
         summary = dict(outcome=outcome, success=success, duration_s=latest['t'], frames=frames,
                        landing_duration_s=landing_frame['t'] if landing_frame else None,
                        landing_event_success=landing_event_success,
@@ -273,7 +461,7 @@ def main():
                        flight_energy_wh=(landing_frame['battery']['energy_wh'] if landing_frame and landing_frame['battery'] else None),
                        propulsive_delta_v_m_s=cumulative_delta_v,
                        flight_rotation=env._rotation.record(),
-                       mission=env._navigation.record() if env._navigation else None,
+                       mission=flight_record(env) if flight else env._navigation.record() if env._navigation else None,
                        impact_speed=latest['impact_speed'], pad_distance=latest['pad_distance'], battery=latest['battery'])
         atomic_json(output / 'summary.json', summary)
         update(state='cancelled' if cancelled else 'complete', phase=outcome, frames=frames,

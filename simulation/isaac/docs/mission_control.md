@@ -139,6 +139,12 @@ links; the export refuses to write if any link's mesh bounds differ from
 bottom-view labels. Regenerate after a CAD change with
 `blender -b "CAD/EDF Drone v1/Blender/usd_v2.blend" --python simulation/isaac/mission_control/export_visual_model.py`.
 Camera images use Three.js/WebGL; they are **not Isaac RTX renders**.
+The CAD fan blades and spinner rotate together about the EDF shaft using
+recorded `rotor_rpm`, including spool-up and motor-off coast-down. Blade
+animation is slowed **200×** to keep rotation visible at display frame rates;
+the RPM readout remains the actual recorded speed. Phase follows mission time,
+so pausing freezes the fan and seeking, playback speed and video export stay
+synchronized. This is a visual child of Body, not a new physics link.
 The ground presentation and thrust arrow are visual overlays. Physics, contact,
 fin articulation and trajectory all come from Isaac, not browser animation rules.
 
@@ -147,6 +153,63 @@ Keep the tab visible while it records. Each run stores request, source hashes,
 checkpoint hash, resolved physics parameters, frames, outcome and video in
 `simulation/isaac/runs/mission_control/<mission id>/`. JSON telemetry is also
 downloadable. `landing.webm` is a replay visualization, not camera sensor data.
+
+## Convex (SOCP) guidance controller (2026-09-25)
+
+**CONVEX · SOCP powered-descent guidance** is a third controller choice. It
+is a deterministic classical controller with no checkpoint.
+
+- **Planning.** A second-order cone program (Açıkmeşe & Ploen 2007, lossless
+  convexification) plans a minimum-energy thrust trajectory to the pad. It
+  flies waypoint routes too: fly-through and timed hover points.
+- **Constraints.** Thrust bounds, a 15° tilt cone, a 45° glide slope,
+  4 m/s speed and the flight computer's thrust-rate bound.
+- **Closed loop.** The plan is re-solved every 0.5 s from the measured
+  state. A tracking loop and a geometric attitude loop fly it, ending in a
+  velocity-commanded terminal descent. The planned thrust is continuous
+  (first-order hold). The attitude loop pre-compensates the vane servos' 1°
+  deadband, which had kept every flight in a ~1 Hz, 3° coning wobble.
+- **Flight page.** The Convex optimization panel compares the recorded plan
+  with the flown ground track, altitude and thrust. It shows planned energy,
+  time to gate, tracking error, solve time, relaxation gap and instantaneous
+  thrust headroom (available minus commanded). Previous/next-plan buttons
+  seek to recorded replans. The camera's PLAN OVERVIEW frames the trajectory
+  with vehicle, reference and endpoint markers; VEHICLE restores the close-up.
+  Green denotes the plan, white the flight so far, and blue the reference.
+  Fallback plans appear amber, and terminal descent labels the retained plan
+  as historical. The amber thrust line is the current available thrust, not
+  an optimization bound; those bounds were not recorded. Planned thrust is
+  the optimizer's slack sigma. Guidance events remain on the timeline, with
+  PLAN and COMMAND traces on the key-channel charts. Older recordings without
+  guidance hide the optimization panel.
+  Four diagnostic cards add solve-time bars with fallback markers and recent
+  plan seek buttons, tracking-error history with sample RMS and peak, battery
+  energy consumed alongside discrete per-plan energy costs, and thrust reserve
+  history with a command/available gauge. All histories and statistics stop at
+  the selected replay time and reset on backward seeks. Plan energy costs cover
+  different horizons and are neither added together nor treated as cumulative
+  consumption. Missing battery data and delta-v objectives do not fabricate
+  energy values. Solver bars represent recorded plans, not unrecorded failed
+  attempts or internal convergence iterations.
+- **Requirements.** The Clarabel solver from `requirements.txt`. Waypoint
+  missions also need the LiPo model enabled.
+- **Vane physics.** The launch form's VANE PHYSICS selector (request field
+  `vane_model`) picks the plant for PID and convex missions:
+  - *Momentum-bounded jet* is the default: the coupled-jet model the
+    waypoint_flight PPO trains on.
+  - *Legacy airfoils + damper* has 8.5× too much vane torque per degree; it
+    is kept to reproduce missions flown before 2026-09-25.
+
+  PPO missions always fly their training plant. On momentum vanes, start
+  with the rotor at hover: a cold in-air spool-up spins the body.
+
+Convex missions raise the landing task's 30 m altitude fail-stop to 105 m,
+so starts up to the planner's 100 m ceiling are flyable. On 2026-09-25 it
+landed the default mission (18 m, cold rotor) at 0.146 m/s, 0.08 m from
+centre, with 1.7°/s roll/pitch RMS. The PID baseline hit at 1.50 m/s.
+Formulation, the plant identification behind every gain, the wobble
+diagnosis and the full validation table are in
+`docs/convex_guidance_2026-09-25.md`.
 
 ## Hardware provenance
 
