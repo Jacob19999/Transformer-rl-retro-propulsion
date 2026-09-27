@@ -88,6 +88,7 @@
 <label>HARDWARE PROFILE<select id="hardware_profile"><option value="planned_8s">Planned 8S / 48 N estimate</option><option value="legacy_6s">Legacy 6S / 39.2 N estimate</option></select></label>
 <div class="pair"><label>SEED<input id="seed" type="number" min="0" max="2147483647" step="1" value="2026" required></label><label>DURATION / s<input id="duration_s" type="number" min="1" max="600" value="120" required></label></div>
 <label class="check fast-live"><input id="fast_live" type="checkbox" checked> FAST LIVE · fewer headless redraws, full physics and telemetry</label>
+<label class="check fast-live"><input id="cpu_physics" type="checkbox"> CPU PHYSX · single vehicle, same step, solver and telemetry</label>
 </div>
 <div class="plan-cards">
 <details id="initialState" class="setup-detail"><summary><strong>Initial state</strong><span>Position, velocity, attitude &amp; rotor</span></summary><div class="card-body"><div id="vectors" class="vector-grid"></div>

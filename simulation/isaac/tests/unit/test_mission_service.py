@@ -326,3 +326,11 @@ def test_missions_fly_the_training_plant_without_pid_or_legacy_vanes(tmp_path, m
                                                             'dynamics': dynamics}))
         (tmp_path / 'request.json').write_text(json.dumps({'name': 'old'}))
         assert server.recorded_request(tmp_path)['vane_model'] == expected
+
+
+def test_cpu_physics_is_an_explicit_opt_in():
+    import pytest
+    assert validate_mission({})['cpu_physics'] is False
+    assert validate_mission({'cpu_physics': True})['cpu_physics'] is True
+    with pytest.raises(ValueError, match='CPU physics'):
+        validate_mission({'cpu_physics': 'yes'})

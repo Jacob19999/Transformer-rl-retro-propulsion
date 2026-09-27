@@ -566,7 +566,7 @@ function fillMissionForm(request){
   for(const key of ['capacity_ah','c_rating','max_current_a'])$(key).value=request.battery[key];
   $('initial_soc').value=request.battery.initial_soc*100;$('cell_resistance_ohm').value=request.battery.cell_resistance_ohm*1000;
   text('packLabel',request.hardware_profile==='planned_8s'?'8S / ESTIMATED':'6S / ESTIMATED');
-  $('fast_live').checked=request.fast_live??true;
+  $('fast_live').checked=request.fast_live??true;$('cpu_physics').checked=request.cpu_physics??false;
   planner.setPads(request.pads);planner.setWaypoints(request.waypoints??[]);optimizer.set(request.convex_settings);syncGuidance();checklist.update();updateLaunchSummary();
 }
 // Route fields only: loading a flight plan keeps the chosen guidance and environment.
@@ -584,7 +584,7 @@ function missionRequest(){
   for(const key of ['position','velocity','attitude_deg','angular_rate_deg_s'])result[key]=[0,1,2].map(i=>Number($(`${key}_${i}`).value));
   result.initial_motor_fraction=Number($('initial_motor_fraction').value)/100;
   result.waypoints=planner.getWaypoints();
-  result.pads=planner.getPads();result.convex_settings=result.controller==='convex'?optimizer.get():{};result.fast_live=$('fast_live').checked;
+  result.pads=planner.getPads();result.convex_settings=result.controller==='convex'?optimizer.get():{};result.fast_live=$('fast_live').checked;result.cpu_physics=$('cpu_physics').checked;
   result.battery={enabled:$('battery_enabled').checked};for(const key of ['capacity_ah','c_rating','max_current_a'])result.battery[key]=Number($(key).value);
   result.battery.initial_soc=Number($('initial_soc').value)/100;result.battery.cell_resistance_ohm=Number($('cell_resistance_ohm').value)/1000;return result;
 }

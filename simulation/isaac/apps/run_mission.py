@@ -145,7 +145,9 @@ def main():
     env = app = convex = None
     try:
         from isaac_launcher import launch_simulation_app, close_simulation_app
-        app = launch_simulation_app(headless=True)
+        # CPU PhysX runs the same scene description; Kit must not reserve a
+        # GPU physics pipeline for it.
+        app = launch_simulation_app(headless=True, **(dict(device='cpu') if request['cpu_physics'] else {}))
         import torch
         from tvc_env.envs.base_env import BaseEnvConfig
         from tvc_env.envs.direct_rl_env import TVCDirectRLEnv
@@ -207,6 +209,14 @@ def main():
             # always replay their own training plant (above).
             from tvc_env.envs.task_registry import deep_merge
             overrides = deep_merge(overrides, vane_model_overrides(request))
+        if request['cpu_physics']:
+            # One articulation: the GPU pipeline spends a live mission's wall
+            # time on kernel launches and host syncs at every 480 Hz substep.
+            # CPU PhysX keeps the step size, TGS solver, iteration counts and
+            # contact offsets; only the device changes (results are not
+            # bit-identical to GPU PhysX, notably contact generation).
+            from tvc_env.envs.task_registry import deep_merge
+            overrides = deep_merge(overrides, dict(physics=dict(device='cpu')))
         torch.manual_seed(request['seed'])
         if flight:
             config = BaseEnvConfig(task_name='waypoint_flight', sim_root=ROOT, overrides=overrides)
@@ -296,6 +306,7 @@ def main():
             convex.reset()
         metadata = dict(schema_version=2, request=request, policy=policy_meta, dt=dt,
                         live_execution=dict(fast_live=request['fast_live'], telemetry_stride=1,
+                                            physics_device=str(device),
                                             headless_render_wall_interval_s=.25 if request['fast_live'] else None),
                         physics_dt=config.physics_dt, decimation=config.decimation,
                         hinge_layout='radial_span_v1',
@@ -344,32 +355,54 @@ def main():
             def capture(t, action, rate):
                 nonlocal frames, latest
                 state = env._build_vehicle_state()
-                def vec(x):
-                    return x[0].detach().cpu().tolist()
                 art = env._drone.data
                 ids = env._art_map.fin_body_indices
                 debug = env._last_dynamics_debug if hasattr(env, '_last_dynamics_debug') else {}
-                raw = float(env._edf_model.compute_thrust(state.motor_omega)[0])
-                applied = float(debug['edf_applied_thrust_N'][0]) if debug else raw
+                raw = env._edf_model.compute_thrust(state.motor_omega)[0]
                 if flight and env._pending_actions is not None:
                     # Record what the flight computer commanded: integrated
                     # throttle duty and vane targets after the yaw damper.
                     action = env._pending_actions
-                battery = {k: v[0].item() for k, v in env._battery_model.telemetry().items()} if env._battery_model else None
-                frame = dict(t=t, control_phase=control_phase, position=vec(state.position), quaternion=vec(state.quaternion_wxyz),
-                             velocity=vec(state.linear_vel_world), gyro=vec(state.angular_vel_frd),
+                battery = env._battery_model.telemetry() if env._battery_model else {}
+                # Env 0's telemetry in one device-to-host copy instead of one
+                # sync per field. float64 holds every float32/integer value
+                # exactly; each field gets its own Python type back (battery
+                # cutoff flags stay booleans), so frames.jsonl is unchanged.
+                fields = dict(position=state.position[0], quaternion=state.quaternion_wxyz[0],
+                              velocity=state.linear_vel_world[0], gyro=state.angular_vel_frd[0],
+                              fin_angles=state.fin_angles[0], fin_rates=state.fin_rates[0],
+                              fin_commands=action[0, :4], fin_command_rates=rate[0],
+                              fin_positions=art.body_pos_w[0, ids], fin_quaternions=art.body_quat_w[0, ids],
+                              throttle=action[0, 4], motor_omega=state.motor_omega[0],
+                              thrust_n=debug['edf_applied_thrust_N'][0] if debug else raw, raw_thrust_n=raw,
+                              contact=state.contact_state[0], impact_speed=env._touchdown_speed[0],
+                              pad_distance=(state.position[0, :2] - env._target_position[0, :2]).norm(),
+                              contact_force_n=env._landing_contact_force_step[0],
+                              **{f'battery.{k}': v[0] for k, v in battery.items()})
+                flat = torch.cat([v.detach().reshape(-1).to(device, torch.float64) for v in fields.values()]).cpu().tolist()
+                host = {}
+                for key, value in fields.items():
+                    count = value.numel()
+                    cast = (bool if value.dtype == torch.bool else float if value.is_floating_point() else int)
+                    chunk, flat = [cast(x) for x in flat[:count]], flat[count:]
+                    host[key] = (chunk[0] if value.dim() == 0 else
+                                 [chunk[i:i + value.shape[-1]] for i in range(0, count, value.shape[-1])]
+                                 if value.dim() == 2 else chunk)
+                frame = dict(t=t, control_phase=control_phase, position=host['position'], quaternion=host['quaternion'],
+                             velocity=host['velocity'], gyro=host['gyro'],
                              # The state the controller acted on: what the IMU and
                              # position sensor reported, sensor noise included.
                              # Equal to the PhysX state when noise is off.
                              imu=imu_record(env.sensor_measurement, vec),
-                             fin_angles=vec(state.fin_angles), fin_rates=vec(state.fin_rates),
-                             fin_commands=vec(action[:, :4]), fin_command_rates=vec(rate),
-                             fin_positions=vec(art.body_pos_w[:, ids]), fin_quaternions=vec(art.body_quat_w[:, ids]),
-                             throttle=float(action[0, 4]), rotor_rpm=float(state.motor_omega[0]) * 60 / (2 * math.pi),
-                             thrust_n=applied, raw_thrust_n=raw, battery=battery,
-                             contact=int(state.contact_state[0]), impact_speed=float(env._touchdown_speed[0]),
-                             pad_distance=float((state.position[0, :2] - env._target_position[0, :2]).norm()),
-                             contact_force_n=float(env._landing_contact_force_step[0]),
+                             fin_angles=host['fin_angles'], fin_rates=host['fin_rates'],
+                             fin_commands=host['fin_commands'], fin_command_rates=host['fin_command_rates'],
+                             fin_positions=host['fin_positions'], fin_quaternions=host['fin_quaternions'],
+                             throttle=host['throttle'], rotor_rpm=host['motor_omega'] * 60 / (2 * math.pi),
+                             thrust_n=host['thrust_n'], raw_thrust_n=host['raw_thrust_n'],
+                             battery={k: host[f'battery.{k}'] for k in battery} if env._battery_model else None,
+                             contact=int(host['contact']), impact_speed=host['impact_speed'],
+                             pad_distance=host['pad_distance'],
+                             contact_force_n=host['contact_force_n'],
                              propulsive_delta_v_m_s=cumulative_delta_v,
                              rotation=env._rotation.record(),
                              mission=(flight_record(env) if flight else
