@@ -33,7 +33,7 @@ PAD_SEPARATION_M = 3.   # pad markings are 2.5 m across
 # 10 simulated minutes: the 8S 5 Ah pack hovers for roughly 6 minutes, so
 # the battery, not the clock, bounds the longest flights.
 MAX_DURATION_S = 600.
-DEFAULTS = dict(name='Landing test', controller='convex', seed=2026, duration_s=120., fast_live=True,
+DEFAULTS = dict(name='Landing test', controller='convex', seed=2026, duration_s=120., fast_live=True, cpu_physics=False,
                 hardware_profile='planned_8s', vane_model='momentum',
                 position=[-.28, .82, 18.], velocity=[0., 0., -1.],
                 attitude_deg=[0., 0., 0.], angular_rate_deg_s=[0., 0., 0.],
@@ -155,6 +155,8 @@ def validate_mission(value):
     result['duration_s'] = finite(result['duration_s'], 1, MAX_DURATION_S, 'Duration')
     if not isinstance(result['fast_live'], bool):
         raise ValueError('Fast live must be a boolean')
+    if not isinstance(result['cpu_physics'], bool):
+        raise ValueError('CPU physics must be a boolean')
     for key, limits in [('position', [(-100, 100), (-100, 100), (.34, 100)]),
                         ('velocity', [(-20, 20)] * 3), ('attitude_deg', [(-180, 180)] * 3),
                         ('angular_rate_deg_s', [(-720, 720)] * 3)]:
