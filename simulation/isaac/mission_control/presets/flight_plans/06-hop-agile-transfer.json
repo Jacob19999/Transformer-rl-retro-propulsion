@@ -1,0 +1,138 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "sample": {
+    "category": "hop",
+    "summary": "Fast diagonal transfer at up to 4 m/s using the wide tilt cone, landing on a far pad.",
+    "profile": "hop-agile",
+    "profile_name": "Hop - agile wide tilt"
+  },
+  "mission": {
+    "name": "Hop 6 m - agile 16 m transfer",
+    "controller": "convex",
+    "seed": 2026,
+    "duration_s": 90.0,
+    "fast_live": true,
+    "hardware_profile": "planned_8s",
+    "vane_model": "momentum",
+    "position": [
+      0.0,
+      0.0,
+      0.34
+    ],
+    "velocity": [
+      0.0,
+      0.0,
+      -1.0
+    ],
+    "attitude_deg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_motor_fraction": 0.0,
+    "disturbance": [],
+    "disturbance_settings": {},
+    "pads": [
+      {
+        "name": "Launch",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Far pad",
+        "position": [
+          15.0,
+          5.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          0.0,
+          0.0,
+          6.0
+        ],
+        "type": "takeoff",
+        "name": "Climb",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 1.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          7.5,
+          2.5,
+          7.0
+        ],
+        "type": "flypass",
+        "name": "Dash",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 4.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          15.0,
+          5.0,
+          6.0
+        ],
+        "type": "hover",
+        "name": "Over far pad",
+        "hold_s": 1.0,
+        "radius_m": 0.5,
+        "speed_m_s": 3.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          15.0,
+          5.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "Touchdown",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 0.15,
+        "corridor_m": null,
+        "pad": 1,
+        "approach_speed_m_s": 2.0
+      }
+    ],
+    "convex_settings": {
+      "guidance": {
+        "route_corridor_mode": "soft",
+        "route_corridor_m": 1.5,
+        "route_corridor_weight": 10.0,
+        "max_speed_m_s": 5.0,
+        "max_tilt_deg": 20.0,
+        "route_dt_s": 0.3
+      },
+      "tracking": {
+        "max_tilt_deg": 28.0,
+        "max_correction_m_s2": 3.5
+      }
+    },
+    "battery": {
+      "enabled": true,
+      "capacity_ah": 5.0,
+      "c_rating": 45.0,
+      "initial_soc": 1.0,
+      "cell_resistance_ohm": 0.003,
+      "max_current_a": 120.0
+    }
+  }
+}

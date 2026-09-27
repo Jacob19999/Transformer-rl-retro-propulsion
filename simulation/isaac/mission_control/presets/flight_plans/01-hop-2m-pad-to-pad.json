@@ -1,0 +1,123 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "sample": {
+    "category": "hop",
+    "summary": "Lift to 2 m, translate 4 m and land on the neighbouring pad. The smallest useful hop.",
+    "profile": "hop-gentle",
+    "profile_name": "Hop - gentle low tilt"
+  },
+  "mission": {
+    "name": "Hop 2 m - pad to pad",
+    "controller": "convex",
+    "seed": 2026,
+    "duration_s": 60.0,
+    "fast_live": true,
+    "hardware_profile": "planned_8s",
+    "vane_model": "momentum",
+    "position": [
+      0.0,
+      0.0,
+      0.34
+    ],
+    "velocity": [
+      0.0,
+      0.0,
+      -1.0
+    ],
+    "attitude_deg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_motor_fraction": 0.0,
+    "disturbance": [],
+    "disturbance_settings": {},
+    "pads": [
+      {
+        "name": "Launch",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "East pad",
+        "position": [
+          4.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          0.0,
+          0.0,
+          2.0
+        ],
+        "type": "takeoff",
+        "name": "Lift-off",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 0.8,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          4.0,
+          0.0,
+          2.0
+        ],
+        "type": "hover",
+        "name": "Over East pad",
+        "hold_s": 1.0,
+        "radius_m": 0.5,
+        "speed_m_s": 1.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          4.0,
+          0.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "Touchdown",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 0.15,
+        "corridor_m": null,
+        "pad": 1,
+        "approach_speed_m_s": null
+      }
+    ],
+    "convex_settings": {
+      "guidance": {
+        "route_corridor_mode": "soft",
+        "route_corridor_m": 1.0,
+        "route_corridor_weight": 25.0,
+        "max_speed_m_s": 2.0,
+        "max_tilt_deg": 8.0
+      },
+      "tracking": {
+        "max_tilt_deg": 16.0
+      }
+    },
+    "battery": {
+      "enabled": true,
+      "capacity_ah": 5.0,
+      "c_rating": 45.0,
+      "initial_soc": 1.0,
+      "cell_resistance_ohm": 0.003,
+      "max_current_a": 120.0
+    }
+  }
+}

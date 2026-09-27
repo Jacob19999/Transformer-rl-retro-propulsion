@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {convexCaptureStatus,normalizeWaypoints,parseFlightPlan,serializeFlightPlan,waypointLabel,escapeHtml,sampleRouteLegs} from './flight-plan.js';
+import {convexCaptureStatus,normalizeWaypoints,parseFlightPlan,serializeFlightPlan,waypointLabel,escapeHtml,sampleRouteLegs,routeProfile} from './flight-plan.js';
 import {samplePlannerSpline} from './planner.js';
 import * as THREE from 'three';
 import {axisDragPlane,editableAxes} from './planner-3d.js';
@@ -82,4 +82,12 @@ test('convex capture diagnostics distinguish distance, speed and continuous dwel
   assert.match(convexCaptureStatus(frame),/^Hold counting/);
   frame.mission.ready_to_land=true;assert.equal(convexCaptureStatus(frame),'');
   frame.mission.ready_to_land=false;frame.guidance=null;assert.equal(convexCaptureStatus(frame),'');
+});
+
+test('route profile measures distance along the legs and marks each leg end',()=>{
+  const profile=routeProfile([[[0,0,0],[0,0,4]],[[0,0,4],[3,0,8]]]);
+  assert.equal(profile.distance,9);
+  assert.deepEqual(profile.ends,[[4,4],[9,8]]);
+  assert.deepEqual(profile.points,[[0,0],[4,4],[9,8]]);
+  assert.deepEqual(routeProfile([]),{points:[],ends:[],distance:0});
 });

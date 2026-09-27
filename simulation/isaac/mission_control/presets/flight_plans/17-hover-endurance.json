@@ -1,0 +1,118 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "sample": {
+    "category": "hover",
+    "summary": "Low 60 s hold with the energy objective; watch state of charge and pack temperature.",
+    "profile": "hover-endurance",
+    "profile_name": "Hover - endurance efficient"
+  },
+  "mission": {
+    "name": "Hover 4 m - 60 s endurance hold",
+    "controller": "convex",
+    "seed": 2026,
+    "duration_s": 150.0,
+    "fast_live": true,
+    "hardware_profile": "planned_8s",
+    "vane_model": "momentum",
+    "position": [
+      0.0,
+      0.0,
+      0.34
+    ],
+    "velocity": [
+      0.0,
+      0.0,
+      -1.0
+    ],
+    "attitude_deg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_motor_fraction": 0.0,
+    "disturbance": [],
+    "disturbance_settings": {},
+    "pads": [
+      {
+        "name": "Home pad",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          0.0,
+          0.0,
+          4.0
+        ],
+        "type": "takeoff",
+        "name": "Climb",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 1.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          4.0
+        ],
+        "type": "hover",
+        "name": "Endurance hold",
+        "hold_s": 60.0,
+        "radius_m": 0.75,
+        "speed_m_s": 1.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "Touchdown",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 0.15,
+        "corridor_m": null,
+        "pad": 0,
+        "approach_speed_m_s": null
+      }
+    ],
+    "convex_settings": {
+      "guidance": {
+        "objective": "energy",
+        "route_corridor_mode": "soft",
+        "route_corridor_m": 2.0,
+        "route_corridor_weight": 5.0,
+        "max_speed_m_s": 2.0,
+        "max_tilt_deg": 10.0,
+        "solver_workers": 2,
+        "replan_period_s": 0.75
+      },
+      "tracking": {
+        "max_tilt_deg": 18.0
+      }
+    },
+    "battery": {
+      "enabled": true,
+      "capacity_ah": 5.0,
+      "c_rating": 45.0,
+      "initial_soc": 1.0,
+      "cell_resistance_ohm": 0.003,
+      "max_current_a": 120.0
+    }
+  }
+}

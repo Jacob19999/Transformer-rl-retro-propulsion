@@ -60,6 +60,23 @@ export function sampleRouteLegs(start,waypoints,pad=[0,0,0],{convex=false}={}){
   });
 }
 
+export const categoryNames={hop:'HOP',land:'LANDING',hover:'HOVER'};
+
+// Altitude against 3D distance flown along sampled route legs (the altitude
+// profile and sample thumbnails). `ends` holds each leg's final point.
+export function routeProfile(legs){
+  const points=[],ends=[];let distance=0,previous=null;
+  for(const leg of legs){
+    for(const p of leg){
+      if(previous)distance+=Math.hypot(p[0]-previous[0],p[1]-previous[1],p[2]-previous[2]);
+      if(!previous||p!==leg[0])points.push([distance,p[2]]);
+      previous=p;
+    }
+    if(leg.length)ends.push([distance,leg.at(-1)[2]]);
+  }
+  return {points,ends,distance};
+}
+
 // Mirror the classical mission sequencer's stop gates using recorded physical
 // states, not the noisy controller observation or distance to the route curve.
 export function convexCaptureStatus(frame){

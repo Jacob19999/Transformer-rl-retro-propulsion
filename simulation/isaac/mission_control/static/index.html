@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>EDF Mission Control</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/style.css?v=mission-layout-20260927"><link rel="stylesheet" href="/static/fin-labels.css"><link rel="stylesheet" href="/static/planner-workspace.css"></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>EDF Mission Control</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/style.css?v=mission-layout-20260927"><link rel="stylesheet" href="/static/fin-labels.css"><link rel="stylesheet" href="/static/planner-workspace.css?v=mission-layout-20260927"></head>
 <body>
 <header class="topbar">
   <a class="brand" href="#flight">EDF<span>/</span>MISSION CONTROL</a>
@@ -64,30 +64,36 @@
 
 <!-- 02 / MISSION PLAN: configure and launch the next run -->
 <section id="page-plan" class="page" role="tabpanel" aria-label="Mission plan" hidden>
-<div class="plan-heading"><div><div class="eyebrow">02 / MISSION DESIGN</div><h1>Mission plan</h1><p>Configure the vehicle, build your route and define the guidance envelope.</p></div><nav class="plan-jumps" aria-label="Mission plan sections"><a href="#missionPlanner"><span>01</span> ROUTE</a><a href="#launchSetup"><span>02</span> SETUP</a><a href="#plannerDisturbances"><span>03</span> ENVIRONMENT</a><a href="#optimizerSettings"><span>04</span> GUIDANCE</a></nav></div>
+<div class="plan-heading"><div><div class="eyebrow">02 / MISSION DESIGN</div><h1>Mission plan</h1><p>Build or load a route, choose a guidance profile and environment, then launch.</p></div><nav class="plan-jumps" aria-label="Mission plan sections"><a href="#missionPlanner"><span>01</span> ROUTE</a><a href="#optimizerSettings"><span>02</span> GUIDANCE</a><a href="#plannerDisturbances"><span>03</span> ENVIRONMENT</a><a href="#launchSetup"><span>04</span> VEHICLE &amp; LAUNCH</a></nav></div>
 <form id="missionForm" class="plan-grid" inert aria-busy="true">
-<div id="missionPlanner" class="planner panel"></div>
-<div id="launchSetup" class="panel launch-card"><div class="panel-title">LAUNCH <span>NEXT ISAAC RUN</span></div><div class="card-body">
+<div id="missionPlanner" class="planner panel design-section"></div>
+<details id="optimizerSettings" class="panel optimizer-settings design-section config-fold" open></details>
+<details id="plannerDisturbances" class="panel planner-disturbances design-section config-fold" open></details>
+<section id="launchSetup" class="panel launch-card design-section" aria-labelledby="launchTitle">
+<header class="section-head"><span class="section-index">04</span><div class="section-title"><h2 id="launchTitle">Vehicle &amp; launch</h2><p>Run identity, hardware profile, start state and battery.</p></div></header>
+<div class="launch-fields">
 <label>MISSION NAME<input id="name" maxlength="80" value="8S landing test" required></label>
 <label>CONTROLLER<select id="controller"><option value="convex">CONVEX · SOCP powered-descent guidance</option></select></label>
 <label>HARDWARE PROFILE<select id="hardware_profile"><option value="planned_8s">Planned 8S / 48 N estimate</option><option value="legacy_6s">Legacy 6S / 39.2 N estimate</option></select></label>
 <div class="pair"><label>SEED<input id="seed" type="number" min="0" max="2147483647" step="1" value="2026" required></label><label>DURATION / s<input id="duration_s" type="number" min="1" max="600" value="120" required></label></div>
-<label class="hint"><input id="fast_live" type="checkbox" checked> FAST LIVE · fewer headless redraws, full physics and telemetry</label>
-<button id="run" class="primary" type="submit">RUN ISAAC SIMULATION <span>↗</span></button>
-<div id="launchMessage" class="hint" role="status">Launching opens the Flight page with live telemetry.</div>
-</div></div>
+<label class="check fast-live"><input id="fast_live" type="checkbox" checked> FAST LIVE · fewer headless redraws, full physics and telemetry</label>
+</div>
 <div class="plan-cards">
-<details class="panel setup-detail"><summary><strong>Initial state</strong><span>Position, velocity, attitude & rotor</span></summary><div class="card-body"><div id="vectors" class="vector-grid"></div>
+<details id="initialState" class="setup-detail"><summary><strong>Initial state</strong><span>Position, velocity, attitude &amp; rotor</span></summary><div class="card-body"><div id="vectors" class="vector-grid"></div>
 <label>INITIAL ROTOR / %<input id="initial_motor_fraction" type="number" min="0" max="100" step="1" value="0" required></label></div></details>
-<details class="panel setup-detail"><summary><strong>LiPo pack</strong><span id="packLabel">8S / ESTIMATED</span></summary><div class="card-body">
+<details class="setup-detail"><summary><strong>LiPo pack</strong><span id="packLabel">8S / ESTIMATED</span></summary><div class="card-body">
 <label class="check"><input id="battery_enabled" type="checkbox" checked> Couple voltage / power to EDF</label>
 <div class="pair"><label>CAPACITY / Ah<input id="capacity_ah" type="number" min="0.5" max="20" step="0.1" value="5" required></label><label>C RATING<input id="c_rating" type="number" min="1" max="150" value="45" required></label></div>
 <div class="pair"><label>CHARGE / %<input id="initial_soc" type="number" min="0" max="100" value="100" required></label><label>R / CELL / mΩ<input id="cell_resistance_ohm" type="number" min="0.1" max="50" step="0.1" value="3" required></label></div>
 <label>CURRENT LIMIT / A<input id="max_current_a" type="number" min="5" max="120" value="120" required></label>
 <div class="hint">Capacity changes electrical endurance. Assembly mass remains 3.104 kg; pack mass is pending.</div></div></details>
 </div>
-<details id="plannerDisturbances" class="panel planner-disturbances config-fold"></details>
-<details id="optimizerSettings" class="panel optimizer-settings config-fold"></details>
+</section>
+<div class="launch-bar" role="region" aria-label="Launch">
+<dl id="launchSummary" class="launch-summary"></dl>
+<div id="launchMessage" class="hint" role="status">Launching opens the Flight page with live telemetry.</div>
+<button id="run" class="primary" type="submit">RUN ISAAC SIMULATION <span>↗</span></button>
+</div>
 </form>
 </section>
 

@@ -1,0 +1,74 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "sample": {
+    "category": "land",
+    "summary": "14 m horizontal offset at 30 m with a drifting 3 m/s sink; rotor near hover.",
+    "profile": "land-high-altitude",
+    "profile_name": "Landing - high altitude fast"
+  },
+  "mission": {
+    "name": "Landing 30 m - offset high altitude",
+    "controller": "convex",
+    "seed": 2026,
+    "duration_s": 120.0,
+    "fast_live": true,
+    "hardware_profile": "planned_8s",
+    "vane_model": "momentum",
+    "position": [
+      -12.0,
+      8.0,
+      30.0
+    ],
+    "velocity": [
+      1.5,
+      -1.0,
+      -3.0
+    ],
+    "attitude_deg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_motor_fraction": 0.84,
+    "disturbance": [],
+    "disturbance_settings": {},
+    "pads": [
+      {
+        "name": "Home pad",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [],
+    "convex_settings": {
+      "guidance": {
+        "route_corridor_mode": "soft",
+        "route_corridor_m": 1.5,
+        "max_speed_m_s": 6.0,
+        "glide_slope_final_s": 4.0,
+        "landing_nodes": 32,
+        "max_leg_nodes": 50,
+        "max_solve_time_s": 0.6,
+        "replan_period_s": 0.6,
+        "freeze_time_s": 1.0
+      }
+    },
+    "battery": {
+      "enabled": true,
+      "capacity_ah": 5.0,
+      "c_rating": 45.0,
+      "initial_soc": 1.0,
+      "cell_resistance_ohm": 0.003,
+      "max_current_a": 120.0
+    }
+  }
+}
