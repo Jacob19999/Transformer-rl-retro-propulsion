@@ -15,9 +15,10 @@ const essentials=[
 const essentialLabels={'guidance.route_corridor_mode':'Corridor enforcement','guidance.route_corridor_m':'Corridor half-width','guidance.max_tilt_deg':'Planned tilt limit',
   'tracking.max_tilt_deg':'Feedback tilt limit','guidance.max_speed_m_s':'Speed limit','guidance.glide_slope_deg':'Landing glide slope','guidance.objective':'Cost'};
 
-export function createOptimizerSettings(root,{api,onChange}){
-  let schema=[],overrides={},profiles=[],presets=[],active='Route corridor',filter='all',lastApplied=null;
+export function createOptimizerSettings(root,{api,onChange,useConvex}){
+  let schema=[],overrides={},profiles=[],presets=[],active='Route corridor',filter='all',lastApplied=null,inUse=true;
   root.innerHTML=`<summary class="config-summary section-head"><span class="section-index">02</span><div class="section-title"><h2>Guidance</h2><p>Convex optimizer profile: corridor, tilt, speed and landing envelope.</p></div><span id="optimizerSummary" class="summary-chips"></span><span class="fold-chevron" aria-hidden="true"></span></summary><div class="config-body">
+    <div class="guidance-inactive" role="status" hidden><span></span><button type="button" class="use-convex">Switch to convex guidance</button></div>
     <section class="preset-panel" aria-labelledby="presetTitle"><div class="block-head"><div><h3 id="presetTitle">Mission profile</h3><p>Pick the profile that matches the mission. Applying one replaces every optimizer override; tune afterwards below.</p></div><div class="segmented" role="group" aria-label="Filter profiles">${[['all','All'],['hop','Hopping'],['hover','Hovering'],['land','Landing'],['saved','My profiles']].map(([key,name])=>`<button type="button" data-preset-filter="${key}" aria-pressed="${key==='all'}">${name}</button>`).join('')}</div></div>
       <div id="presetCards" class="preset-cards" role="list"></div><div id="presetDetail" class="preset-detail"></div>
       <div class="optimizer-profiles"><div class="optimizer-profile-load"><label for="optimizerProfile">My saved profiles</label><div><select id="optimizerProfile"><option value="">Choose profile</option></select><button type="button" id="loadOptimizer" disabled>Load</button></div></div><div class="optimizer-profile-save"><label for="optimizerName">Save current settings as</label><div><input id="optimizerName" maxlength="48" placeholder="My guidance settings"><button type="button" id="saveOptimizer">Save profile</button></div></div></div></section>
@@ -58,7 +59,7 @@ export function createOptimizerSettings(root,{api,onChange}){
   function describe(){const count=schema.filter(changed).length,match=matching();return {count,name:match?.name??(count?'Custom':'Repository defaults'),builtin:!!match?.builtin};}
   function update(){
     const {count,name}=describe(),g=key=>value(find('guidance',key)??{default:undefined});
-    root.querySelector('#optimizerSummary').innerHTML=schema.length?chip(name,'profile','chip-strong')+chip(String(g('route_corridor_mode')).toUpperCase(),'corridor',g('route_corridor_mode')==='strict'?'chip-strict':'')+chip(`${g('max_tilt_deg')}°`,'tilt')+chip(`${g('max_speed_m_s')} m/s`,'speed'):'';
+    root.querySelector('#optimizerSummary').innerHTML=(inUse?'':chip('Not used','by this controller','chip-strict'))+(schema.length?chip(name,'profile','chip-strong')+chip(String(g('route_corridor_mode')).toUpperCase(),'corridor',g('route_corridor_mode')==='strict'?'chip-strict':'')+chip(`${g('max_tilt_deg')}°`,'tilt')+chip(`${g('max_speed_m_s')} m/s`,'speed'):'');
     root.querySelector('#advancedSummary').textContent=`${schema.length} parameters · ${count?`${count} adjusted`:'repository defaults'}`;
     groups().forEach((group,i)=>{
       const parameters=schema.filter(p=>p.group===group),adjusted=parameters.filter(changed).length;
@@ -132,6 +133,12 @@ export function createOptimizerSettings(root,{api,onChange}){
   root.querySelector('#saveOptimizer').onclick=async()=>{try{const invalid=root.querySelector('.config-body :invalid');if(invalid){const panel=invalid.closest('[role="tabpanel"]');if(panel)select(panel.dataset.group);invalid.reportValidity();return;}const p=await api('/api/convex-profiles',{name:root.querySelector('#optimizerName').value,settings:overrides});await refresh();message.textContent=`Saved ${p.name} on this computer.`;}catch(e){message.textContent=e.message;}};
   root.querySelector('#resetOptimizer').onclick=()=>{overrides={};lastApplied=null;draw();onChange?.();message.textContent='Repository defaults restored.';};
   function applyPreset(id){const p=presets.find(x=>x.id===id);if(!p)return false;overrides=structuredClone(p.settings);lastApplied=p;draw();onChange?.();message.textContent=`Applied ${p.name}. Every other parameter is at its repository default.`;return true;}
-  return {applyPreset,configure:value=>{schema=value;draw();refresh().catch(e=>{message.textContent=e.message;});api('/api/convex-presets').then(value=>{presets=value;update();}).catch(()=>{presets=[];update();});},
+  // Guidance stays on the page for every controller; only convex guidance flies it.
+  const notice=root.querySelector('.guidance-inactive');
+  notice.querySelector('.use-convex').onclick=()=>useConvex?.();
+  function setInUse(value,controller='',canSwitch=true){inUse=value;root.classList.toggle('is-inactive',!value);notice.hidden=value;
+    notice.querySelector('span').textContent=`These settings apply only to convex guidance. The selected controller (${controller}) does not use them, so they are not sent with the run; they are kept for when you switch back.`;
+    notice.querySelector('.use-convex').hidden=!canSwitch;update();}
+  return {applyPreset,setInUse,configure:value=>{schema=value;draw();refresh().catch(e=>{message.textContent=e.message;});api('/api/convex-presets').then(value=>{presets=value;update();}).catch(()=>{presets=[];update();});},
     get:()=>structuredClone(overrides),set:value=>{overrides=structuredClone(value??{});lastApplied=null;message.textContent='';draw();onChange?.();},describe};
 }

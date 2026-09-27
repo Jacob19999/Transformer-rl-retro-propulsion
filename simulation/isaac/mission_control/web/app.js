@@ -90,7 +90,10 @@ function routeCheck(waypoints=planner.getWaypoints()){
   if(key!==routeCheckKey){routeCheckKey=key;routeCheckValue=checkRoute(initial,waypoints,vehicle,rotor);}
   return routeCheckValue;
 }
-const optimizer=createOptimizerSettings($('optimizerSettings'),{api,onChange:()=>{planner.refresh();renderBoard();updateLaunchSummary();}});
+const optimizer=createOptimizerSettings($('optimizerSettings'),{api,onChange:()=>{planner.refresh();renderBoard();updateLaunchSummary();},
+  useConvex:()=>{$('controller').value='convex';$('controller').onchange();$('optimizerSettings').scrollIntoView({behavior:'smooth',block:'start'});}});
+// Section 02 is never hidden: a controller that does not use it shows why, with a switch to convex guidance.
+function syncGuidance(){const controller=$('controller'),convex=controller.value==='convex';optimizer.setInUse(convex,controller.selectedOptions[0]?.textContent??controller.value,[...controller.options].some(o=>o.value==='convex'));}
 let disturbances;
 const planner=createMissionPlanner($('missionPlanner'),{readInitial:readPlannerInitial,
   api,
@@ -520,7 +523,7 @@ function fillMissionForm(request){
   $('initial_soc').value=request.battery.initial_soc*100;$('cell_resistance_ohm').value=request.battery.cell_resistance_ohm*1000;
   text('packLabel',request.hardware_profile==='planned_8s'?'8S / ESTIMATED':'6S / ESTIMATED');
   $('fast_live').checked=request.fast_live??true;$('cpu_physics').checked=request.cpu_physics??false;
-  planner.setPads(request.pads);planner.setWaypoints(request.waypoints??[]);optimizer.set(request.convex_settings);checklist.update();updateLaunchSummary();
+  planner.setPads(request.pads);planner.setWaypoints(request.waypoints??[]);optimizer.set(request.convex_settings);syncGuidance();checklist.update();updateLaunchSummary();
 }
 // Route fields only: loading a flight plan keeps the chosen guidance and environment.
 function fillRoute(route){
@@ -547,7 +550,7 @@ $('history').onchange=()=>{if($('history').value)selectMission($('history').valu
 $('play').onclick=()=>{if(!state.frames.length)return;state.live=false;if(state.time>=state.frames.at(-1).t)state.time=0;state.playing=!state.playing;};
 $('timeline').oninput=()=>{state.live=false;state.playing=false;state.time=Number($('timeline').value);};
 $('live').onclick=()=>{state.live=true;state.playing=false;state.time=state.frames.at(-1)?.t??0;};
-$('controller').onchange=()=>{planner.refresh();$('optimizerSettings').hidden=$('controller').value!=='convex';renderBoard();updateLaunchSummary();};
+$('controller').onchange=()=>{planner.refresh();syncGuidance();renderBoard();updateLaunchSummary();};
 $('hardware_profile').onchange=()=>text('packLabel',$('hardware_profile').value==='planned_8s'?'8S / ESTIMATED':'6S / ESTIMATED');
 $('hardwareButton').onclick=()=>$('hardwareDialog').showModal();$('closeHardware').onclick=()=>$('hardwareDialog').close();
 document.addEventListener('keydown',e=>{
@@ -629,7 +632,7 @@ try{
   config=await api('/api/config');updateTraining(config);text('hardwareStatus',config.hardware.status);
   optimizer.configure(config.convex_parameters??[]);
   disturbances.configure(config.disturbance_defaults??{});
-  $('controller').replaceChildren(...Object.entries(config.policies).map(([key,name])=>new Option(name,key)));$('controller').value=config.defaults.controller;$('optimizerSettings').hidden=$('controller').value!=='convex';planner.draw();checklist.update();updateLaunchSummary();
+  $('controller').replaceChildren(...Object.entries(config.policies).map(([key,name])=>new Option(name,key)));$('controller').value=config.defaults.controller;syncGuidance();planner.draw();checklist.update();updateLaunchSummary();
   for(const part of config.hardware.parts){const el=document.createElement('div');el.className='hardware-part';const heading=document.createElement('h3');heading.textContent=part.part;const body=document.createElement('div');const name=document.createElement('strong');name.textContent=part.name;const spec=document.createElement('p');spec.textContent=part.spec;const basis=document.createElement('p');basis.textContent=part.basis;body.append(name,spec,basis);if(part.source){const a=document.createElement('a');a.href=part.source;a.target='_blank';a.rel='noreferrer';a.textContent='MANUFACTURER SOURCE ↗';body.append(a);}el.append(heading,body);$('hardwareParts').append(el);}
   if(page==='models')pageShown.models();
   const missions=await refreshHistory(),requested=new URLSearchParams(location.search).get('mission');const selected=requested??config.active??missions.find(m=>m.hinge_layout==='radial_span_v1'&&m.summary?.success)?.id??missions.find(m=>m.hinge_layout==='radial_span_v1'&&m.state==='complete')?.id??missions.find(m=>m.state==='complete')?.id;
