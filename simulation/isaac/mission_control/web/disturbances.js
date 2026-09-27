@@ -1,18 +1,34 @@
 import {escapeHtml} from './flight-plan.js';
 
 const noiseFields=[['position_std','Position','m',.5,.001],['velocity_std','Velocity','m/s',2,.01],['attitude_std','Attitude','rad',.1,.001],['angular_velocity_std','Body rate','rad/s',1,.01]];
-export function createDisturbanceEditor(root,{onChange,summary}){
+export function createDisturbanceEditor(root,{onChange}){
   let base={},settings={},ready=false;
   const controls=(path,label,unit,min,max,step,factor=1)=>`<label class="disturbance-control"><span>${label}<small>${unit}</small></span><div><input type="range" data-path="${path}" data-factor="${factor}" min="${min}" max="${max}" step="${step}" aria-label="${label} slider"><input type="number" data-path="${path}" data-factor="${factor}" min="${min}" max="${max}" step="any" required aria-label="${label}"></div></label>`;
   const title=(key,name,detail)=>`<div class="disturbance-card-heading"><label><input type="checkbox" name="disturbance" value="${key}"> ${name}</label><span>${detail}</span></div>`;
-  root.innerHTML=`<div class="disturbance-heading"><div><div class="eyebrow">MISSION ENVIRONMENT</div><h3>Design your disturbances</h3><p>Set the airflow, measurement uncertainty and mass offset for this flight.</p></div><button type="button" class="reset-disturbances">RESET PARAMETERS</button></div>
-    <div class="disturbance-cards">
+  root.innerHTML=`<summary class="config-summary"><strong>Disturbances</strong><span id="disturbanceSummary" class="disturbance-summary">Calm air · no sensor noise or COM offset</span></summary><div class="config-body"><div class="disturbance-heading"><div><p>Set the airflow, measurement uncertainty and mass offset for this flight.</p></div><button type="button" class="reset-disturbances">RESET PARAMETERS</button></div>
+    <div class="environment-tabs" role="tablist" aria-label="Disturbance source"></div><div class="disturbance-cards">
       <section class="disturbance-card" data-source="wind">${title('wind','Wind + gusts','WORLD XYZ · Z UP')}<div class="wind-design"><svg class="wind-compass" viewBox="0 0 240 240" role="img" aria-label="Wind vector editor; drag to set horizontal speed and direction"><circle cx="120" cy="120" r="88"/><circle cx="120" cy="120" r="44" class="compass-inner"/><path d="M25 120 H215 M120 25 V215"/><text x="195" y="112">+X</text><text x="129" y="32">+Y</text><text x="28" y="112">−X</text><text x="129" y="212">−Y</text><path class="wind-arrow"/><circle class="wind-tip" r="6"/><circle cx="120" cy="120" r="3" class="wind-origin"/></svg><div><div class="wind-readout"></div><p>Drag the arrow tip.<br>Direction is where air travels, measured from +X toward +Y.</p><span class="wind-vector"></span></div></div>
       ${controls('windSpeed','Horizontal speed','m/s',0,15,.05)}${controls('windHeading','Flow direction','°',0,360,.1)}${controls('wind.steady_vector.2','Vertical airflow','m/s · +up',-15,15,.05)}
-      <details class="gust-controls" open><summary>Random horizontal gusts</summary>${controls('gust.magnitude','Gust magnitude','m/s',0,15,.1)}${controls('gust.duration','Gust duration','s',.05,10,.05)}<div class="disturbance-pair">${controls('gust.interval.0','Minimum wait','s',.1,120,.1)}${controls('gust.interval.1','Maximum wait','s',.1,120,.1)}</div><p class="hint">Random direction per gust; wait is sampled between gusts. Seed controls the random realization.</p></details></section>
+      <details class="gust-controls"><summary>Random horizontal gusts</summary>${controls('gust.magnitude','Gust magnitude','m/s',0,15,.1)}${controls('gust.duration','Gust duration','s',.05,10,.05)}<div class="disturbance-pair">${controls('gust.interval.0','Minimum wait','s',.1,120,.1)}${controls('gust.interval.1','Maximum wait','s',.1,120,.1)}</div><p class="hint">Random direction per gust; wait is sampled between gusts. Seed controls the random realization.</p></details></section>
       <section class="disturbance-card" data-source="sensor_noise">${title('sensor_noise','Sensor noise','GAUSSIAN · 1σ')}<div class="disturbance-illustration noise-visual"></div><p class="disturbance-description">Independent observation noise. Each slider sets one standard deviation; physical states are unchanged.</p>${noiseFields.map(([key,label,unit,max,step])=>controls(`sensor_noise.${key}`,`${label} noise`,unit,0,max,step)).join('')}</section>
       <section class="disturbance-card" data-source="com_shift">${title('com_shift','Center of mass','BODY FRD · mm')}<div class="disturbance-illustration com-visual"></div><p class="disturbance-description">Offset sampled uniformly at reset within this box. Body X forward, Y right, Z down; equal bounds fix an axis.</p>${['X','Y','Z'].map((axis,i)=>`<div class="com-axis"><b>${axis} OFFSET</b><div class="disturbance-pair">${controls(`com_offset.range.0.${i}`,`${axis} minimum`,'mm',-50,50,.1,1000)}${controls(`com_offset.range.1.${i}`,`${axis} maximum`,'mm',-50,50,.1,1000)}</div></div>`).join('')}</section>
-    </div><p class="hint disturbance-note">Enable each source to apply it. Visuals show configured vectors and distributions, not a forecast of the sampled run.</p>`;
+    </div><p class="hint disturbance-note">Enable each source to apply it. Visuals show configured vectors and distributions, not a forecast of the sampled run.</p></div>`;
+  const summary=root.querySelector('#disturbanceSummary');
+  const sources=[['wind','Wind + gusts','Airflow in world XYZ'],['sensor_noise','Sensor noise','Measurement uncertainty'],['com_shift','Center of mass','Body-frame offset']];
+  let activeSource='wind';
+  const tabs=root.querySelector('.environment-tabs');
+  tabs.innerHTML=sources.map(([key,name,detail])=>`<button type="button" role="tab" id="environment-tab-${key}" aria-controls="environment-panel-${key}" data-source-tab="${key}"><b>${name}</b><small>${detail}</small><span class="source-state"></span></button>`).join('');
+  function selectSource(key,focus=false){
+    activeSource=key;
+    tabs.querySelectorAll('button').forEach(button=>{const active=button.dataset.sourceTab===key;button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;if(active&&focus)button.focus();});
+    root.querySelectorAll('.disturbance-card').forEach(panel=>{panel.hidden=panel.dataset.source!==key;});
+  }
+  sources.forEach(([key])=>{const panel=root.querySelector(`[data-source="${key}"]`);panel.id=`environment-panel-${key}`;panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby',`environment-tab-${key}`);});
+  tabs.querySelectorAll('button').forEach(button=>{
+    button.onclick=()=>selectSource(button.dataset.sourceTab);
+    button.onkeydown=e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();e.stopPropagation();const i=sources.findIndex(([key])=>key===activeSource);selectSource(sources[e.key==='Home'?0:e.key==='End'?2:(i+(e.key==='ArrowLeft'?2:1))%3][0],true);};
+  });
+  selectSource(activeSource);
   const input=path=>root.querySelector(`input[type=number][data-path="${path}"]`);
   function readPath(path){return path.split('.').reduce((v,k)=>v?.[k],settings);}
   function setPath(path,value){const keys=path.split('.'),last=keys.pop();keys.reduce((v,k)=>v[k],settings)[last]=value;}
@@ -29,6 +45,7 @@ export function createDisturbanceEditor(root,{onChange,summary}){
     const chosen=[...root.querySelectorAll('input[name=disturbance]:checked')].map(el=>el.value);
     root.querySelectorAll('[data-source]').forEach(el=>el.classList.toggle('is-active',chosen.includes(el.dataset.source)));
     summary.textContent=chosen.length?chosen.map(k=>({wind:'Wind + gusts',sensor_noise:'Sensor noise',com_shift:'COM offset'}[k])).join(' · '):'Calm air · no sensor noise or COM offset';
+    tabs.querySelectorAll('button').forEach(button=>{button.querySelector('.source-state').textContent=chosen.includes(button.dataset.sourceTab)?'Enabled':'Off';});
     if(!ready)return;
     const [x,y,z]=settings.wind.steady_vector,w=wind(),cx=120+x/15*88,cy=120-y/15*88;
     root.querySelector('.wind-arrow').setAttribute('d',`M120 120 L${cx} ${cy}`);root.querySelector('.wind-tip').setAttribute('cx',cx);root.querySelector('.wind-tip').setAttribute('cy',cy);
@@ -49,7 +66,7 @@ export function createDisturbanceEditor(root,{onChange,summary}){
     root.querySelectorAll(`[data-path="${path}"]`).forEach(peer=>{if(peer!==el)peer.value=v;});draw();onChange?.();
   });
   root.querySelectorAll('input[name=disturbance]').forEach(el=>el.onchange=()=>{draw();onChange?.();});
-  root.addEventListener('invalid',e=>{const details=e.target.closest('details');if(details)details.open=true;},true);
+  root.addEventListener('invalid',e=>{const panel=e.target.closest('[data-source]');if(panel)selectSource(panel.dataset.source);const details=e.target.closest('details');if(details)details.open=true;},true);
   const compass=root.querySelector('.wind-compass');let dragging=false;
   function drag(e){if(!ready)return;const rect=compass.getBoundingClientRect(),scale=Math.min(rect.width,rect.height)/240;let x=(e.clientX-rect.left-rect.width/2)/scale/88*15,y=-(e.clientY-rect.top-rect.height/2)/scale/88*15;const length=Math.hypot(x,y);if(length>15){x*=15/length;y*=15/length;}settings.wind.steady_vector[0]=x;settings.wind.steady_vector[1]=y;sync();draw();onChange?.();}
   compass.onpointerdown=e=>{if(e.button!==0)return;dragging=true;compass.setPointerCapture(e.pointerId);drag(e);};compass.onpointermove=e=>{if(dragging)drag(e);};compass.onpointerup=compass.onpointercancel=compass.onlostpointercapture=()=>{dragging=false;};

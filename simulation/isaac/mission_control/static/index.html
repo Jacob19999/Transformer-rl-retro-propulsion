@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>EDF Mission Control</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/style.css?v=mission-layout-20260927"><link rel="stylesheet" href="/static/fin-labels.css"></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>EDF Mission Control</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/style.css?v=mission-layout-20260927"><link rel="stylesheet" href="/static/fin-labels.css"><link rel="stylesheet" href="/static/planner-workspace.css"></head>
 <body>
 <header class="topbar">
   <a class="brand" href="#flight">EDF<span>/</span>MISSION CONTROL</a>
@@ -64,8 +64,9 @@
 
 <!-- 02 / MISSION PLAN: configure and launch the next run -->
 <section id="page-plan" class="page" role="tabpanel" aria-label="Mission plan" hidden>
-<div class="plan-heading"><div><div class="eyebrow">02 / MISSION DESIGN</div><h1>Mission plan</h1><p>Configure the vehicle, build your route and define the guidance envelope.</p></div><nav class="plan-jumps" aria-label="Mission plan sections"><a href="#launchSetup"><span>01</span> SETUP</a><a href="#missionPlanner"><span>02</span> ROUTE</a><a href="#optimizerSettings"><span>03</span> OPTIMIZER</a></nav></div>
+<div class="plan-heading"><div><div class="eyebrow">02 / MISSION DESIGN</div><h1>Mission plan</h1><p>Configure the vehicle, build your route and define the guidance envelope.</p></div><nav class="plan-jumps" aria-label="Mission plan sections"><a href="#missionPlanner"><span>01</span> ROUTE</a><a href="#launchSetup"><span>02</span> SETUP</a><a href="#plannerDisturbances"><span>03</span> ENVIRONMENT</a><a href="#optimizerSettings"><span>04</span> GUIDANCE</a></nav></div>
 <form id="missionForm" class="plan-grid" inert aria-busy="true">
+<div id="missionPlanner" class="planner panel"></div>
 <div id="launchSetup" class="panel launch-card"><div class="panel-title">LAUNCH <span>NEXT ISAAC RUN</span></div><div class="card-body">
 <label>MISSION NAME<input id="name" maxlength="80" value="8S landing test" required></label>
 <label>CONTROLLER<select id="controller"><option value="convex">CONVEX · SOCP powered-descent guidance</option></select></label>
@@ -76,21 +77,17 @@
 <div id="launchMessage" class="hint" role="status">Launching opens the Flight page with live telemetry.</div>
 </div></div>
 <div class="plan-cards">
-<div class="panel"><div class="panel-title">INITIAL STATE <span>WORLD / Z UP</span></div><div class="card-body"><div id="vectors" class="vector-grid"></div>
-<label>INITIAL ROTOR / %<input id="initial_motor_fraction" type="number" min="0" max="100" step="1" value="0" required></label></div></div>
-<div class="panel"><div class="panel-title">DISTURBANCES <span>COMBINE ANY</span></div><div class="card-body">
-<p id="disturbanceSummary" class="disturbance-summary">Calm air · no sensor noise or COM offset</p>
-<button type="button" id="editDisturbances">DESIGN DISTURBANCES ↓</button>
-<p class="hint">Customize the environment visually below the route preview. Settings are saved with the flight plan.</p></div></div>
-<div class="panel"><div class="panel-title">LIPO PACK <span id="packLabel">8S / ESTIMATED</span></div><div class="card-body">
+<details class="panel setup-detail"><summary><strong>Initial state</strong><span>Position, velocity, attitude & rotor</span></summary><div class="card-body"><div id="vectors" class="vector-grid"></div>
+<label>INITIAL ROTOR / %<input id="initial_motor_fraction" type="number" min="0" max="100" step="1" value="0" required></label></div></details>
+<details class="panel setup-detail"><summary><strong>LiPo pack</strong><span id="packLabel">8S / ESTIMATED</span></summary><div class="card-body">
 <label class="check"><input id="battery_enabled" type="checkbox" checked> Couple voltage / power to EDF</label>
 <div class="pair"><label>CAPACITY / Ah<input id="capacity_ah" type="number" min="0.5" max="20" step="0.1" value="5" required></label><label>C RATING<input id="c_rating" type="number" min="1" max="150" value="45" required></label></div>
 <div class="pair"><label>CHARGE / %<input id="initial_soc" type="number" min="0" max="100" value="100" required></label><label>R / CELL / mΩ<input id="cell_resistance_ohm" type="number" min="0.1" max="50" step="0.1" value="3" required></label></div>
 <label>CURRENT LIMIT / A<input id="max_current_a" type="number" min="5" max="120" value="120" required></label>
-<div class="hint">Capacity changes electrical endurance. Assembly mass remains 3.104 kg; pack mass is pending.</div></div></div>
+<div class="hint">Capacity changes electrical endurance. Assembly mass remains 3.104 kg; pack mass is pending.</div></div></details>
 </div>
-<div id="missionPlanner" class="planner panel"></div>
-<section id="optimizerSettings" class="panel optimizer-settings"></section>
+<details id="plannerDisturbances" class="panel planner-disturbances config-fold"></details>
+<details id="optimizerSettings" class="panel optimizer-settings config-fold"></details>
 </form>
 </section>
 

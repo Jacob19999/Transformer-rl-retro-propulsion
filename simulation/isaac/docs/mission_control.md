@@ -11,6 +11,13 @@ this machine.
 
 ## Advanced flight plans
 
+The route scene now sits beside a selectable flight sequence. Expand one step
+to edit it and see its arrival conditions. Environment controls have a separate
+section with Wind, Sensor noise and Center of mass tabs; optimizer profiles
+are under **Saved profiles & repository defaults**. See the
+[2026-09-27 verification](waypoint_planner_2026-09-27.md) for the fix to repeated
+replans postponing waypoint arrival, two successful Isaac replays and screenshots.
+
 Choose **Convex** on **Mission plan**, then add, name, drag, edit and reorder
 up to 12 steps. Click a marker in the 3D editor to show its red **X**, green
 **Y** and blue **Z** arrows; drag an arrow to move along that axis alone.

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {normalizeWaypoints,parseFlightPlan,serializeFlightPlan,waypointLabel,escapeHtml,sampleRouteLegs} from './flight-plan.js';
+import {convexCaptureStatus,normalizeWaypoints,parseFlightPlan,serializeFlightPlan,waypointLabel,escapeHtml,sampleRouteLegs} from './flight-plan.js';
 import {samplePlannerSpline} from './planner.js';
 import * as THREE from 'three';
 import {axisDragPlane,editableAxes} from './planner-3d.js';
@@ -70,4 +70,16 @@ test('convex display clamps corridor floor and direct plans target the selected 
   assert.ok(legs[1].every(p=>p[2]>=4.5));
   const direct=sampleRouteLegs([0,0,5],[],[20,0,0],{convex:true});
   assert.deepEqual(direct[0][24],[10,0,2.5]);
+});
+
+
+test('convex capture diagnostics distinguish distance, speed and continuous dwell',()=>{
+  const frame={position:[0,0,7],velocity:[0,0,0],guidance:{},mission:{waypoint_index:0,waypoints:[{type:'hover',position:[0,0,5],radius_m:1}]}};
+  assert.match(convexCaptureStatus(frame),/^Outside capture radius/);
+  frame.position=[0,0,5];frame.velocity=[.5,0,0];
+  assert.match(convexCaptureStatus(frame),/^Slowing for capture/);
+  frame.velocity=[0,0,0];
+  assert.match(convexCaptureStatus(frame),/^Hold counting/);
+  frame.mission.ready_to_land=true;assert.equal(convexCaptureStatus(frame),'');
+  frame.mission.ready_to_land=false;frame.guidance=null;assert.equal(convexCaptureStatus(frame),'');
 });

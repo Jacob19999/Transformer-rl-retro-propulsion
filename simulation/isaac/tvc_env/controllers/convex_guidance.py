@@ -244,6 +244,13 @@ def curve_fraction(curve: np.ndarray, points) -> np.ndarray:
     return (arc[j] + alpha[np.arange(len(points)), j] * np.sqrt(lengths2[j])) / max(arc[-1], 1e-12)
 
 
+def remaining_curve_distance(curve: np.ndarray, start) -> float:
+    """Distance to rejoin the curve plus its unflown arc, for leg timing only."""
+    fraction = float(curve_fraction(curve, start)[0])
+    nearest, _ = curve_point(curve, fraction)
+    return float(np.linalg.norm(np.asarray(start) - nearest) + (1.0 - fraction) * _arc(curve)[-1])
+
+
 def catmull_rom_leg(points, leg: int, samples: int = 49) -> np.ndarray:
     """Leg `leg` (points[leg] -> points[leg + 1]) of the route the mission
     sequencer and launch planner draw: a uniform Catmull-Rom spline with the
@@ -465,7 +472,11 @@ class ConvexGuidance:
                 curves[i] = np.linspace(curves[i][0], target, 49)
             distance = float(np.linalg.norm(target - start))
             if curves[i] is not None:
-                distance = max(distance, float(_arc(curves[i])[-1]))
+                # Mission 8243dfb69c0d timed out at waypoint 0: every replan
+                # allocated the full ~100 m incoming arc even beside the hover,
+                # perpetually postponing arrival (~36 s). Time only the unflown
+                # distance, retaining the complete curve for corridor checks.
+                distance = max(distance, remaining_curve_distance(curves[i], start))
             cruise = min(max(float(wp.speed_m_s), 0.1), self.limits.max_speed_m_s)
             if wp.kind in STOP_KINDS:
                 # Rest to rest: trapezoidal speed profile, or bang-bang when
@@ -503,7 +514,7 @@ class ConvexGuidance:
         g = np.asarray(gate.position, dtype=float)
         distance = float(np.linalg.norm(g - start))
         if land_curve is not None:
-            distance = max(distance, float(_arc(land_curve)[-1]))
+            distance = max(distance, remaining_curve_distance(land_curve, start))
         cruise = lim.max_speed_m_s if land_speed is None else land_speed
         speed_cap = max(cruise, float(np.linalg.norm(v0)))
         t_lo = max(0.8, 0.8 * distance / speed_cap)

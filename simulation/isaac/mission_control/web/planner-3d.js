@@ -16,7 +16,7 @@ export function editableAxes(id,waypoints){
   return !w||w.type==='land'?[false,false,false]:['takeoff','descent'].includes(w.type)?[false,false,true]:[true,true,true];
 }
 export function createPlanner3D(host,{read,move,select,context}){
-  host.innerHTML='<canvas tabindex="0" aria-label="3D waypoint editor: click a waypoint, drag its X Y Z arrows; right-click to edit or add a waypoint"></canvas><div class="hint">Click marker: axis arrows · Drag arrow: move along axis · Right-click: edit / add waypoint · Drag empty space: orbit · Right-drag: pan · Wheel: zoom</div><div class="scene-tools"><button type="button" class="fit-route">FIT ROUTE</button><button type="button" class="expand-route">FULL SCREEN</button></div><div class="waypoint-context" role="dialog" aria-label="Waypoint actions" hidden></div>';
+  host.innerHTML='<canvas tabindex="0" aria-label="3D waypoint editor: click a waypoint, drag its X Y Z arrows; right-click to edit or add a waypoint"></canvas><div class="scene-label">3D ROUTE <span>WORLD XYZ · Z UP</span></div><div class="hint scene-instructions">Select a marker to move its X / Y / Z arrows. Drag to orbit · Right-drag to pan · Scroll to zoom.</div><div class="scene-tools"><button type="button" class="fit-route">Fit route</button><button type="button" data-view="top">Top</button><button type="button" data-view="side">Side</button><button type="button" class="expand-route">FULL SCREEN</button></div><div class="waypoint-context" role="dialog" aria-label="Waypoint actions" hidden></div>';
   const canvas=host.querySelector('canvas');
   const renderer=new THREE.WebGLRenderer({canvas,antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.setClearColor('#070c12');
   const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(45,1,.05,1500);camera.up.set(0,0,1);camera.position.set(18,-24,20);
@@ -50,14 +50,15 @@ export function createPlanner3D(host,{read,move,select,context}){
   const ray=new THREE.Raycaster(),pointer=new THREE.Vector2();
   function render(){if(!canvas.clientWidth||!canvas.clientHeight)return;renderer.setSize(canvas.clientWidth,canvas.clientHeight,false);camera.aspect=canvas.clientWidth/canvas.clientHeight;camera.updateProjectionMatrix();updateGizmo();renderer.render(scene,camera);}
   controls.addEventListener('change',render);
-  function label(text,position,color){
-    const c=document.createElement('canvas');c.width=512;c.height=64;const x=c.getContext('2d');
-    x.fillStyle='#07111de6';x.fillRect(0,0,512,64);x.fillStyle=color;x.font='36px sans-serif';x.fillText(text,10,44,492);
+  function label(text,position,color,below=false){
+    const c=document.createElement('canvas'),x=c.getContext('2d');x.font='28px sans-serif';
+    c.width=Math.min(720,Math.ceil(x.measureText(text).width)+24);c.height=48;
+    x.fillStyle='#07111de6';x.fillRect(0,0,c.width,c.height);x.fillStyle=color;x.font='28px sans-serif';x.fillText(text,12,34,c.width-24);
     const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),depthTest:false,sizeAttenuation:false}));
-    sprite.position.copy(position);sprite.center.set(.5,-.3);sprite.scale.set(.38,.0475,1);content.add(sprite);
+    sprite.position.copy(position);sprite.center.set(.5,below?1.7:-.6);sprite.scale.set(.032*c.width/c.height,.032,1);content.add(sprite);
   }
   function handle(position,color,id,title){
-    const mesh=new THREE.Mesh(new THREE.SphereGeometry(.28,16,12),new THREE.MeshBasicMaterial({color,depthTest:false}));mesh.position.set(...position);mesh.userData.id=id;mesh.renderOrder=5;content.add(mesh);handles.push(mesh);label(title,mesh.position,color);
+    const mesh=new THREE.Mesh(new THREE.SphereGeometry(.28,16,12),new THREE.MeshBasicMaterial({color,depthTest:false}));mesh.position.set(...position);mesh.userData.id=id;mesh.renderOrder=5;content.add(mesh);handles.push(mesh);label(title,mesh.position,color,typeof id==='string'&&id.startsWith('pad:'));
   }
   function draw(){
     content.traverse(o=>{o.geometry?.dispose();o.material?.map?.dispose();o.material?.dispose();});scene.remove(content);content=new THREE.Group();scene.add(content);handles=[];
@@ -123,7 +124,8 @@ export function createPlanner3D(host,{read,move,select,context}){
   });
   document.addEventListener('pointerdown',e=>{if(!menu.hidden&&!menu.contains(e.target))closeMenu();},true);
   document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeMenu();end();}});
-  host.querySelector('.fit-route').onclick=fit;
+  host.querySelector('.fit-route').onclick=()=>{camera.up.set(0,0,1);fit();};
+  host.querySelectorAll('[data-view]').forEach(button=>button.onclick=()=>{fit();const distance=camera.position.distanceTo(controls.target);camera.up.set(0,button.dataset.view==='top'?1:0,button.dataset.view==='top'?0:1);camera.position.copy(controls.target).add(button.dataset.view==='top'?new THREE.Vector3(0,0,distance):new THREE.Vector3(0,-distance,0));controls.update();render();});
   host.querySelector('.expand-route').onclick=async()=>{if(document.fullscreenElement===host)await document.exitFullscreen();else await host.requestFullscreen();};
   document.addEventListener('fullscreenchange',()=>{host.querySelector('.expand-route').textContent=document.fullscreenElement===host?'EXIT FULL SCREEN':'FULL SCREEN';render();});
   new ResizeObserver(render).observe(host);draw();fit();

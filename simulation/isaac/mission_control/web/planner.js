@@ -5,15 +5,14 @@ import {createPlanner3D} from './planner-3d.js';
 
 export function createMissionPlanner(root,{readInitial,writeInitial,onChange,overlay,readMission,writeMission,validateMission,api,settings=()=>({}),writeSettings,isConvex=()=>true,readDisturbances=()=>null}){
   let waypoints=[],pads=[{name:'Home pad',position:[0,0,0]}],selected=-1,selectedHandle=null,drag=null,view3d,contextEditor=null;
-  root.innerHTML=`<div class="panel-title">ROUTE PLANNER <span>DRAG START, VELOCITY & WAYPOINTS</span></div>
-    <div class="planner-tools">${Object.entries(waypointTypes).map(([type,name])=>`<button type="button" data-add="${type}">+ ${name.toUpperCase()}</button>`).join('')}<button type="button" id="invertStart">INVERT START</button><label>VIEW RANGE <select id="plannerRange"><option>10</option><option>25</option><option>50</option><option selected>100</option></select> m</label><button type="button" id="savePlan">SAVE PLAN</button><button type="button" id="loadPlan">LOAD PLAN</button><input id="planFile" type="file" accept=".json,application/json" hidden></div>
-    <div id="planner3D" class="planner-3d"></div>
-    <section id="plannerDisturbances" class="planner-disturbances" aria-label="Visual disturbance designer"></section>
-    <details><summary>PRECISION VIEWS · TOP & SIDE</summary><div class="planner-views"><div><b>TOP · X / Y</b><canvas id="planXY" aria-label="Drag start position and waypoints in X Y; drag the arrow to set initial velocity"></canvas></div><div><b>SIDE · X / Z</b><canvas id="planXZ" aria-label="Drag start height and waypoint altitude; drag the arrow to set vertical velocity"></canvas></div></div></details>
-    <div class="hint" id="plannerHint">Takeoff first; landing last on the selected pad. Speed limits each incoming leg; fly-through also sets arrival speed. Blue tubes show corridor half-widths around the convex reference. Optimizer enforcement: soft penalizes excess and permits emergency fallback; strict rejects infeasible corridor plans (see Flight diagnostics). Actual tracking can deviate. Blank widths use the optimizer default. Pads lie on the ground and must be 3 m apart.</div><div class="hint" id="planMessage" role="status"></div><div class="hint" id="plannerCheck"></div><div id="padEditor"></div><button type="button" id="addPad">+ LANDING PAD</button><div id="waypointEditor"></div>`;
-  root.querySelector('#loadPlan').textContent='IMPORT JSON';
-  root.querySelector('.planner-tools').insertAdjacentHTML('beforeend','<button type="button" id="exportPlan">EXPORT JSON</button><label>SAVED PLAN<select id="savedPlan"><option value="">Choose saved plan</option></select></label><button type="button" id="openSavedPlan">LOAD SAVED</button>');
-  root.querySelector('.planner-tools').insertAdjacentHTML('beforeend','<label>Default CORRIDOR / m<input id="defaultCorridor" aria-label="Default CORRIDOR" title="Default corridor half-width in meters. Used by waypoints with a blank corridor." type="number" min=".2" max="25" step="any" required></label>');
+  root.innerHTML=`<div class="route-heading"><div><div class="eyebrow">01 / ROUTE DESIGN</div><h2>Build your flight plan</h2><p>Add a step, select it in the list or scene, then set its position and arrival conditions.</p></div><span id="routeSummary" class="optimizer-summary"></span></div>
+    <div class="plan-library"><label>Saved flight plan<select id="savedPlan"><option value="">Choose saved plan</option></select></label><button type="button" id="openSavedPlan">Load saved</button><button type="button" id="savePlan">Save plan</button><span class="toolbar-spacer"></span><button type="button" id="loadPlan">Import JSON</button><button type="button" id="exportPlan">Export JSON</button><input id="planFile" type="file" accept=".json,application/json" hidden></div>
+    <div class="hint" id="planMessage" role="status"></div>
+    <div class="route-workspace"><div class="route-scene"><div id="planner3D" class="planner-3d"></div><div class="route-legend"><span>◆ Start</span><span>● Waypoint</span><span>▱ Ground pad</span><span>Blue tube · corridor half-width</span></div><div class="hint" id="plannerCheck"></div>
+    <details class="precision-views"><summary>Precision views & start orientation</summary><div class="planner-tools"><label>View range <select id="plannerRange"><option>10</option><option>25</option><option>50</option><option selected>100</option></select> m</label><button type="button" id="invertStart">Invert start</button></div><div class="planner-views"><div><b>TOP · X / Y</b><canvas id="planXY" aria-label="Drag start position and waypoints in X Y; drag the arrow to set initial velocity"></canvas></div><div><b>SIDE · X / Z</b><canvas id="planXZ" aria-label="Drag start height and waypoint altitude; drag the arrow to set vertical velocity"></canvas></div></div></details></div>
+    <aside class="route-sequence" aria-label="Flight sequence"><div class="sequence-heading"><h3>Flight sequence</h3><span>UP TO 12 STEPS</span></div><div class="step-palette">${Object.entries(waypointTypes).map(([type,name])=>`<button type="button" data-add="${type}" style="--step-color:${waypointColors[type]}">+ ${name}</button>`).join('')}</div><div id="waypointEditor"></div><label class="route-corridor">Default corridor half-width / m<input id="defaultCorridor" aria-label="Default CORRIDOR" title="Used by steps with a blank corridor" type="number" min=".2" max="25" step="any" required></label><p class="hint">Each step can override this width. Capture radius controls arrival; corridor width controls the planned path.</p></aside></div>
+    <details class="route-pads"><summary>Landing pads <span>Ground targets · at least 3 m apart</span></summary><div id="padEditor"></div><button type="button" id="addPad">+ Landing pad</button></details>
+    <details class="route-help"><summary>How steps complete & corridor rules</summary><div class="hint" id="plannerHint">Takeoff and descent finish inside the capture radius below 0.4 m/s. Hover requires the full hold continuously inside that radius below 0.4 m/s; leaving either condition resets the timer. Fly-through captures while moving forward through the radius. Landing requires physical contact and settling. Soft corridors penalize excess and permit emergency fallback; strict corridors reject infeasible plans. Actual tracking can deviate.</div></details>`;
   const range=root.querySelector('#plannerRange'),list=root.querySelector('#waypointEditor');
   const canvases=[root.querySelector('#planXY'),root.querySelector('#planXZ')];
   const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
@@ -34,6 +33,7 @@ export function createMissionPlanner(root,{readInitial,writeInitial,onChange,ove
     defaultCorridor.disabled=!isConvex()||!writeSettings;
     if(document.activeElement!==defaultCorridor)defaultCorridor.value=corridor();
     alignVerticalColumns();
+    updateStepSummaries();
     view3d?.draw();
     const initial=readInitial(),check=overlay?.(waypoints);
     // Braking estimate (braking.js): full thrust from the start velocity; the dashed line ends where it stops.
@@ -68,11 +68,38 @@ export function createMissionPlanner(root,{readInitial,writeInitial,onChange,ove
   function changed(){if(!pending)pending=requestAnimationFrame(()=>{pending=0;draw();onChange?.();});}
   // Drags update the dragged row's inputs in place instead of rebuilding the editor.
   function syncRow(i){root.querySelectorAll(`[data-index="${i}"] [data-axis]`).forEach(el=>{el.value=waypoints[i].position[Number(el.dataset.axis)];});}
+  function updateStepSummaries(){
+    root.querySelector('#routeSummary').textContent=`${waypoints.length} / 12 steps · ${pads.length} pad${pads.length===1?'':'s'}`;
+    list.querySelectorAll('[data-select-step]').forEach(button=>{
+      const i=Number(button.dataset.selectStep),wp=waypoints[i];
+      button.innerHTML=`<span class="step-number" style="color:${waypointColors[wp.type]}">${String(i+1).padStart(2,'0')}</span><span><b>${escapeHtml(wp.name||waypointTypes[wp.type])}</b><small>${waypointTypes[wp.type]} · ${wp.position.map(v=>Number(v).toFixed(1)).join(' / ')} m</small></span><span aria-hidden="true">${i===selected?'−':'+'}</span>`;
+      button.setAttribute('aria-expanded',String(i===selected));
+    });
+  }
+  function selectStep(i){
+    selected=i;selectedHandle=i<0?null:i;
+    list.querySelectorAll('[data-index]').forEach(row=>row.classList.toggle('selected',Number(row.dataset.index)===i));
+    updateStepSummaries();view3d?.draw();
+  }
+  list.addEventListener('invalid',e=>{const row=e.target.closest('[data-index]');if(row)selectStep(Number(row.dataset.index));},true);
+  root.addEventListener('invalid',e=>{for(let parent=e.target.parentElement;parent&&parent!==root;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;},true);
   function editList(){
+
     list.innerHTML=waypoints.length?waypoints.map((wp,i)=>`<div class="waypoint-row ${i===selected?'selected':''}" data-index="${i}"><strong style="color:${waypointColors[wp.type]}">${i+1}</strong><label>NAME<input data-key="name" aria-label="Waypoint ${i+1} name" maxlength="40" value="${escapeHtml(wp.name??'')}" placeholder="${waypointTypes[wp.type]}"></label><label>TYPE<select data-key="type" aria-label="Waypoint ${i+1} type">${Object.entries(waypointTypes).map(([type,name])=>`<option value="${type}" ${wp.type===type?'selected':''} ${((type==='takeoff'&&i!==0)||(type==='land'&&i!==waypoints.length-1))?'disabled':''}>${name}</option>`).join('')}</select></label>${['X','Y','Z'].map((name,a)=>`<label>${name} / m<input aria-label="Waypoint ${i+1} ${name}" data-axis="${a}" type="number" min="${a===2?1:-100}" max="100" step="any" value="${wp.position[a]}" ${wp.type==='land'||a<2&&['takeoff','descent'].includes(wp.type)?'disabled':''}></label>`).join('')}<label>HOLD / s<input aria-label="Waypoint ${i+1} hold seconds" data-key="hold_s" type="number" min=".1" max="60" step="any" value="${wp.hold_s}" ${wp.type!=='hover'?'disabled':''}></label><label>RADIUS / m<input aria-label="Waypoint ${i+1} radius" data-key="radius_m" type="number" min=".1" max="10" step="any" value="${wp.radius_m}" ${wp.type==='land'?'disabled':''}></label><label>${speedLabel(wp)} / m/s<input aria-label="Waypoint ${i+1} speed" data-key="speed_m_s" type="number" min=".1" max="${wp.type==='land'?.5:speedLimit()}" step="any" value="${wp.speed_m_s}"></label><label>CORRIDOR / m<input aria-label="Waypoint ${i+1} corridor half-width" data-key="corridor_m" type="number" min=".2" max="25" step="any" placeholder="${corridor()} default" value="${wp.corridor_m??''}" ${isConvex()?'':'disabled'}></label>${wp.type==='land'?`<label>PAD<select data-key="pad" aria-label="Waypoint ${i+1} landing pad">${pads.map((p,j)=>`<option value="${j}" ${(wp.pad??0)===j?'selected':''}>${escapeHtml(p.name)}</option>`).join('')}</select></label><label>APPROACH / m/s<input aria-label="Landing approach speed" data-key="approach_speed_m_s" type="number" min=".3" max="${speedLimit()}" step="any" placeholder="${speedLimit()} default" value="${wp.approach_speed_m_s??''}"></label>`:''}<button type="button" data-down="${i}" aria-label="Move waypoint ${i+1} later" ${i===waypoints.length-1||wp.type==='takeoff'||waypoints[i+1]?.type==='land'?'disabled':''}>↓</button><button type="button" data-up="${i}" aria-label="Move waypoint ${i+1} earlier" ${i===0||wp.type==='land'||waypoints[i-1]?.type==='takeoff'?'disabled':''}>↑</button><button type="button" data-remove="${i}" aria-label="Remove waypoint ${i+1}">×</button></div>`).join(''):'<div class="hint">Direct landing. Add waypoints to create a flight plan. An omitted landing step uses the default 0.15 m/s touchdown on the first pad.</div>';
-    bindRows(list);refreshContextEditor();
+    list.querySelectorAll('.waypoint-row').forEach((row,i)=>{
+      const body=document.createElement('div');body.className='step-fields';body.id=`step-fields-${i}`;
+      body.append(...row.childNodes);body.querySelector('strong')?.remove();
+      const actions=document.createElement('div');actions.className='step-actions';
+      actions.append(...body.querySelectorAll('button'));body.append(actions);
+      const note=document.createElement('p');note.className='step-completion';
+      note.textContent=waypoints[i].type==='hover'?'Arrival: stay inside the capture radius below 0.4 m/s for the full hold. The timer resets if either condition breaks.':waypoints[i].type==='flypass'?'Arrival: pass through the capture radius in the forward direction.':waypoints[i].type==='land'?'Arrival: contact the selected pad and settle. Position follows the pad.':'Arrival: reach the target inside the capture radius below 0.4 m/s. X/Y follow the preceding point.';
+      body.append(note);row.append(body);
+      row.insertAdjacentHTML('afterbegin',`<button type="button" class="step-select" data-select-step="${i}" aria-controls="step-fields-${i}"></button>`);
+    });
+    updateStepSummaries();bindRows(list);refreshContextEditor();
   }
   function bindRows(container){
+    container.querySelectorAll('[data-select-step]').forEach(el=>el.onclick=()=>{const i=Number(el.dataset.selectStep);selectStep(selected===i?-1:i);});
     container.querySelectorAll('input[type="number"]').forEach(el=>{el.required=!['corridor_m','approach_speed_m_s'].includes(el.dataset.key);});
     container.querySelectorAll('input,select').forEach(el=>el.onchange=()=>{if(!el.checkValidity()){el.reportValidity();return;}const row=Number(el.closest('[data-index]').dataset.index),wp=waypoints[row];if(el.dataset.axis!==undefined){const a=Number(el.dataset.axis);wp.position[a]=Number(el.value);}else wp[el.dataset.key]=['type','name'].includes(el.dataset.key)?el.value:el.value===''?null:Number(el.value);
       if(el.dataset.key==='type'){
@@ -95,7 +122,7 @@ export function createMissionPlanner(root,{readInitial,writeInitial,onChange,ove
     if(!contextEditor||contextEditor.menu.hidden)return;
     const row=list.querySelector(`[data-index="${contextEditor.id}"]`);
     if(!row){closeContextEditor();return;}
-    const body=contextEditor.menu.querySelector('.context-fields'),clone=row.cloneNode(true);
+    const body=contextEditor.menu.querySelector('.context-fields'),clone=row.cloneNode(true);clone.querySelector('.step-select')?.remove();clone.querySelector('.step-fields')?.removeAttribute('id');
     const source=row.querySelectorAll('input,select');clone.querySelectorAll('input,select').forEach((el,i)=>{el.value=source[i].value;});
     body.replaceChildren(clone);bindRows(body);
     const wp=waypoints[contextEditor.id];
@@ -176,9 +203,9 @@ export function createMissionPlanner(root,{readInitial,writeInitial,onChange,ove
       else if(typeof id==='string'){const i=Number(id.split(':')[1]);pads[i].position=[position[0],position[1],0];editPads();}
       else{waypoints[id].position=position;syncRow(id);}changed();}
   });
-  root.querySelector('details').addEventListener('toggle',draw);
+  root.querySelector('.precision-views').addEventListener('toggle',draw);
   new ResizeObserver(draw).observe(root);editPads();editList();draw();
-  return {getWaypoints:()=>{alignVerticalColumns();return structuredClone(waypoints);},getPads:()=>structuredClone(pads),setPads:value=>{closeContextEditor();selectedHandle=null;pads=structuredClone(value??[{name:'Home pad',position:[0,0,0]}]);editPads();},refresh:()=>{editList();draw();},setWaypoints:value=>{closeContextEditor();waypoints=normalizeWaypoints(value??[]);selected=-1;selectedHandle=null;editList();changed();requestAnimationFrame(()=>view3d?.fit());},draw};
+  return {getWaypoints:()=>{alignVerticalColumns();return structuredClone(waypoints);},getPads:()=>structuredClone(pads),setPads:value=>{closeContextEditor();selectedHandle=null;pads=structuredClone(value??[{name:'Home pad',position:[0,0,0]}]);editPads();},refresh:()=>{editList();draw();},setWaypoints:value=>{closeContextEditor();waypoints=normalizeWaypoints(value??[]);selected=waypoints.length?0:-1;selectedHandle=waypoints.length?0:null;editList();changed();requestAnimationFrame(()=>view3d?.fit());},draw};
 }
 
 export function samplePlannerSpline(start,waypoints,pad=[0,0,0],options={}){

@@ -59,3 +59,14 @@ export function sampleRouteLegs(start,waypoints,pad=[0,0,0],{convex=false}={}){
     });});
   });
 }
+
+// Mirror the classical mission sequencer's stop gates using recorded physical
+// states, not the noisy controller observation or distance to the route curve.
+export function convexCaptureStatus(frame){
+  const mission=frame?.mission,wp=mission?.waypoints?.[mission.waypoint_index];
+  if(!frame?.guidance||mission?.ready_to_land||!['hover','takeoff','descent'].includes(wp?.type))return '';
+  if(!frame.position?.every(Number.isFinite)||!frame.velocity?.every(Number.isFinite))return '';
+  const distance=Math.hypot(...frame.position.map((v,i)=>v-wp.position[i])),speed=Math.hypot(...frame.velocity);
+  const reason=distance>wp.radius_m?'Outside capture radius':speed>.4?'Slowing for capture':wp.type==='hover'?'Hold counting':'Capture conditions met';
+  return `${reason} · distance ${distance.toFixed(2)} / ${wp.radius_m.toFixed(2)} m · speed ${speed.toFixed(2)} / 0.40 m/s`;
+}

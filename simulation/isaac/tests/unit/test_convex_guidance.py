@@ -727,3 +727,50 @@ def test_replans_hand_over_the_thrust_feedforward_smoothly():
     smooth, _ = jumps(settings()['guidance']['replan_blend_s'])
     assert abrupt > 3. * typical            # re-plans stepped the feedforward
     assert smooth < .4 * abrupt
+
+
+def test_replan_times_only_unflown_arc_and_retains_corridor():
+    guidance = planner()
+    target = np.array([0., 0., 12.3])
+    curve = np.linspace([40., -40., 94.4], target, 49)
+    route = [RouteWaypoint(tuple(target), kind='hover', hold_s=10., speed_m_s=3.)]
+    early = guidance._route_segments(curve[0], np.zeros(3), route, 1., [curve, None])
+    late = guidance._route_segments(target + [0., 0., 1.], np.zeros(3), route, 1., [curve, None])
+    assert early[0].duration > 30.
+    assert late[0].duration < 4.
+    assert late[0].curve is curve  # timing must not shorten the enforced corridor
+    assert late[1].duration == early[1].duration == 10.5
+
+
+@pytest.mark.parametrize('objective', ['energy', 'delta_v'])
+def test_receding_horizon_captures_hover_after_long_incoming_leg(objective):
+    # Regression for mission 8243dfb69c0d: the reference itself hovered outside
+    # capture, despite <0.1 m tracking error. Exercise the actual sequencer.
+    from tvc_env.envs.waypoints import WaypointMission
+    guidance = planner(objective)
+    guidance.corridor_m = 2.
+    target = [-.1, .2, 12.3]
+    points = [[41.4, -39.4, 94.4], target, list(GATE.position)]
+    curves = [catmull_rom_leg(points, i) for i in range(2)]
+    for curve in curves:
+        curve[:, 2] = np.maximum(curve[:, 2], min(curve[0, 2], curve[-1, 2]))
+    config = {'task': {'navigation': {'waypoints': [dict(type='hover', position=target,
+                    radius_m=1., hold_s=2., speed_m_s=3.)]}}}
+    nav = WaypointMission(1, 'cpu', config, torch.zeros(1, 3), torch.zeros(1, 3))
+    r = np.array([-.7, -.7, 14.4]); v = np.zeros(3); thrust = np.array([0., 0., WEIGHT])
+    nav.reset(torch.tensor([0]), torch.tensor([points[0]]))
+    try:
+        for _ in range(40):
+            route = [RouteWaypoint(tuple(target), kind='hover', hold_s=max(0., 2.-float(nav.hold_elapsed[0])), speed_m_s=3.)]
+            plan = guidance.plan(r, v, thrust, GATE, route, path=curves)
+            assert plan is not None and plan.mode == 'optimal'
+            before = torch.tensor(r[None], dtype=torch.float32)
+            r, v, u = plan.sample(.5)
+            thrust = u * MASS
+            nav.advance(before, torch.tensor(r[None], dtype=torch.float32),
+                        torch.tensor(v[None], dtype=torch.float32), .5, torch.tensor([True]))
+            if nav.ready_to_land[0]:
+                break
+        assert nav.ready_to_land[0], 'Repeated replans postponed the hover indefinitely'
+    finally:
+        guidance.close()

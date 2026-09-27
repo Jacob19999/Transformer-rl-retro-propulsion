@@ -5,7 +5,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createMissionPlanner, samplePlannerSpline } from './planner.js';
 import {createOptimizerSettings} from './optimizer-settings.js';
 import {createDisturbanceEditor} from './disturbances.js';
-import {waypointColors,waypointLabel,waypointDetail} from './flight-plan.js';
+import {waypointColors,waypointLabel,waypointDetail,convexCaptureStatus} from './flight-plan.js';
 import { checkRoute } from './braking.js';
 import { attitude, drawAdi, drawWebcast, fitCanvas, series } from './instruments.js';
 import { createCharts } from './charts.js';
@@ -39,7 +39,7 @@ function showPage(name) {
   if (location.hash !== `#${page}`) history.replaceState({}, '', `${location.pathname}${location.search}#${page}`);
 }
 document.querySelectorAll('[data-page]').forEach(tab => tab.onclick = () => showPage(tab.dataset.page));
-document.querySelectorAll('.plan-jumps a').forEach(link=>link.onclick=e=>{e.preventDefault();document.querySelector(link.getAttribute('href'))?.scrollIntoView();});
+document.querySelectorAll('.plan-jumps a').forEach(link=>link.onclick=e=>{e.preventDefault();const target=document.querySelector(link.getAttribute('href'));if(target?.tagName==='DETAILS')target.open=true;target?.scrollIntoView();});
 window.addEventListener('hashchange', () => showPage(location.hash.slice(1)));
 showPage(location.hash.slice(1));
 function trainingSummary(m){
@@ -100,8 +100,9 @@ const planner=createMissionPlanner($('missionPlanner'),{readInitial:readPlannerI
   readMission:missionRequest,writeMission:fillMissionForm,validateMission:request=>api('/api/flight-plan/validate',request),
   writeInitial:initial=>initialKeys.forEach(key=>initial[key].forEach((v,i)=>{$(`${key}_${i}`).value=Math.round(v*100)/100;})),
   onChange:()=>{updatePlannedRoute();renderBoard();},overlay:waypoints=>routeCheck(waypoints)});
-disturbances=createDisturbanceEditor($('plannerDisturbances'),{summary:$('disturbanceSummary'),onChange:()=>{planner.draw();renderBoard();}});
-$('editDisturbances').onclick=()=>$('plannerDisturbances').scrollIntoView();
+disturbances=createDisturbanceEditor($('plannerDisturbances'),{onChange:()=>{planner.draw();renderBoard();}});
+// Expand all enclosing sections before native validation focuses a field.
+$('missionForm').addEventListener('invalid',e=>{for(let parent=e.target.parentElement;parent&&parent!==e.currentTarget;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;},true);
 $('vectors').addEventListener('input',()=>{planner.draw();updatePlannedRoute();renderBoard();});
 for(const id of ['initial_motor_fraction','hardware_profile'])$(id).addEventListener('change',()=>{planner.draw();renderBoard();});
 $('finRows').innerHTML = finNames.map((n,i)=>`<tr><td>${n}</td><td class="defl"><div class="dbar"><i id="fd${i}" style="background:${series[i]}"></i><b id="fdc${i}"></b></div></td><td id="fc${i}">—</td><td id="fa${i}">—</td></tr>`).join('');
@@ -408,7 +409,8 @@ function updateTelemetry() {
   const mission=f.mission,g=f.guidance,guidancePhase=g?.phase?.replaceAll('_',' ');
   const guidanceLine=g?`CONVEX · ${guidancePhase}${g.time_to_go_s!=null?' · gate in '+fmt(g.time_to_go_s,1)+' s':''}${g.solver?` · plan #${g.plan_id} ${g.solver.mode==='soft_terminal'?'SOFT-TERMINAL FALLBACK':(g.solver.status??'status unavailable')} · ${fmt(g.solver.solve_ms,0)} ms / ${g.solver.solves} SOCPs`:''}`:null;
   const phaseLine=mission?mission.ready_to_land?`LAND · ${mission.waypoint_count} waypoints completed · Soft contact required`:`${mission.phase} · Waypoint ${mission.waypoint_index+1}/${mission.waypoint_count} · Cross-track ${fmt(mission.cross_track_error_m,2)} m${mission.phase==='HOVER'?' · Hold '+fmt(mission.hold_elapsed_s,1)+' / '+fmt(mission.waypoints[mission.waypoint_index].hold_s,1)+' s':''}`:guidanceLine??'Waypoint telemetry was not recorded in this replay.';
-  text('waypointStatus',mission&&g?`${phaseLine} · CONVEX ${guidancePhase}`:phaseLine);text('waypointBadge',mission?`${Math.min(mission.waypoint_index,mission.waypoint_count)}/${mission.waypoint_count} CAPTURED`:'');
+  const captureStatus=convexCaptureStatus(f);
+  text('waypointStatus',mission&&g?`${phaseLine} · CONVEX ${guidancePhase}${captureStatus?` · ${captureStatus}`:''}`:phaseLine);text('waypointBadge',mission?`${Math.min(mission.waypoint_index,mission.waypoint_count)}/${mission.waypoint_count} CAPTURED`:'');
   $('phaseTag').hidden=!mission&&!g;if(mission)text('phaseTag',mission.ready_to_land?'LANDING PHASE':`${mission.phase} · WP ${mission.waypoint_index+1}/${mission.waypoint_count}`);else if(g)text('phaseTag',`CONVEX · ${guidancePhase}`);
   const physics=state.metadata?.physics_parameters,maxThrust=physics?.edf?.max_thrust??48,mass=physics?.vehicle?.total_mass??3.104;
   text('thrust',fmt(f.thrust_n,1));text('thrustWeight',`T/W ${fmt(f.thrust_n/(mass*9.81),2)}`);text('throttle',fmt(f.throttle*100,1));text('rpm',fmt(f.rotor_rpm,0));$('thrustBar').style.width=`${Math.min(100,f.thrust_n/maxThrust*100)}%`;
