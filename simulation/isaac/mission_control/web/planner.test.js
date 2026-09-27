@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {convexCaptureStatus,normalizeWaypoints,parseFlightPlan,serializeFlightPlan,waypointLabel,escapeHtml,sampleRouteLegs,routeProfile} from './flight-plan.js';
+import {convexCaptureStatus,normalizeWaypoints,parseFlightPlan,serializeFlightPlan,waypointLabel,escapeHtml,sampleRouteLegs,routeProfile,pickRoute,routeFields,serializeRoute} from './flight-plan.js';
 import {samplePlannerSpline} from './planner.js';
 import * as THREE from 'three';
 import {axisDragPlane,editableAxes} from './planner-3d.js';
@@ -90,4 +90,14 @@ test('route profile measures distance along the legs and marks each leg end',()=
   assert.deepEqual(profile.ends,[[4,4],[9,8]]);
   assert.deepEqual(profile.points,[[0,0],[4,4],[9,8]]);
   assert.deepEqual(routeProfile([]),{points:[],ends:[],distance:0});
+});
+
+test('flight plans carry the route only, never guidance or environment',()=>{
+  const mission={name:'Hop',duration_s:60,position:[0,0,.34],velocity:[0,0,0],attitude_deg:[0,0,0],angular_rate_deg_s:[0,0,0],initial_motor_fraction:0,
+    pads:[{name:'Home pad',position:[0,0,0]}],waypoints:[{type:'takeoff',position:[0,0,3]}],convex_settings:{guidance:{max_tilt_deg:10}},disturbance:['wind'],seed:3};
+  const route=pickRoute(mission);
+  assert.deepEqual(Object.keys(route).sort(),[...routeFields].sort());
+  const file=JSON.parse(serializeRoute(mission));
+  assert.equal(file.scope,'route');assert.equal(file.mission.convex_settings,undefined);assert.equal(file.mission.disturbance,undefined);
+  assert.deepEqual(parseFlightPlan(serializeRoute(mission)).mission,route);
 });

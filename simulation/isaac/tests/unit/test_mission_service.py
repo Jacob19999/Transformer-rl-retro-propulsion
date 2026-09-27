@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 from mission_control import server
+from mission_control.models import validate_mission
 
 
 def test_plan_validation_and_optimizer_profile_api(tmp_path, monkeypatch):
@@ -22,28 +23,48 @@ def test_plan_validation_and_optimizer_profile_api(tmp_path, monkeypatch):
     assert client.post('/api/convex-profiles', json={'name':'Test'}).status_code == 403
 
 
-def test_saved_flight_plan_library_preserves_full_mission(tmp_path, monkeypatch):
+def test_saved_flight_plans_are_route_only_and_independent_of_guidance(tmp_path, monkeypatch):
     from mission_control import flight_plans
     monkeypatch.setattr(flight_plans, 'LIBRARY', tmp_path)
     client = TestClient(server.app)
     request = dict(name='East pad plan', controller='convex', duration_s=600,
                    pads=[dict(name='East', position=[4,0,0])],
-                   waypoints=[dict(type='land', pad=0, corridor_m=1)],
-                   convex_settings={'guidance': {'route_corridor_mode':'strict'}})
+                   waypoints=[dict(type='hover', position=[2,0,3], speed_m_s=6), dict(type='land', pad=0, corridor_m=1)],
+                   convex_settings={'guidance': {'route_corridor_mode':'strict', 'max_speed_m_s': 6}},
+                   disturbance=['wind'], seed=7)
     headers = {'X-Mission-Control':'local'}
     response = client.post('/api/flight-plans', json=request, headers=headers)
     assert response.status_code == 200
     key = response.json()['id']
     assert client.get('/api/flight-plans').json()[0]['id'] == key
     saved = client.get(f'/api/flight-plans/{key}').json()
-    assert saved['version'] == 2
-    assert saved['mission']['convex_settings'] == request['convex_settings']
-    assert saved['mission']['waypoints'][0]['position'] == [4,0,0]
+    assert saved['version'] == 2 and saved['scope'] == 'route'
+    # Guidance, environment and run settings are chosen per run, never stored with the route.
+    assert set(saved['mission']) == set(flight_plans.ROUTE_FIELDS)
+    assert saved['mission']['waypoints'][1]['position'] == [4,0,0]
+    # A 6 m/s step is a valid route; the chosen guidance's speed limit is checked at launch.
+    assert saved['mission']['waypoints'][0]['speed_m_s'] == 6
+    with __import__('pytest').raises(ValueError, match='speed'):
+        validate_mission(dict(saved['mission'], convex_settings={}))
     assert client.post('/api/flight-plans', json={**request,'duration_s':120}, headers=headers).json()['id'] == key
     assert client.get(f'/api/flight-plans/{key}').json()['mission']['duration_s'] == 120
     assert client.get('/api/flight-plans/bad').status_code == 404
     assert client.post('/api/flight-plans', json={'duration_s':601}, headers=headers).status_code == 422
     assert client.post('/api/flight-plans', json=request).status_code == 403
+    route = client.post('/api/flight-plan/route', json=request, headers=headers).json()
+    assert route == saved['mission'] | {'duration_s': 600}
+
+
+def test_plans_saved_before_the_route_split_load_without_their_guidance(tmp_path, monkeypatch):
+    import json
+    from mission_control import flight_plans
+    monkeypatch.setattr(flight_plans, 'LIBRARY', tmp_path)
+    legacy = validate_mission(dict(name='Legacy plan', convex_settings={'guidance': {'max_tilt_deg': 10}},
+                                   disturbance=['sensor_noise'], waypoints=[dict(type='hover', position=[0,0,4])]))
+    (tmp_path / 'plan-legacy-plan-0123456789.json').write_text(json.dumps(dict(format='edf-flight-plan', version=2, mission=legacy)))
+    plan = flight_plans.read_plan('plan-legacy-plan-0123456789')
+    assert set(plan['mission']) == set(flight_plans.ROUTE_FIELDS)
+    assert plan['mission']['waypoints'][0]['position'] == [0,0,4]
 
 
 def test_api_requires_local_write_header_and_rejects_cross_origin():

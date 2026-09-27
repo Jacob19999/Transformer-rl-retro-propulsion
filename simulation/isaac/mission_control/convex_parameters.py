@@ -162,6 +162,12 @@ def resolve(overrides: dict | None) -> dict:
     return settings
 
 
+def bounds(section: str, key: str) -> tuple:
+    """Inclusive (low, high) of one adjustable numeric parameter."""
+    _, _, _, low, high, _, _ = _INDEX[(section, key)]
+    return low, high
+
+
 def max_speed(overrides: dict | None) -> float:
     return float(resolve(overrides)['guidance']['max_speed_m_s'])
 

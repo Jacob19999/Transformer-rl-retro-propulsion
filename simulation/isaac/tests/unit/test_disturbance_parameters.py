@@ -48,7 +48,7 @@ def test_legacy_requests_keep_repository_presets():
             assert resolved[section][key] == value
 
 
-def test_plan_api_round_trips_disturbances(tmp_path, monkeypatch):
+def test_validation_round_trips_disturbances_and_plans_leave_them_out(tmp_path, monkeypatch):
     from mission_control import flight_plans
     monkeypatch.setattr(flight_plans, 'LIBRARY', tmp_path)
     client = TestClient(server.app)
@@ -59,6 +59,8 @@ def test_plan_api_round_trips_disturbances(tmp_path, monkeypatch):
     response = client.post('/api/flight-plan/validate', json=request, headers=headers)
     assert response.status_code == 200
     assert response.json()['disturbance_settings'] == settings
+    # Flight plans are route-only: the environment is chosen per run, never saved with a plan.
     saved = client.post('/api/flight-plans', json=request, headers=headers).json()
-    assert client.get(f'/api/flight-plans/{saved["id"]}').json()['mission']['disturbance_settings'] == settings
+    mission = client.get(f'/api/flight-plans/{saved["id"]}').json()['mission']
+    assert 'disturbance' not in mission and 'disturbance_settings' not in mission
     assert client.get('/api/config').json()['disturbance_defaults'] == defaults()

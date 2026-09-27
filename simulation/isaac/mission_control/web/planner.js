@@ -2,7 +2,7 @@
 // profile, and the flight sequence. Two synchronized projections (precision
 // views) keep XYZ dragging unambiguous on a flat screen.
 import { fitCanvas } from './instruments.js';
-import {waypointTypes,waypointColors,waypointLabel,speedLabel,escapeHtml,normalizeWaypoints,parseFlightPlan,serializeFlightPlan,sampleRouteLegs,routeProfile,categoryNames} from './flight-plan.js';
+import {waypointTypes,waypointColors,waypointLabel,speedLabel,escapeHtml,normalizeWaypoints,parseFlightPlan,serializeRoute,pickRoute,sampleRouteLegs,routeProfile,categoryNames} from './flight-plan.js';
 import {createPlanner3D} from './planner-3d.js';
 
 const stepHelp={takeoff:'Vertical climb from the start. Always the first step.',hover:'Fly to a point, stop, and hold for a set time.',
@@ -11,14 +11,14 @@ const completion={hover:'Arrival: stay inside the capture radius below 0.4 m/s f
   flypass:'Arrival: pass through the capture radius in the forward direction.',land:'Arrival: contact the selected pad and settle. Position follows the pad.',
   takeoff:'Arrival: reach the target inside the capture radius below 0.4 m/s. X/Y follow the preceding point.',descent:'Arrival: reach the target inside the capture radius below 0.4 m/s. X/Y follow the preceding point.'};
 
-export function createMissionPlanner(root,{readInitial,writeInitial,onChange,overlay,readMission,writeMission,validateMission,api,settings=()=>({}),writeSettings,isConvex=()=>true,readDisturbances=()=>null,editStart}){
+export function createMissionPlanner(root,{readInitial,writeInitial,onChange,overlay,readMission,validateMission,readRoute,writeRoute,validateRoute,applyProfile,applyEnvironment,api,settings=()=>({}),writeSettings,isConvex=()=>true,readDisturbances=()=>null,editStart}){
   let waypoints=[],pads=[{name:'Home pad',position:[0,0,0]}],selected=-1,selectedHandle=null,drag=null,view3d,contextEditor=null,samples=[],sampleFilter='all',undo=null;
   root.innerHTML=`<header class="section-head"><span class="section-index">01</span><div class="section-title"><h2>Route</h2><p>Start from a sample or build a sequence of steps. Select a step in the list, the 3D scene or the altitude profile to edit it.</p></div><div id="routeSummary" class="summary-chips" aria-live="polite"></div></header>
     <details class="sample-gallery" open><summary><span class="fold-title">Sample flight plans</span><span id="sampleCount" class="fold-note"></span></summary>
-      <div class="gallery-toolbar"><div class="segmented" role="group" aria-label="Filter sample plans">${[['all','All'],['hop','Hops'],['land','Landings'],['hover','Hover']].map(([key,name])=>`<button type="button" data-sample-filter="${key}" aria-pressed="${key==='all'}">${name}</button>`).join('')}</div><span class="hint">Loading a sample replaces the route, start state, guidance profile and environment. Undo restores your draft.</span></div>
+      <div class="gallery-toolbar"><div class="segmented" role="group" aria-label="Filter sample plans">${[['all','All'],['hop','Hops'],['land','Landings'],['hover','Hover']].map(([key,name])=>`<button type="button" data-sample-filter="${key}" aria-pressed="${key==='all'}">${name}</button>`).join('')}</div><span class="hint">Loading a sample replaces only the route: start state, pads and steps. Its suggested guidance profile and environment are one click each. Undo restores your previous route.</span></div>
       <div id="sampleCards" class="sample-cards" role="list"></div></details>
     <div class="library-bar"><div class="library-group"><label for="savedPlan">My plans</label><select id="savedPlan"><option value="">Saved plans…</option></select><button type="button" id="openSavedPlan">Open</button><button type="button" id="savePlan" title="Save under the mission name; the same name replaces it">Save</button></div><div class="library-group"><button type="button" id="loadPlan">Import JSON</button><button type="button" id="exportPlan">Export JSON</button><input id="planFile" type="file" accept=".json,application/json" hidden></div></div>
-    <div class="plan-message" role="status"><span id="planMessage"></span><button type="button" id="undoPlan" hidden>Undo</button></div>
+    <div class="plan-message" role="status"><span id="planMessage"></span><span id="planSuggestions" class="plan-suggestions"></span><button type="button" id="undoPlan" hidden>Undo</button></div>
     <div class="route-workspace"><div class="route-scene"><div id="planner3D" class="planner-3d"></div>
     <figure class="altitude-profile"><figcaption><b>ALTITUDE PROFILE</b><span>Distance flown along the drawn route · click a marker to select its step</span></figcaption><svg id="altitudeProfile" role="img" aria-label="Altitude against distance along the route"></svg></figure>
     <div class="hint route-check" id="plannerCheck"></div>
@@ -34,7 +34,9 @@ export function createMissionPlanner(root,{readInitial,writeInitial,onChange,ove
   const canvases=[root.querySelector('#planXY'),root.querySelector('#planXZ')];
   const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
   const corridor=()=>settings().guidance?.route_corridor_m??1;
-  const say=(text,{offerUndo=false}={})=>{planMessage.textContent=text;undoButton.hidden=!offerUndo;if(!offerUndo)undo=null;};
+  // Messages may offer undo and one-click suggestions (a sample's guidance and environment).
+  const say=(text,{offerUndo=false,suggestions=[]}={})=>{planMessage.textContent=text;undoButton.hidden=!offerUndo;if(!offerUndo)undo=null;
+    const box=root.querySelector('#planSuggestions');box.replaceChildren(...suggestions.map(({label,run})=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=()=>{run();b.disabled=true;b.textContent='✓ '+label.replace(/^Apply /,'Applied ');};return b;}));};
   const defaultCorridor=root.querySelector('#defaultCorridor');
   defaultCorridor.onchange=()=>{
     if(!defaultCorridor.reportValidity())return;
@@ -202,23 +204,29 @@ export function createMissionPlanner(root,{readInitial,writeInitial,onChange,ove
   }
   root.querySelectorAll('[data-add]').forEach(el=>el.onclick=()=>addWaypoint(el.dataset.add));
   function firstInvalid(){document.activeElement?.blur();const invalid=root.closest('form')?.querySelector(':invalid');if(invalid){invalid.reportValidity();return true;}return false;}
+  // Plans are route-only: export, save, open and import never touch guidance or environment.
   root.querySelector('#exportPlan').onclick=async()=>{try{
     if(firstInvalid())return;
-    const mission=await validateMission(readMission());const blob=new Blob([serializeFlightPlan(mission)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='flight-plan.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);say('Complete flight plan exported.');}catch(error){say(error.message);}
+    const route=await validateRoute(readRoute());const blob=new Blob([serializeRoute(route)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='flight-plan.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);say('Route exported. Guidance and environment are not part of a flight plan.');}catch(error){say(error.message);}
   };
   async function refreshSaved(){const plans=await api('/api/flight-plans');root.querySelector('#savedPlan').replaceChildren(new Option('Saved plans…',''),...plans.map(p=>new Option(p.name,p.id)));}
-  root.querySelector('#savePlan').onclick=async()=>{try{if(firstInvalid())return;const saved=await api('/api/flight-plans',readMission());await refreshSaved();root.querySelector('#savedPlan').value=saved.id;say(`Saved ${saved.name} on this computer. Saving the same mission name replaces it.`);}catch(e){say(e.message);}};
-  // Loading replaces the whole draft; keep the previous request for one undo.
-  function replaceDraft(mission,text){
-    let previous=null;try{previous=readMission();}catch{}
-    writeMission(mission);selected=-1;selectedHandle=null;editList();changed();requestAnimationFrame(()=>view3d?.fit());
-    undo=previous;say(text,{offerUndo:!!previous});
+  root.querySelector('#savePlan').onclick=async()=>{try{if(firstInvalid())return;const saved=await api('/api/flight-plans',readRoute());await refreshSaved();root.querySelector('#savedPlan').value=saved.id;say(`Saved the ${saved.name} route on this computer. Saving the same mission name replaces it.`);}catch(e){say(e.message);}};
+  // Loading replaces the route (start state, pads, steps); keep the previous route for one undo.
+  async function replaceDraft(route,text,suggestions=[]){
+    let previous=null;try{previous=readRoute();}catch{}
+    writeRoute(route);selected=-1;selectedHandle=null;editList();changed();requestAnimationFrame(()=>view3d?.fit());
+    undo=previous;say(text,{offerUndo:!!previous,suggestions});
+    // The route stays loaded even if the current guidance rejects it (e.g. a step faster than its speed limit).
+    try{await validateMission(readMission());}catch(error){planMessage.textContent=`${text} With the current guidance and setup it will not launch yet: ${error.message}`;}
   }
-  undoButton.onclick=()=>{if(!undo)return;const previous=undo;undo=null;writeMission(previous);editList();changed();requestAnimationFrame(()=>view3d?.fit());say('Previous draft restored.');};
-  root.querySelector('#openSavedPlan').onclick=async()=>{try{const key=root.querySelector('#savedPlan').value;if(!key){say('Choose a saved plan first.');return;}const plan=await api(`/api/flight-plans/${encodeURIComponent(key)}`);replaceDraft(plan.mission,`Loaded ${plan.mission.name}.`);}catch(e){say(e.message);}};
+  undoButton.onclick=()=>{if(!undo)return;const previous=undo;undo=null;writeRoute(previous);editList();changed();requestAnimationFrame(()=>view3d?.fit());say('Previous route restored.');};
+  root.querySelector('#openSavedPlan').onclick=async()=>{try{const key=root.querySelector('#savedPlan').value;if(!key){say('Choose a saved plan first.');return;}const plan=await api(`/api/flight-plans/${encodeURIComponent(key)}`);await replaceDraft(plan.mission,`Loaded the ${plan.mission.name} route. Guidance and environment are unchanged.`);}catch(e){say(e.message);}};
   refreshSaved().catch(e=>say(e.message));
   root.querySelector('#loadPlan').onclick=()=>root.querySelector('#planFile').click();
-  root.querySelector('#planFile').onchange=async e=>{try{const file=e.target.files[0];if(!file)return;if(file.size>100000)throw new Error('Plan file is too large.');const plan=parseFlightPlan(await file.text());const request=plan.mission??{...readMission(),...plan.initial,waypoints:plan.waypoints,pads:[{name:'Home pad',position:[0,0,0]}]};const validated=await validateMission(request);replaceDraft(validated,'Flight plan imported.');}catch(error){say(error.message);}finally{e.target.value='';}};
+  root.querySelector('#planFile').onchange=async e=>{try{const file=e.target.files[0];if(!file)return;if(file.size>100000)throw new Error('Plan file is too large.');const plan=parseFlightPlan(await file.text());
+    const source=plan.mission??{...plan.initial,waypoints:plan.waypoints,pads:[{name:'Home pad',position:[0,0,0]}]};
+    const ignored=plan.mission&&['convex_settings','disturbance','disturbance_settings'].some(key=>key in plan.mission);
+    const route=await validateRoute(pickRoute(source));await replaceDraft(route,`Flight plan imported.${ignored?' Its guidance and environment settings were not applied; set them in Guidance and Environment.':''}`);}catch(error){say(error.message);}finally{e.target.value='';}};
   // Sample gallery: repository flight plans with their guidance profile and environment.
   function thumbnail(sample){
     const profile=routeProfile(sample.route.slice(1).map((p,i)=>[sample.route[i],p])),w=172,h=64,top=Math.max(2,sample.max_altitude_m)*1.15,total=Math.max(1,profile.distance);
@@ -229,8 +237,11 @@ export function createMissionPlanner(root,{readInitial,writeInitial,onChange,ove
     const shown=samples.filter(s=>sampleFilter==='all'||s.category===sampleFilter);
     root.querySelector('#sampleCount').textContent=samples.length?`${samples.length} plans · hops, landings and hover`:'';
     root.querySelectorAll('[data-sample-filter]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.sampleFilter===sampleFilter)));
-    root.querySelector('#sampleCards').innerHTML=shown.map(s=>`<article class="sample-card cat-${s.category}" role="listitem"><div class="sample-tags"><span class="tag tag-${s.category}">${categoryNames[s.category]??s.category}</span>${s.disturbance.length?`<span class="tag tag-env" title="${escapeHtml(s.disturbance.join(', '))}">${s.disturbance.includes('wind')?'WIND':'DISTURBED'}</span>`:''}</div>${thumbnail(s)}<h4>${escapeHtml(s.name)}</h4><p>${escapeHtml(s.summary)}</p><dl><div><dt>Max alt</dt><dd>${s.max_altitude_m.toFixed(0)} m</dd></div><div><dt>Steps</dt><dd>${s.steps}</dd></div><div><dt>Pads</dt><dd>${s.pads}</dd></div></dl><div class="sample-foot"><span title="Guidance profile applied with this plan">${escapeHtml(s.profile_name)}</span><button type="button" data-load-sample="${escapeHtml(s.id)}">Load</button></div></article>`).join('')||'<p class="hint">No sample plans are available from this service.</p>';
-    root.querySelectorAll('[data-load-sample]').forEach(el=>el.onclick=async()=>{try{const plan=await api(`/api/flight-plan-samples/${encodeURIComponent(el.dataset.loadSample)}`);replaceDraft(plan.mission,`Loaded sample “${plan.mission.name}” with the ${plan.sample.profile_name} guidance profile.`);}catch(e){say(e.message);}});
+    root.querySelector('#sampleCards').innerHTML=shown.map(s=>`<article class="sample-card cat-${s.category}" role="listitem"><div class="sample-tags"><span class="tag tag-${s.category}">${categoryNames[s.category]??s.category}</span>${s.disturbance.length?`<span class="tag tag-env" title="${escapeHtml(s.disturbance.join(', '))}">${s.disturbance.includes('wind')?'WIND':'DISTURBED'}</span>`:''}</div>${thumbnail(s)}<h4>${escapeHtml(s.name)}</h4><p>${escapeHtml(s.summary)}</p><dl><div><dt>Max alt</dt><dd>${s.max_altitude_m.toFixed(0)} m</dd></div><div><dt>Steps</dt><dd>${s.steps}</dd></div><div><dt>Pads</dt><dd>${s.pads}</dd></div></dl><div class="sample-foot"><span title="Suggested guidance profile (applied only if you choose)">Suggests ${escapeHtml(s.profile_name)}</span><button type="button" data-load-sample="${escapeHtml(s.id)}">Load</button></div></article>`).join('')||'<p class="hint">No sample plans are available from this service.</p>';
+    root.querySelectorAll('[data-load-sample]').forEach(el=>el.onclick=async()=>{try{const plan=await api(`/api/flight-plan-samples/${encodeURIComponent(el.dataset.loadSample)}`),sample=plan.sample;
+      const suggestions=[{label:`Apply suggested guidance: ${sample.profile_name}`,run:()=>applyProfile?.(sample.profile)}];
+      if(sample.environment)suggestions.push({label:`Apply suggested environment: ${sample.environment.selected.map(k=>({wind:'wind + gusts',sensor_noise:'sensor noise',com_shift:'COM offset'}[k])).join(', ')}`,run:()=>applyEnvironment?.(sample.environment)});
+      await replaceDraft(plan.mission,`Loaded the sample route “${plan.mission.name}”. Guidance and environment are unchanged.`,suggestions);}catch(e){say(e.message);}});
   }
   root.querySelectorAll('[data-sample-filter]').forEach(el=>el.onclick=()=>{sampleFilter=el.dataset.sampleFilter;drawSamples();});
   // An older service without the sample endpoint still offers everything else.

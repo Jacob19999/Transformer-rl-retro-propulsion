@@ -45,6 +45,10 @@ export function parseFlightPlan(text){
   return {initial:plan.initial,waypoints:normalizeWaypoints(plan.waypoints)};
 }
 export const serializeFlightPlan=mission=>JSON.stringify({format:'edf-flight-plan',version:2,mission},null,2);
+// A flight plan is the route only; guidance and environment are chosen per run.
+export const routeFields=['name','duration_s','position','velocity','attitude_deg','angular_rate_deg_s','initial_motor_fraction','pads','waypoints'];
+export const pickRoute=value=>Object.fromEntries(routeFields.filter(key=>value?.[key]!==undefined).map(key=>[key,structuredClone(value[key])]));
+export const serializeRoute=route=>JSON.stringify({format:'edf-flight-plan',version:2,scope:'route',mission:pickRoute(route)},null,2);
 
 export function sampleRouteLegs(start,waypoints,pad=[0,0,0],{convex=false}={}){
   const landing=waypoints.find(w=>w.type==='land');

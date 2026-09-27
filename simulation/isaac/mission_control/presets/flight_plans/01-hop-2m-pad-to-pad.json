@@ -1,6 +1,7 @@
 {
   "format": "edf-flight-plan",
   "version": 2,
+  "scope": "route",
   "sample": {
     "category": "hop",
     "summary": "Lift to 2 m, translate 4 m and land on the neighbouring pad. The smallest useful hop.",
@@ -9,12 +10,7 @@
   },
   "mission": {
     "name": "Hop 2 m - pad to pad",
-    "controller": "convex",
-    "seed": 2026,
     "duration_s": 60.0,
-    "fast_live": true,
-    "hardware_profile": "planned_8s",
-    "vane_model": "momentum",
     "position": [
       0.0,
       0.0,
@@ -36,8 +32,6 @@
       0.0
     ],
     "initial_motor_fraction": 0.0,
-    "disturbance": [],
-    "disturbance_settings": {},
     "pads": [
       {
         "name": "Launch",
@@ -98,26 +92,6 @@
         "pad": 1,
         "approach_speed_m_s": null
       }
-    ],
-    "convex_settings": {
-      "guidance": {
-        "route_corridor_mode": "soft",
-        "route_corridor_m": 1.0,
-        "route_corridor_weight": 25.0,
-        "max_speed_m_s": 2.0,
-        "max_tilt_deg": 8.0
-      },
-      "tracking": {
-        "max_tilt_deg": 16.0
-      }
-    },
-    "battery": {
-      "enabled": true,
-      "capacity_ah": 5.0,
-      "c_rating": 45.0,
-      "initial_soc": 1.0,
-      "cell_resistance_ohm": 0.003,
-      "max_current_a": 120.0
-    }
+    ]
   }
 }
