@@ -11,6 +11,8 @@ from tvc_env.common.frames import isaac_position_to_frd
 from tvc_env.common.quaternions import inverse, normalize, rotate_vector
 
 LAND, HOVER, FLYPASS = 0, 1, 2
+TAKEOFF, DESCENT = 3, 4
+KINDS = ('land', 'hover', 'flypass', 'takeoff', 'descent')
 EXTRA_OBSERVATIONS = 15
 MAX_WAYPOINTS = 12
 
@@ -19,7 +21,8 @@ def catmull_rom(p0, p1, p2, p3, samples=49):
     """Uniform cubic interpolating spline, including both leg endpoints."""
     t = torch.linspace(0, 1, samples, device=p1.device, dtype=p1.dtype)[None,:,None]
     a, b, c, d = (p[:,None,:] for p in (p0,p1,p2,p3))
-    return .5*((2*b)+(-a+c)*t+(2*a-5*b+4*c-d)*t*t+(-a+3*b-3*c+d)*t*t*t)
+    curve = .5*((2*b)+(-a+c)*t+(2*a-5*b+4*c-d)*t*t+(-a+3*b-3*c+d)*t*t*t)
+    return torch.where(((p2-p1).norm(dim=-1)<1e-9)[:,None,None], b, curve)
 
 
 def segment_distance(point, a, b):
@@ -51,6 +54,7 @@ class WaypointMission:
         self.step_path_cost = torch.zeros(num_envs, device=device)
         self.step_progress = torch.zeros(num_envs, device=device)
         self.last_potential = torch.zeros(num_envs, device=device)
+        self.launch_pending = torch.zeros(num_envs, dtype=torch.bool, device=device)
 
     @property
     def ready_to_land(self):
@@ -68,6 +72,7 @@ class WaypointMission:
         self.positions[env_ids] = self.landing_target[env_ids,None,:]
         self.kinds[env_ids] = LAND
         self.holds[env_ids] = 0
+        self.launch_pending[env_ids] = False
         explicit = nav.get('waypoints')
         if explicit is not None:
             if len(explicit) > MAX_WAYPOINTS:
@@ -75,10 +80,12 @@ class WaypointMission:
             self.count[env_ids] = len(explicit)
             for j, wp in enumerate(explicit):
                 self.positions[env_ids,j] = torch.tensor(wp['position'], device=self.device)+self.origins[env_ids]
-                self.kinds[env_ids,j] = HOVER if wp['type']=='hover' else FLYPASS
+                self.kinds[env_ids,j] = KINDS.index(wp['type'])
                 self.radii[env_ids,j] = wp.get('radius_m',1.)
                 self.holds[env_ids,j] = wp.get('hold_s',2.) if wp['type']=='hover' else 0.
                 self.speeds[env_ids,j] = wp.get('speed_m_s',2.)
+            if explicit and explicit[0]['type'] == 'takeoff':
+                self.launch_pending[env_ids] = position[env_ids,2] - self.origins[env_ids,2] < .8
         else:
             bounds = spawn.get('waypoint_count_range', nav.get('count_range',[0,3]))
             self.count[env_ids] = torch.randint(int(bounds[0]), int(bounds[1])+1, (m,), device=self.device)
@@ -116,6 +123,10 @@ class WaypointMission:
         p2 = self.positions[env_ids,i]
         p3 = self.positions[env_ids,(i+1).clamp(max=MAX_WAYPOINTS)]
         self.curves[env_ids] = catmull_rom(p0,p1,p2,p3)
+        vertical = (self.kinds[env_ids,i]==TAKEOFF) | (self.kinds[env_ids,i]==DESCENT)
+        t = torch.linspace(0,1,49,device=self.device)[None,:,None]
+        self.curves[env_ids] = torch.where(vertical[:,None,None],
+            p1[:,None,:]+t*(p2-p1)[:,None,:], self.curves[env_ids])
 
     def update_features(self, position):
         segments = self.curves[:,1:]-self.curves[:,:-1]
@@ -158,10 +169,11 @@ class WaypointMission:
         self.hold_elapsed = torch.where(active & (kind==HOVER) & stable, self.hold_elapsed+dt,
                                        torch.where(active,torch.zeros_like(self.hold_elapsed),self.hold_elapsed))
         hover_complete = (kind==HOVER) & (self.hold_elapsed>=self.holds[self.ids,self.index])
+        stop_complete = ((kind==TAKEOFF) | (kind==DESCENT)) & stable
         swept_arrival = segment_distance(goal,before,after)<=radius
         moving_forward = ((after-before)*self.tangent).sum(-1)>0
         fly_complete = (kind==FLYPASS) & swept_arrival & moving_forward
-        complete = active & (hover_complete|fly_complete) & ~self.ready_to_land
+        complete = active & (hover_complete|fly_complete|stop_complete) & ~self.ready_to_land
         self.step_completed = complete.float()
         self.update_features(after)
         cross_error = self.path_error.norm(dim=-1)
@@ -199,7 +211,9 @@ class WaypointMission:
         def body(vector):
             return isaac_position_to_frd(rotate_vector(q,vector))
         kind = self.kinds[self.ids,self.index]
-        onehot = torch.nn.functional.one_hot(kind,3).float()
+        # Advanced phases are convex-only; retain the existing PPO observation
+        # size and represent their rest-at-target semantics as HOVER.
+        onehot = torch.nn.functional.one_hot(torch.where(kind>=TAKEOFF,HOVER,kind),3).float()
         next_goal = self.positions[self.ids,(self.index+1).clamp(max=MAX_WAYPOINTS)]
         # 3 kind + 1 speed + 1 radius + 1 remaining hold + 3 path error +
         # 3 tangent + 3 next goal relative to active goal = 15 extra channels.
@@ -214,11 +228,13 @@ class WaypointMission:
     def record(self, env_id=0):
         i, count = int(self.index[env_id]), int(self.count[env_id])
         return dict(waypoint_index=i, waypoint_count=count, ready_to_land=i>=count,
-                    phase=('LAND','HOVER','FLYPASS')[int(self.kinds[env_id,i])],
+                    phase=KINDS[int(self.kinds[env_id,i])].upper(),
                     target_position=(self.goal[env_id]-self.origins[env_id]).tolist(),
                     hold_elapsed_s=float(self.hold_elapsed[env_id]),
                     cross_track_error_m=float(self.path_error[env_id].norm()),
                     waypoints=[dict(position=(self.positions[env_id,j]-self.origins[env_id]).tolist(),
-                        type='hover' if int(self.kinds[env_id,j])==HOVER else 'flypass',
+                        name=(self.config.get('task',{}).get('navigation',{}).get('waypoints') or [{}]*count)[j].get('name',''),
+                        corridor_m=(self.config.get('task',{}).get('navigation',{}).get('waypoints') or [{}]*count)[j].get('corridor_m'),
+                        type=KINDS[int(self.kinds[env_id,j])],
                         hold_s=float(self.holds[env_id,j]),radius_m=float(self.radii[env_id,j]),
                         speed_m_s=float(self.speeds[env_id,j])) for j in range(count)])

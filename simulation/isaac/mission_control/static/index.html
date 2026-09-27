@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>EDF Mission Control</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/style.css?v=convex-diagnostics-1"><link rel="stylesheet" href="/static/fin-labels.css"></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>EDF Mission Control</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/style.css?v=mission-layout-20260927"><link rel="stylesheet" href="/static/fin-labels.css"></head>
 <body>
 <header class="topbar">
   <a class="brand" href="#flight">EDF<span>/</span>MISSION CONTROL</a>
@@ -13,7 +13,8 @@
   <button role="tab" data-page="plan" aria-controls="page-plan"><i>02</i>MISSION PLAN</button>
   <button role="tab" data-page="telemetry" aria-controls="page-telemetry"><i>03</i>TELEMETRY</button>
   <button role="tab" data-page="models" aria-controls="page-models"><i>04</i>FLIGHT SOFTWARE</button>
-  <span class="tab-hint">KEYS 1–4 · SPACE PLAY · ←/→ STEP</span>
+  <button role="tab" data-page="checklists" aria-controls="page-checklists"><i>05</i>CHECKLISTS</button>
+  <span class="tab-hint">KEYS 1–5 · SPACE PLAY · ←/→ STEP</span>
 </nav>
 <main>
 <div id="notice" role="status">8S planned hardware · part identities and calibration pending · Loading recorded mission details</div>
@@ -55,27 +56,32 @@
 </div>
 </section>
 
+<!-- 05 / CHECKLISTS: operator pre-flight checks -->
+<section id="page-checklists" class="page" role="tabpanel" aria-label="Checklists" hidden>
+<div class="plan-heading"><div><div class="eyebrow">05 / PRE-FLIGHT READINESS</div><h1>Checklists</h1><p>Review the physical testbed before flight. Checks are saved in this browser.</p></div></div>
+<div id="checklist" class="panel checklist"></div>
+</section>
+
 <!-- 02 / MISSION PLAN: configure and launch the next run -->
 <section id="page-plan" class="page" role="tabpanel" aria-label="Mission plan" hidden>
-<form id="missionForm" class="plan-grid">
-<div id="checklist" class="panel checklist"></div>
-<div class="panel launch-card"><div class="panel-title">LAUNCH <span>NEXT ISAAC RUN</span></div><div class="card-body">
+<div class="plan-heading"><div><div class="eyebrow">02 / MISSION DESIGN</div><h1>Mission plan</h1><p>Configure the vehicle, build your route and define the guidance envelope.</p></div><nav class="plan-jumps" aria-label="Mission plan sections"><a href="#launchSetup"><span>01</span> SETUP</a><a href="#missionPlanner"><span>02</span> ROUTE</a><a href="#optimizerSettings"><span>03</span> OPTIMIZER</a></nav></div>
+<form id="missionForm" class="plan-grid" inert aria-busy="true">
+<div id="launchSetup" class="panel launch-card"><div class="panel-title">LAUNCH <span>NEXT ISAAC RUN</span></div><div class="card-body">
 <label>MISSION NAME<input id="name" maxlength="80" value="8S landing test" required></label>
 <label>CONTROLLER<select id="controller"><option value="convex">CONVEX · SOCP powered-descent guidance</option></select></label>
 <label>HARDWARE PROFILE<select id="hardware_profile"><option value="planned_8s">Planned 8S / 48 N estimate</option><option value="legacy_6s">Legacy 6S / 39.2 N estimate</option></select></label>
-<div class="pair"><label>SEED<input id="seed" type="number" min="0" max="2147483647" step="1" value="2026" required></label><label>DURATION / s<input id="duration_s" type="number" min="1" max="180" value="120" required></label></div>
+<div class="pair"><label>SEED<input id="seed" type="number" min="0" max="2147483647" step="1" value="2026" required></label><label>DURATION / s<input id="duration_s" type="number" min="1" max="600" value="120" required></label></div>
+<label class="hint"><input id="fast_live" type="checkbox" checked> FAST LIVE · fewer headless redraws, full physics and telemetry</label>
 <button id="run" class="primary" type="submit">RUN ISAAC SIMULATION <span>↗</span></button>
 <div id="launchMessage" class="hint" role="status">Launching opens the Flight page with live telemetry.</div>
 </div></div>
-<div id="missionPlanner" class="planner panel"></div>
 <div class="plan-cards">
 <div class="panel"><div class="panel-title">INITIAL STATE <span>WORLD / Z UP</span></div><div class="card-body"><div id="vectors" class="vector-grid"></div>
 <label>INITIAL ROTOR / %<input id="initial_motor_fraction" type="number" min="0" max="100" step="1" value="0" required></label></div></div>
 <div class="panel"><div class="panel-title">DISTURBANCES <span>COMBINE ANY</span></div><div class="card-body">
-<label class="check"><input type="checkbox" name="disturbance" value="wind"> Wind + gusts</label>
-<label class="check"><input type="checkbox" name="disturbance" value="sensor_noise"> Sensor noise</label>
-<label class="check"><input type="checkbox" name="disturbance" value="com_shift"> Center of mass offset</label>
-<p class="hint">Each disturbance is independent; the resolved parameters are recorded with the run.</p></div></div>
+<p id="disturbanceSummary" class="disturbance-summary">Calm air · no sensor noise or COM offset</p>
+<button type="button" id="editDisturbances">DESIGN DISTURBANCES ↓</button>
+<p class="hint">Customize the environment visually below the route preview. Settings are saved with the flight plan.</p></div></div>
 <div class="panel"><div class="panel-title">LIPO PACK <span id="packLabel">8S / ESTIMATED</span></div><div class="card-body">
 <label class="check"><input id="battery_enabled" type="checkbox" checked> Couple voltage / power to EDF</label>
 <div class="pair"><label>CAPACITY / Ah<input id="capacity_ah" type="number" min="0.5" max="20" step="0.1" value="5" required></label><label>C RATING<input id="c_rating" type="number" min="1" max="150" value="45" required></label></div>
@@ -83,6 +89,8 @@
 <label>CURRENT LIMIT / A<input id="max_current_a" type="number" min="5" max="120" value="120" required></label>
 <div class="hint">Capacity changes electrical endurance. Assembly mass remains 3.104 kg; pack mass is pending.</div></div></div>
 </div>
+<div id="missionPlanner" class="planner panel"></div>
+<section id="optimizerSettings" class="panel optimizer-settings"></section>
 </form>
 </section>
 
@@ -110,4 +118,4 @@
 
 <footer><span>EDF RESEARCH / MISSION CONTROL</span><span id="footerProfile">8S PLANNED · 3.104 kg · 120 Hz PHYSICS</span><span>LOCAL HOST / NO HARDWARE ACTUATION</span></footer></main>
 <dialog id="hardwareDialog"><div class="dialog-head"><div><div class="eyebrow">CONFIGURATION / PROVENANCE</div><h2>Vehicle & hardware</h2></div><button id="closeHardware" aria-label="Close hardware details">✕</button></div><p id="hardwareStatus"></p><div id="hardwareParts"></div><p class="hint">Source files: Paper/Reference/parts.md; CAD/EDF Drone v1/Parts List/Master Parts List.xlsx; simulation/isaac/configs. Scene appearance is a WebGL rendering of actual Isaac states; it is not an Isaac RTX camera feed.</p></dialog>
-<script type="module" src="/static/app.js?v=convex-diagnostics-1"></script></body></html>
+<script type="module" src="/static/app.js?v=mission-layout-20260927"></script></body></html>

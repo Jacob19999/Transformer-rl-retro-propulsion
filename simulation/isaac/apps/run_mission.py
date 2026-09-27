@@ -14,6 +14,8 @@ from runner_safety import WallClockWatchdog, force_process_exit
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from mission_control.models import validate_mission, battery_config, hardware_overrides, disturbance_config, policy_paths, training_envelope_violations, vane_model_overrides
+from mission_control.models import landing_pad
+from mission_control.convex_parameters import resolve as resolve_convex_settings
 
 FLIGHT_CONTRACT = 'waypoint_flight_v1'
 PAD_RADIUS_M = .5  # the mission success criterion's pad radius
@@ -120,11 +122,11 @@ def main():
         status.update(values, wall_time_s=round(time.time() - started, 2))
         atomic_json(output / 'status.json', status)
     update()
-    # 480 Hz physics and up to 180 simulated seconds can exceed the old
+    # 480 Hz physics and up to 600 simulated seconds can exceed the old
     # fixed 8-minute watchdog. Keep an explicit finite allowance per request.
     watchdog = WallClockWatchdog(max(480, request['duration_s'] * 45), label='Mission control simulation')
     watchdog.start()
-    env = app = None
+    env = app = convex = None
     try:
         from isaac_launcher import launch_simulation_app, close_simulation_app
         app = launch_simulation_app(headless=True)
@@ -174,11 +176,13 @@ def main():
                 overrides['task']['spawn']['curriculum'] = {'enabled':False}
             overrides['task']['navigation'] = dict(enabled=obs_dim==43,waypoints=request.get('waypoints',[]))
         elif request['controller'] == 'convex':
+            overrides['task']['target_position'] = landing_pad(request)['position']
             # The mission sequencer (WaypointMission) referees the route; its
             # observation contract needs the battery channels.
             if request.get('waypoints'):
                 overrides['env']['observe_battery'] = True
-                overrides['task']['navigation'] = dict(enabled=True, waypoints=request['waypoints'])
+                overrides['task']['navigation'] = dict(enabled=True, waypoints=[
+                    w for w in request['waypoints'] if w['type'] != 'land'])
             # The landing task's 30 m altitude fail-stop is a training geofence;
             # planned missions start up to 100 m, so guard just above that.
             overrides['task']['termination'] = dict(max_altitude_error=CONVEX_ALTITUDE_FAIL_STOP_M)
@@ -228,11 +232,15 @@ def main():
             import clarabel
             import yaml
             from tvc_env.controllers.convex_adapter import ConvexGuidanceController, VehicleModel
-            convex_settings = yaml.safe_load((ROOT / 'configs/controllers/convex_guidance.yaml').read_text())
+            convex_settings = resolve_convex_settings(request['convex_settings'])
             if args.convex_settings is not None:
                 from tvc_env.envs.task_registry import deep_merge
                 convex_settings = deep_merge(convex_settings, yaml.safe_load(args.convex_settings.read_text()))
             electrical = config.config['battery']
+            landing = next((w for w in request['waypoints'] if w['type'] == 'land'), None)
+            if landing:
+                convex_settings['guidance']['touchdown_speed_m_s'] = landing['speed_m_s']
+                convex_settings['guidance']['terminal_max_descent_m_s'] = landing['speed_m_s'] * 1.2
             # Thrust-stand-style calibration of this plant's vanes (hardware:
             # measure it); the controller scales its vane efforts by it.
             roll_authority, yaw_authority = env.vane_authority()
@@ -249,7 +257,9 @@ def main():
             servo_deadband = float(env._servo_model.deadband) if env._servo_model.apply_deadband else 0.
             convex = ConvexGuidanceController(convex_settings, vehicle, env._target_position[0].tolist(), touchdown,
                                               dt, max_command_angle=float(env._servo_model.max_command_angle),
-                                              servo_deadband_rad=servo_deadband)
+                                              servo_deadband_rad=servo_deadband,
+                                              landing_corridor_m=landing.get('corridor_m') if landing else None,
+                                              landing_speed_m_s=landing.get('approach_speed_m_s') if landing else None)
             policy_meta.update(
                 guidance='Convex SOCP powered-descent guidance (Acikmese & Ploen 2007 lossless convexification), '
                          're-solved in closed loop; geometric attitude tracking',
@@ -269,6 +279,8 @@ def main():
         if convex:
             convex.reset()
         metadata = dict(schema_version=2, request=request, policy=policy_meta, dt=dt,
+                        live_execution=dict(fast_live=request['fast_live'], telemetry_stride=1,
+                                            headless_render_wall_interval_s=.25 if request['fast_live'] else None),
                         physics_dt=config.physics_dt, decimation=config.decimation,
                         hinge_layout='radial_span_v1',
                         asset_sha256=hashlib.sha256((ROOT / 'assets/usd/drone_v2_physics.usd').read_bytes()).hexdigest(),
@@ -302,6 +314,16 @@ def main():
         control_phase = 'CONTROLLER'
         landing_frame = None
         settled_after_shutdown = None
+        last_pump = time.perf_counter()
+        def pump_viewer():
+            # Browser cameras use recorded poses, not Kit rendering. Keep all
+            # PhysX substeps, control calls and telemetry; only avoid redundant
+            # headless redraws. Pump Kit at least four times per wall second.
+            nonlocal last_pump
+            now = time.perf_counter()
+            if not request['fast_live'] or now - last_pump >= .25:
+                env.render()
+                last_pump = now
         with (output / 'frames.jsonl').open('w', encoding='utf-8', buffering=1) as stream:
             def capture(t, action, rate):
                 nonlocal frames, latest
@@ -344,6 +366,7 @@ def main():
             if flight:
                 initial[0, 4] = env._throttle_state[0]  # the duty holding the spawned rotor
             capture(0., initial, torch.zeros(1, 4, device=device))
+            simulation_started = time.perf_counter()
             update(state='running', phase='Simulating', frames=frames)
             cancelled = False
             terminated = truncated = torch.tensor([False], device=device)
@@ -387,7 +410,7 @@ def main():
                     last_target = servo.clone()
                     if step % 10 == 0:
                         update(frames=frames, sim_time_s=latest['t'])
-                    env.render()
+                    pump_viewer()
                     if bool((terminated | truncated)[0]):
                         break
                 if latest['contact'] == int(ContactState.LANDED) and not cancelled:
@@ -421,7 +444,7 @@ def main():
                                               and math.sqrt(sum(v*v for v in latest['velocity'])) < .05
                                               and math.sqrt(sum(v*v for v in latest['gyro'])) < .15
                                               and attitude < .2 and latest['pad_distance'] <= .5)
-                        env.render()
+                        pump_viewer()
                     window = math.ceil(.5 / dt)
                     settled_after_shutdown = (not cancelled and not unsafe_shutdown
                                               and len(stable_samples) >= window
@@ -438,6 +461,8 @@ def main():
         outcome = ('CANCELLED' if cancelled else 'PREMATURE_LANDING' if premature else 'POST_LANDING_FAILURE' if landed and not settled_after_shutdown
                    else 'LANDED' if landed else failure if bool(terminated[0]) else 'TIMEOUT')
         summary = dict(outcome=outcome, success=success, duration_s=latest['t'], frames=frames,
+                       simulation_wall_time_s=round(time.perf_counter() - simulation_started, 3),
+                       real_time_factor=round(latest['t'] / max(time.perf_counter() - simulation_started, 1e-6), 4),
                        landing_duration_s=landing_frame['t'] if landing_frame else None,
                        landing_event_success=landing_event_success,
                        settled_after_shutdown=settled_after_shutdown,
@@ -455,6 +480,8 @@ def main():
         raise
     finally:
         watchdog.reset(30, label='Mission cleanup')
+        if convex is not None:
+            convex.guidance.close()
         if env is not None:
             env.close()
         if app is not None:

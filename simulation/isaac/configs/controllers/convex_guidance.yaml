@@ -79,7 +79,12 @@ guidance:
   # metre-second, so an unreachable corridor still gets a plan. A plan on a
   # corridor may also brake an over-speed start at full thrust.
   route_corridor_m: 1.0
+  # Explicit soft/strict behavior: strict rejects an infeasible corridor plan
+  # instead of falling back to an unconstrained trajectory. Soft preserves
+  # the existing emergency-braking behavior and reports its excess in telemetry.
+  route_corridor_mode: soft
   route_corridor_weight: 10.0
+  solver_workers: 4            # independent duration candidates; identical physics
   max_solve_time_s: 0.5         # per SOCP (Clarabel time limit)
   # Re-solve every period. While tracking error stays inside these bounds the
   # new plan starts from the current plan's reference state (feedback keeps

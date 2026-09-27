@@ -1,4 +1,5 @@
-param([int]$Port = 8830)
+# Serves on the LAN by default; -Local restricts to this machine.
+param([int]$Port = 8830, [switch]$Local)
 $ErrorActionPreference = 'Stop'
 $missionRoot = Split-Path -Parent $PSScriptRoot
 $repoRoot = Split-Path -Parent (Split-Path -Parent $missionRoot)
@@ -17,5 +18,5 @@ try {
 Push-Location $missionRoot
 try {
     Write-Host "Mission control: http://127.0.0.1:$Port (Ctrl+C to stop service)"
-    & $isaacPython -m mission_control.server --port $Port
+    if ($Local) { & $isaacPython -m mission_control.server --port $Port } else { & $isaacPython -m mission_control.server --port $Port --lan }
 } finally { Pop-Location }

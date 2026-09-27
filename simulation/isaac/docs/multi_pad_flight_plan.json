@@ -1,0 +1,124 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "mission": {
+    "name": "Multi-pad corridor verification",
+    "controller": "convex",
+    "seed": 2026,
+    "duration_s": 120.0,
+    "fast_live": true,
+    "hardware_profile": "planned_8s",
+    "vane_model": "momentum",
+    "position": [
+      0.0,
+      0.0,
+      0.34
+    ],
+    "velocity": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "attitude_deg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_motor_fraction": 0.0,
+    "disturbance": [],
+    "pads": [
+      {
+        "name": "Launch",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "East landing",
+        "position": [
+          4.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          0.0,
+          0.0,
+          4.0
+        ],
+        "type": "takeoff",
+        "name": "Climb",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 1.0,
+        "corridor_m": 1.0
+      },
+      {
+        "position": [
+          4.0,
+          0.0,
+          4.0
+        ],
+        "type": "hover",
+        "name": "East approach",
+        "hold_s": 1.0,
+        "radius_m": 1.0,
+        "speed_m_s": 1.2,
+        "corridor_m": 1.5
+      },
+      {
+        "position": [
+          4.0,
+          0.0,
+          2.0
+        ],
+        "type": "descent",
+        "name": "Lower",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 0.7,
+        "corridor_m": 1.0
+      },
+      {
+        "position": [
+          4.0,
+          0.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "East touchdown",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 0.15,
+        "corridor_m": 1.0,
+        "pad": 1,
+        "approach_speed_m_s": 0.7
+      }
+    ],
+    "convex_settings": {
+      "guidance": {
+        "route_corridor_m": 1.5,
+        "solver_workers": 4,
+        "max_speed_m_s": 3.0
+      }
+    },
+    "battery": {
+      "enabled": true,
+      "capacity_ah": 5.0,
+      "c_rating": 45.0,
+      "initial_soc": 1.0,
+      "cell_resistance_ohm": 0.003,
+      "max_current_a": 120.0
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "initial": {
+    "position": [0, 0, 0.34],
+    "velocity": [0, 0, 0],
+    "attitude_deg": [0, 0, 0],
+    "angular_rate_deg_s": [0, 0, 0]
+  },
+  "waypoints": [
+    {"name": "Liftoff", "type": "takeoff", "position": [0, 0, 5], "speed_m_s": 1, "radius_m": 0.5},
+    {"name": "Survey hold", "type": "hover", "position": [0, 0, 5], "speed_m_s": 1, "hold_s": 2, "radius_m": 0.5},
+    {"name": "Transit", "type": "flypass", "position": [4, 0, 5], "speed_m_s": 1, "radius_m": 0.5},
+    {"name": "Brake and hold", "type": "hover", "position": [8, 0, 5], "speed_m_s": 1, "hold_s": 1, "radius_m": 0.5},
+    {"name": "Lower approach", "type": "descent", "position": [8, 0, 2], "speed_m_s": 0.7, "radius_m": 0.5},
+    {"name": "Home pad", "type": "land", "position": [0, 0, 0], "speed_m_s": 0.15}
+  ]
+}

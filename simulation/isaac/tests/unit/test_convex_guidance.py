@@ -252,7 +252,8 @@ def test_corridor_curves_match_the_mission_sequencer_and_never_undershoot_a_leg(
     curves = controller._path(points, 1, 2)
     assert len(curves) == 3 and curves[0][:, 2].min() >= 4.5 - 1e-9
     np.testing.assert_allclose(curves[0][[0, -1]], np.array(points[1:3]), atol=1e-9)
-    assert controller._path(points[:1] + points[-1:], 0, 0) is None      # a direct landing has no corridor
+    direct = controller._path(points[:1] + points[-1:], 0, 0)  # explicit landing-only route
+    np.testing.assert_allclose(direct[0], np.linspace(points[0], points[-1], 49))
 
 
 def test_geometric_attitude_efforts_match_pid_euler_convention():

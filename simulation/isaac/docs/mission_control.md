@@ -5,10 +5,144 @@ http://127.0.0.1:8830. It uses this repository's Isaac Python environment.
 For first-time dependencies run that Python with `-m pip install -r
 simulation/isaac/mission_control/requirements.txt`. The launcher installs the
 locked browser dependencies and builds the frontend. No cloud service is used.
+It listens on the LAN by default (other devices use http://<this-PC-IP>:8830,
+and Windows Firewall must allow inbound TCP 8830); pass `-Local` to serve only
+this machine.
+
+## Advanced flight plans
+
+Choose **Convex** on **Mission plan**, then add, name, drag, edit and reorder
+up to 12 steps. Click a marker in the 3D editor to show its red **X**, green
+**Y** and blue **Z** arrows; drag an arrow to move along that axis alone.
+Takeoff/descent expose only Z because their X/Y follow the preceding point;
+landing follows its pad (move the pad marker in X/Y). Right-click a waypoint
+to edit its name, type, speed, hold, radius, corridor and landing parameters.
+Right-click empty space to add a step at the selected waypoint's height, or
+3 m when none is selected; new airborne steps are inserted before landing.
+The editor also supports orbit, right-drag pan, zoom, **Fit route** and
+**Full screen**, including the parameter menus. The editor uses the full
+page width and a large responsive viewport. Expand **Precision views** for top/side
+editing, or enter exact coordinates in the rows. Takeoff/descent remain vertical.
+
+Create up to **four named ground pads**, at least 3 m apart. Drag their green
+markers or edit their X/Y coordinates. The final Landing step chooses the pad;
+without a Landing step, the first pad is the target. PPO remains origin-pad only.
+The physics success check, controller, route, and replay pad markers use the
+same selected pad. Pads are targets on the existing flat ground, not raised
+platforms; Z is fixed at zero.
+
+**Save plan** stores the mission locally in `mission_control/library/plans/`.
+Choose it in **Saved plan** and click **Load saved** to restore it. Saving the
+same mission name replaces the existing plan. **Export JSON** downloads a
+portable version 2 `edf-flight-plan` file containing the entire mission: initial conditions and rotor state, steps, pad selection, corridor
+widths, speeds, optimizer overrides, hardware, battery, disturbances, seed,
+duration and Fast live setting. **Import JSON** validates the whole file before
+changing the draft. Version 1 files still load, restoring the original single
+origin pad and retaining the other launch settings. An example for
+loading is [advanced_flight_plan.json](advanced_flight_plan.json); allow at
+least 90 seconds for its complete route. Names, sequence numbers and phase
+colors appear in both projections and the Flight camera; replay labels use
+the recorded plan even while another draft is edited.
+
+| Step | Parameters and completion |
+| --- | --- |
+| Takeoff | First step, above the start. Vertical climb at the selected speed limit, finishing within the capture radius at low speed. |
+| Hover | Approach speed limit, capture radius and continuous hold duration. Leaving the radius or exceeding 0.4 m/s resets the hold. |
+| Fly-through | Leg speed limit and arrival speed along the route tangent; swept capture permits passing through without stopping. |
+| Descent | Vertical leg below the previous point, selected descent speed limit, low-speed capture at its endpoint. |
+| Landing | Last step, selected pad, approach speed limit and terminal touchdown speed; physical contact and settling required. |
+
+Takeoff/descent X/Y follows the preceding point (takeoff follows the start).
+Add a hover before a vertical descent when a transit requires braking.
+Convex route speeds are 0.1 m/s up to the configured optimizer speed cap (4 m/s by default); touchdown is 0.1–0.5 m/s. Speeds are
+optimization constraints, with acceleration/deceleration at stop points and
+an actuator-limited braking allowance when entering above the requested
+speed. In soft corridor mode, emergency soft-terminal plans can relax these constraints
+and remain identified as approximate in telemetry. A speed setting cannot
+make a physically infeasible maneuver feasible.
+
+Omitting Landing uses the first pad at the default 0.15 m/s touchdown speed.
+Landing is not counted as a captured airborne waypoint. Advanced types are
+restricted to convex missions; the PPO observation/action contract is unchanged.
+For a ground start use an upright pose, zero velocity and Z = 0.34 m. An
+explicit Takeoff keeps launch contact from completing the landing dwell
+until the vehicle clears 0.8 m; contact telemetry and crash checks stay active.
+
+Verification (2026-09-26): 83 targeted Python tests and 19 browser-module
+tests pass. Mission `fa510617ea44` flew all five airborne waypoints from a
+cold rotor with wind and sensor noise, then landed successfully and settled
+8.8 cm from the pad center. Its requested 0.20 m/s touchdown reference
+reached the controller; recorded impact was 0.229 m/s. Total mission time
+including shutdown was 44.22 s. This is simulation validation, not hardware
+qualification. The browser editor, parameter changes, import and generated
+export payload were also checked.
+See the [planner](advanced_plan_check.png) and
+[labeled flight view](advanced_flight_check.png).
+
+## Corridors, optimizer profiles and longer live runs
+
+The blue tube is the **incoming leg's corridor half-width**, in meters; it is
+separate from the waypoint capture radius. Blank widths inherit **Default
+half-width** under Convex optimizer. Landing has separate approach and touchdown
+speeds. The displayed convex spline uses the same vertical legs and lower-end
+altitude clamp as guidance. An implicit direct landing has no route corridor;
+add a Landing step to give it one.
+
+**Convex optimizer** exposes validated guidance and tracking settings, including
+speed/tilt/thrust bounds, objective, discretization, replanning, corridor width
+and penalty. **Save profile** stores a named profile locally under
+`mission_control/library/convex/`; **Load profile** restores it and **Repository
+defaults** removes the overrides. Saving an existing name replaces that profile.
+Profiles apply to future runs; recorded requests and resolved parameters remain
+with each mission. The full flight-plan export also carries the overrides.
+
+Corridor enforcement is explicit:
+
+- **soft** (the existing default) penalizes departures and reports maximum
+  planned corridor excess. An infeasible route can use the visibly labelled
+  soft-terminal emergency fallback, which relaxes speed/route constraints.
+- **strict** fixes corridor slack to zero and additionally checks the sampled
+  trajectory against the actual curved centerline, including eight samples per
+  SOCP interval. An infeasible corridor does not receive an unconstrained
+  fallback; guidance holds if it has no usable plan. This is a sampled planning
+  check, not a continuous-time safety certificate or a tracking guarantee.
+
+Waypoint speeds constrain SOCP node velocities; fly-through also fixes tangent
+arrival velocity. Overspeed entries have an actuator-limited braking allowance.
+Real tracking, wind and physical feasibility still matter. The Flight optimization
+panel shows corridor excess, solver/fallback status and the selected pad.
+
+Missions now allow **1–600 simulated seconds**, with a 120 s default. **Fast live**
+reduces redundant headless Kit redraws to one every 0.25 wall seconds, retaining
+all physics substeps, controller calls, contact checks, sensor processing and
+recorded telemetry. The browser renders the same recorded poses. Independent
+SOCP duration candidates can run on 1–8 solver workers (default 4); the equations,
+node counts and replan period are unchanged. More workers need not be faster on
+every machine, and wall-time solver limits can be affected by CPU contention.
+Summaries record simulation wall time and real-time factor, excluding startup.
+Replay playback speed is separate from live simulation throughput.
+
+Verification: 116 targeted Python tests and 21 browser-module tests passed.
+Browser checks covered 3D dragging, full-screen sizing, JSON import, local plan
+save/load, and optimizer profile save/load.
+
+A complete two-pad example is [multi_pad_flight_plan.json](multi_pad_flight_plan.json).
+Isaac mission `0875cdb81ef5` completed its takeoff, hover and descent sequence,
+landed on the second pad at **[4, 0, 0]**, and settled successfully: **0.154 m/s**
+impact, **0.0031 m** final pad error, **24.59 s** simulated duration. Its recorded
+waypoint widths and resolved optimizer overrides were checked end to end.
+The full-redraw comparison `a37e1d87ac33` produced the same **739 telemetry
+frames exactly**, excluding solver wall-time measurements. Both used 120 Hz
+physics and the same control decimation. This route did not show a net redraw
+speedup (full redraw: 108.3 s excluding startup); physics/optimization dominate.
+An isolated duration-search benchmark of that route measured **0.416–0.425 s
+with one worker versus 0.282–0.301 s with four**, with the same 24 candidate
+solves and optimal result. Thus parallel planning reduced planner latency by
+about 30% here; it does not make the complete simulation real-time.
 
 ## Console layout (2026-09-24)
 
-The console is split into four pages, reached from the tab row or keys 1–4
+The console is split into five pages, reached from the tab row or keys 1–5
 (the URL hash, e.g. `#telemetry`, is bookmarkable):
 
 1. **Flight.** Mission archive and export bar, the camera array with the
@@ -20,6 +154,10 @@ The console is split into four pages, reached from the tab row or keys 1–4
    rates, power system readouts and the event log.
 4. **Flight software.** Registered policy, latest training runs, and the
    selected run's history, curriculum, evaluation and checkpoints.
+5. **Checklists.** Physical testbed pre-flight checks, saved with timestamps
+   in this browser. Open directly with `#checklists` or key 5. Checks use the
+   current mission draft settings and update the shared GO/NO-GO board;
+   they do not gate simulation launches.
 
 The header, clock and GO/NO-GO board stay on every page. The panels are:
 
@@ -69,7 +207,7 @@ continuously within its radius at speed ≤0.4 m/s; leaving resets the timer.
 radius. Edit position, radius, speed and hover duration in the waypoint rows;
 reorder with ↑ or remove with ×. Up to twelve points can be edited; the
 training task currently samples zero to three. Every route ends at the
-landing pad. The dashed curve is a reference path, not a scripted controller.
+selected landing pad (the origin for PPO). The dashed curve is a reference path, not a scripted controller.
 Routes whose waypoint splines dip below ground clearance between control
 points are rejected; raising the neighboring points can remove the overshoot.
 
@@ -165,8 +303,8 @@ is a deterministic classical controller with no checkpoint.
   flies waypoint routes too: fly-through and timed hover points.
 - **Constraints.** Thrust bounds, a 15° tilt cone, a 45° glide slope,
   4 m/s speed and the flight computer's thrust-rate bound.
-- **Route corridor.** On a mission with waypoints every plan stays within
-  1 m of the drawn blue route (a soft constraint), never below the lower
+- **Route corridor.** Explicit routes use per-leg corridor widths, falling back
+  to the configured default of 1 m (soft by default; strict is selectable), never below the lower
   end of a waypoint leg. Before, plans only met the waypoints: from a
   20 m/s descent one sank 26 m below its fly-through and climbed back,
   28 m off the line (`835c3de32185`). On a corridor, a fast start may brake
@@ -384,3 +522,24 @@ reset, API input validation, origin protection and partial telemetry lines.
 Browser checks cover actual mission submission, four cameras, replay, hardware
 sources and video generation. The service binds to loopback only and launches
 fixed local simulator commands without a shell.
+
+### Visual disturbance design
+
+Mission Plan → Design disturbances opens the editor below the route preview.
+Drag the wind compass or use its speed/direction controls; the 3D route shows
+the steady airflow vector in world XYZ (Z up). Flow direction describes where
+the air travels, from +X toward +Y. Gusts add a random horizontal vector for
+the specified duration, with a uniformly sampled wait between events.
+
+Sensor sliders specify independent Gaussian standard deviations in the
+simulator's observation units. COM bounds specify a uniform box sampled at
+reset in body FRD, shown in millimeters and stored in meters. Equal lower and
+upper bounds fix an axis. Diagrams show configured distributions, not a run's
+sampled disturbance history. Enable each source separately; Reset parameters
+restores the YAML values while retaining the source selections.
+
+The bounded `disturbance_settings` mission field is preserved by saved plans,
+JSON import/export and run metadata, then merged into the existing disturbance
+models. Requests without it retain the repository presets. Restart an already
+running mission-control service after updating the backend; until then the UI
+continues to offer the original preset toggles.

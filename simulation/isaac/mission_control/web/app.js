@@ -3,6 +3,9 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createMissionPlanner, samplePlannerSpline } from './planner.js';
+import {createOptimizerSettings} from './optimizer-settings.js';
+import {createDisturbanceEditor} from './disturbances.js';
+import {waypointColors,waypointLabel,waypointDetail} from './flight-plan.js';
 import { checkRoute } from './braking.js';
 import { attitude, drawAdi, drawWebcast, fitCanvas, series } from './instruments.js';
 import { createCharts } from './charts.js';
@@ -24,7 +27,7 @@ const text = (id, value) => { const el = $(id); if (el.textContent !== value) el
 function message(value, error = false) { for (const id of ['runMessage', 'launchMessage']) { text(id, value); $(id).style.color = error ? '#ff8f8f' : ''; } }
 // Pages share one state and one render loop; only the visible page is drawn,
 // and only when something it shows has changed (see animate()).
-const pages = ['flight', 'plan', 'telemetry', 'models'];
+const pages = ['flight', 'plan', 'telemetry', 'models', 'checklists'];
 const pageShown = {};
 let page = 'flight', sceneDirty = true, uiVersion = 0;
 const invalidate = () => { sceneDirty = true; uiVersion++; };
@@ -36,6 +39,7 @@ function showPage(name) {
   if (location.hash !== `#${page}`) history.replaceState({}, '', `${location.pathname}${location.search}#${page}`);
 }
 document.querySelectorAll('[data-page]').forEach(tab => tab.onclick = () => showPage(tab.dataset.page));
+document.querySelectorAll('.plan-jumps a').forEach(link=>link.onclick=e=>{e.preventDefault();document.querySelector(link.getAttribute('href'))?.scrollIntoView();});
 window.addEventListener('hashchange', () => showPage(location.hash.slice(1)));
 showPage(location.hash.slice(1));
 function trainingSummary(m){
@@ -86,9 +90,18 @@ function routeCheck(waypoints=planner.getWaypoints()){
   if(key!==routeCheckKey){routeCheckKey=key;routeCheckValue=checkRoute(initial,waypoints,vehicle,rotor);}
   return routeCheckValue;
 }
+const optimizer=createOptimizerSettings($('optimizerSettings'),{api,onChange:()=>{planner.refresh();renderBoard();}});
+let disturbances;
 const planner=createMissionPlanner($('missionPlanner'),{readInitial:readPlannerInitial,
+  api,
+  settings:()=>optimizer.get(),isConvex:()=>$('controller').value==='convex',
+  writeSettings:value=>optimizer.set(value),
+  readDisturbances:()=>disturbances?.preview(),
+  readMission:missionRequest,writeMission:fillMissionForm,validateMission:request=>api('/api/flight-plan/validate',request),
   writeInitial:initial=>initialKeys.forEach(key=>initial[key].forEach((v,i)=>{$(`${key}_${i}`).value=Math.round(v*100)/100;})),
   onChange:()=>{updatePlannedRoute();renderBoard();},overlay:waypoints=>routeCheck(waypoints)});
+disturbances=createDisturbanceEditor($('plannerDisturbances'),{summary:$('disturbanceSummary'),onChange:()=>{planner.draw();renderBoard();}});
+$('editDisturbances').onclick=()=>$('plannerDisturbances').scrollIntoView();
 $('vectors').addEventListener('input',()=>{planner.draw();updatePlannedRoute();renderBoard();});
 for(const id of ['initial_motor_fraction','hardware_profile'])$(id).addEventListener('change',()=>{planner.draw();renderBoard();});
 $('finRows').innerHTML = finNames.map((n,i)=>`<tr><td>${n}</td><td class="defl"><div class="dbar"><i id="fd${i}" style="background:${series[i]}"></i><b id="fdc${i}"></b></div></td><td id="fc${i}">—</td><td id="fa${i}">—</td></tr>`).join('');
@@ -131,12 +144,11 @@ const fill = new THREE.DirectionalLight(0x8aa4b8, 1.8); fill.position.set(-3,4,3
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(300,300), new THREE.MeshStandardMaterial({color:0x0c0f12, roughness:.98}));
 floor.position.z = -.006; scene.add(floor);
 const grid = new THREE.GridHelper(100,100,0x3a444c,0x1c2227); grid.rotation.x = Math.PI/2; grid.position.z=.001; scene.add(grid);
-const pad = new THREE.Mesh(new THREE.CircleGeometry(1.25,80), new THREE.MeshStandardMaterial({color:0x1f2327,roughness:.95})); pad.position.z=.004;scene.add(pad);
-for (const radius of [.5, 1.15]) { const ring = new THREE.Mesh(new THREE.RingGeometry(radius-.012,radius,96),new THREE.MeshBasicMaterial({color:radius<1?0xf4f6f7:0x6d777f,side:THREE.DoubleSide}));ring.position.z=.007;scene.add(ring); }
-for (const angle of [0,Math.PI/2]) { const line = new THREE.Mesh(new THREE.PlaneGeometry(.55,.018),new THREE.MeshBasicMaterial({color:0xd6dde1})); line.rotation.z=angle;line.position.z=.008;scene.add(line); }
-const groundObjects = scene.children.filter(object=>object.isMesh||object===grid);
+const padMarkers=new THREE.Group();scene.add(padMarkers);
+const groundObjects = [floor,grid,padMarkers];
 const trajectory = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({color:0xf4f6f7,transparent:true,opacity:.55})); scene.add(trajectory);
 const plannedRoute=new THREE.Line(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:0x3987e5,transparent:true,opacity:.75}));scene.add(plannedRoute);
+const routeLabels=new THREE.Group();scene.add(routeLabels);
 // Convex guidance: the optimized trajectory in force at the replay time (the
 // SOCP is re-solved every 0.5 s, so the drawn plan changes as the flight runs).
 const guidancePath=new THREE.Line(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:0x2fbf71,transparent:true,opacity:.9}));scene.add(guidancePath);
@@ -157,7 +169,24 @@ function updatePlannedRoute(){
   // the planner canvases, never the reference displayed in exported footage.
   const initial=state.frames[0]?.position??readPlannerInitial().position;
   const waypoints=state.frames.length?(state.metadata?.request?.waypoints??[]):planner.getWaypoints();
-  setLinePoints(plannedRoute,waypoints.length?samplePlannerSpline(initial,waypoints):[]);
+  const request=state.frames.length?state.metadata?.request:null;
+  const pads=request?.pads??(state.frames.length?[{name:'Home pad',position:[0,0,0]}]:planner.getPads());
+  const target=pads[waypoints.at(-1)?.pad??0]?.position??[0,0,0];
+  setLinePoints(plannedRoute,samplePlannerSpline(initial,waypoints,target,{convex:(request?.controller??$('controller').value)==='convex'}));
+  padMarkers.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});padMarkers.clear();
+  pads.forEach(p=>{const marker=new THREE.Group();marker.position.set(...p.position);
+    const disc=new THREE.Mesh(new THREE.CircleGeometry(1.25,64),new THREE.MeshStandardMaterial({color:0x1f2327,roughness:.95}));disc.position.z=.004;marker.add(disc);
+    for(const radius of [.5,1.15]){const ring=new THREE.Mesh(new THREE.RingGeometry(radius-.02,radius,64),new THREE.MeshBasicMaterial({color:0xd6dde1,side:THREE.DoubleSide}));ring.position.z=.008;marker.add(ring);}padMarkers.add(marker);
+  });
+  for(const child of [...routeLabels.children]){child.material.map?.dispose();child.material.dispose();routeLabels.remove(child);}
+  const labeled=waypoints.at(-1)?.type==='land'?waypoints:[...waypoints,{type:'land',position:target,speed_m_s:.15}];
+  labeled.forEach((wp,i)=>{
+    const canvas=document.createElement('canvas');canvas.width=640;canvas.height=112;const ctx=canvas.getContext('2d');
+    ctx.fillStyle='rgba(3,7,12,.9)';ctx.fillRect(0,0,640,112);ctx.fillStyle=waypointColors[wp.type]??'#fff';ctx.fillRect(0,0,7,112);
+    ctx.font='bold 27px Consolas';ctx.fillText(waypointLabel(wp,i),20,40,600);ctx.font='22px Consolas';ctx.fillText(waypointDetail(wp),20,82,600);
+    const material=new THREE.SpriteMaterial({map:new THREE.CanvasTexture(canvas),depthTest:false,sizeAttenuation:false});
+    const label=new THREE.Sprite(material);label.position.set(...wp.position);label.center.set(.5,-.15-(i%3)*1.15);label.scale.set(.24,.042,1);label.renderOrder=8;routeLabels.add(label);
+  });
 }
 const thrustVector = new THREE.ArrowHelper(new THREE.Vector3(0,0,1),new THREE.Vector3(),.4,0xfab219,.05,.025);scene.add(thrustVector);
 const cameras = Array.from({length:4},()=> {const c = new THREE.PerspectiveCamera(40,1,.008,300);c.up.set(0,0,1);return c;});
@@ -250,7 +279,7 @@ function renderViews(width=$('views').clientWidth,height=$('views').clientHeight
   const split=Math.floor(width*.66),right=width-split,third=height/3;
   const rects=[[0,0,split-1,height],[split+1,2*third,right-1,third-1],[split+1,third,right-1,third-1],[split+1,0,right-1,third-1]];
   renderer.setScissorTest(true);
-  rects.forEach(([x,y,w,h],i)=>{renderer.setViewport(x,y,w,h);renderer.setScissor(x,y,w,h);cameras[i].aspect=w/h;if(i===3){cameras[i].left=-.1*w/h;cameras[i].right=.1*w/h;}cameras[i].updateProjectionMatrix();links.Body.visible=i!==3;trajectory.visible=i<3;plannedRoute.visible=i<3;guidancePath.visible=i<3;guidanceMarkers.visible=i===0&&cameraMode==='plan'&&!!guidance;thrustVector.visible=i===0;groundObjects.forEach(object=>{object.visible=i!==3;});renderer.render(scene,cameras[i]);});
+  rects.forEach(([x,y,w,h],i)=>{renderer.setViewport(x,y,w,h);renderer.setScissor(x,y,w,h);cameras[i].aspect=w/h;if(i===3){cameras[i].left=-.1*w/h;cameras[i].right=.1*w/h;}cameras[i].updateProjectionMatrix();links.Body.visible=i!==3;trajectory.visible=i<3;plannedRoute.visible=i<3;routeLabels.visible=i===0;guidancePath.visible=i<3;guidanceMarkers.visible=i===0&&cameraMode==='plan'&&!!guidance;thrustVector.visible=i===0;groundObjects.forEach(object=>{object.visible=i!==3;});renderer.render(scene,cameras[i]);});
   links.Body.visible=true;groundObjects.forEach(object=>{object.visible=true;});renderer.setScissorTest(false);
   drawBottomLabels(fitCanvas(finLabels,width,height),width,height,sample);
 }
@@ -326,7 +355,9 @@ function dataChanged(){
   dataVersion++;invalidate();
   rotorAnimation.setFrames(state.frames);
   state.plans=collectPlans(state.frames);guidancePlanShown=undefined;
-  guidancePanel.setData(state.frames,state.plans);
+  const recorded=state.metadata?.request;
+  const landingPad=recorded?.pads?.[recorded.waypoints?.find(w=>w.type==='land')?.pad??0]?.position??[0,0,0];
+  guidancePanel.setData(state.frames,state.plans,landingPad);
   $('cameraPlan').hidden=!state.plans.length;
   if(!state.plans.length&&cameraMode==='plan')setCameraMode('vehicle');
   state.milestones=computeMilestones();maxima=webcastMaxima();
@@ -472,20 +503,23 @@ function fillMissionForm(request){
   for(const key of ['position','velocity','attitude_deg','angular_rate_deg_s'])request[key].forEach((v,i)=>{$(`${key}_${i}`).value=v;});
   $('initial_motor_fraction').value=request.initial_motor_fraction*100;
   const selected=Array.isArray(request.disturbance)?request.disturbance:[request.disturbance];
-  document.querySelectorAll('input[name="disturbance"]').forEach(input=>{input.checked=selected.includes(input.value);});
+  disturbances.set(selected,request.disturbance_settings);
   $('battery_enabled').checked=request.battery.enabled;
   for(const key of ['capacity_ah','c_rating','max_current_a'])$(key).value=request.battery[key];
   $('initial_soc').value=request.battery.initial_soc*100;$('cell_resistance_ohm').value=request.battery.cell_resistance_ohm*1000;
   text('packLabel',request.hardware_profile==='planned_8s'?'8S / ESTIMATED':'6S / ESTIMATED');
-  planner.setWaypoints(request.waypoints??[]);checklist.update();
+  $('fast_live').checked=request.fast_live??true;
+  planner.setPads(request.pads);planner.setWaypoints(request.waypoints??[]);optimizer.set(request.convex_settings);checklist.update();
 }
 function missionRequest(){
   const result={};for(const key of ['name','controller','hardware_profile'])result[key]=$(key).value;
   result.disturbance=[...document.querySelectorAll('input[name="disturbance"]:checked')].map(input=>input.value);
+  if(config?.disturbance_defaults)result.disturbance_settings=disturbances.get();
   for(const key of ['seed','duration_s'])result[key]=Number($(key).value);
   for(const key of ['position','velocity','attitude_deg','angular_rate_deg_s'])result[key]=[0,1,2].map(i=>Number($(`${key}_${i}`).value));
   result.initial_motor_fraction=Number($('initial_motor_fraction').value)/100;
   result.waypoints=planner.getWaypoints();
+  result.pads=planner.getPads();result.convex_settings=result.controller==='convex'?optimizer.get():{};result.fast_live=$('fast_live').checked;
   result.battery={enabled:$('battery_enabled').checked};for(const key of ['capacity_ah','c_rating','max_current_a'])result.battery[key]=Number($(key).value);
   result.battery.initial_soc=Number($('initial_soc').value)/100;result.battery.cell_resistance_ohm=Number($('cell_resistance_ohm').value)/1000;return result;
 }
@@ -495,12 +529,12 @@ $('history').onchange=()=>{if($('history').value)selectMission($('history').valu
 $('play').onclick=()=>{if(!state.frames.length)return;state.live=false;if(state.time>=state.frames.at(-1).t)state.time=0;state.playing=!state.playing;};
 $('timeline').oninput=()=>{state.live=false;state.playing=false;state.time=Number($('timeline').value);};
 $('live').onclick=()=>{state.live=true;state.playing=false;state.time=state.frames.at(-1)?.t??0;};
-$('controller').onchange=()=>renderBoard();
+$('controller').onchange=()=>{planner.refresh();$('optimizerSettings').hidden=$('controller').value!=='convex';renderBoard();};
 $('hardware_profile').onchange=()=>text('packLabel',$('hardware_profile').value==='planned_8s'?'8S / ESTIMATED':'6S / ESTIMATED');
 $('hardwareButton').onclick=()=>$('hardwareDialog').showModal();$('closeHardware').onclick=()=>$('hardwareDialog').close();
 document.addEventListener('keydown',e=>{
   if(e.target.closest('input,select,textarea,dialog')||e.ctrlKey||e.metaKey||e.altKey)return;
-  if(/^[1-4]$/.test(e.key)){showPage(pages[Number(e.key)-1]);return;}
+  if(/^[1-5]$/.test(e.key)){showPage(pages[Number(e.key)-1]);return;}
   if(!state.frames.length)return;
   if(e.code==='Space'){e.preventDefault();$('play').click();}
   else if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();state.live=false;state.playing=false;state.time=THREE.MathUtils.clamp(state.time+(e.key==='ArrowLeft'?-1:1)*(e.shiftKey?5:.5),0,state.frames.at(-1).t);}
@@ -575,12 +609,14 @@ function animate(now){
 requestAnimationFrame(animate);
 try{
   config=await api('/api/config');updateTraining(config);text('hardwareStatus',config.hardware.status);
+  optimizer.configure(config.convex_parameters??[]);
+  disturbances.configure(config.disturbance_defaults??{});
   $('controller').replaceChildren(...Object.entries(config.policies).map(([key,name])=>new Option(name,key)));$('controller').value=config.defaults.controller;planner.draw();checklist.update();
   for(const part of config.hardware.parts){const el=document.createElement('div');el.className='hardware-part';const heading=document.createElement('h3');heading.textContent=part.part;const body=document.createElement('div');const name=document.createElement('strong');name.textContent=part.name;const spec=document.createElement('p');spec.textContent=part.spec;const basis=document.createElement('p');basis.textContent=part.basis;body.append(name,spec,basis);if(part.source){const a=document.createElement('a');a.href=part.source;a.target='_blank';a.rel='noreferrer';a.textContent='MANUFACTURER SOURCE ↗';body.append(a);}el.append(heading,body);$('hardwareParts').append(el);}
   if(page==='models')pageShown.models();
   const missions=await refreshHistory(),requested=new URLSearchParams(location.search).get('mission');const selected=requested??config.active??missions.find(m=>m.hinge_layout==='radial_span_v1'&&m.summary?.success)?.id??missions.find(m=>m.hinge_layout==='radial_span_v1'&&m.state==='complete')?.id??missions.find(m=>m.state==='complete')?.id;
   if(selected){await selectMission(selected);state.live=false;state.time=0;}
-}catch(e){state.connected=false;text('connection','SERVICE ERROR');message(e.message,true);renderBoard();}
+}catch(e){state.connected=false;text('connection','SERVICE ERROR');message(e.message,true);renderBoard();}finally{$('missionForm').inert=false;$('missionForm').setAttribute('aria-busy','false');}
 // Background tabs poll nothing; returning to the tab catches up at once.
 const pollMission=()=>{if(!state.recording&&!state.settled)poll().catch(e=>message(e.message,true));};
 const pollConfig=async()=>{try{updateTraining(await api('/api/config'));}catch{state.connected=false;renderBoard();}};

@@ -2,6 +2,50 @@ from fastapi.testclient import TestClient
 from mission_control import server
 
 
+def test_plan_validation_and_optimizer_profile_api(tmp_path, monkeypatch):
+    from mission_control import convex_parameters
+    monkeypatch.setattr(convex_parameters, 'PROFILES', tmp_path)
+    client = TestClient(server.app)
+    headers = {'X-Mission-Control': 'local'}
+    request = dict(controller='convex', duration_s=600, fast_live=True,
+                   pads=[dict(name='Remote pad', position=[8,3,0])],
+                   waypoints=[dict(type='land', pad=0, corridor_m=2, approach_speed_m_s=1)],
+                   convex_settings={'guidance': {'route_corridor_m': 2}})
+    response = client.post('/api/flight-plan/validate', json=request, headers=headers)
+    assert response.status_code == 200
+    assert response.json()['waypoints'][0]['position'] == [8,3,0]
+    assert client.post('/api/flight-plan/validate', json={'duration_s':601}, headers=headers).status_code == 422
+    response = client.post('/api/convex-profiles', json={'name':'Test', 'settings':request['convex_settings']}, headers=headers)
+    assert response.status_code == 200
+    assert client.get('/api/convex-profiles').json()[0]['settings'] == request['convex_settings']
+    assert client.post('/api/convex-profiles', json={'name':'../bad'}, headers=headers).status_code == 422
+    assert client.post('/api/convex-profiles', json={'name':'Test'}).status_code == 403
+
+
+def test_saved_flight_plan_library_preserves_full_mission(tmp_path, monkeypatch):
+    from mission_control import flight_plans
+    monkeypatch.setattr(flight_plans, 'LIBRARY', tmp_path)
+    client = TestClient(server.app)
+    request = dict(name='East pad plan', controller='convex', duration_s=600,
+                   pads=[dict(name='East', position=[4,0,0])],
+                   waypoints=[dict(type='land', pad=0, corridor_m=1)],
+                   convex_settings={'guidance': {'route_corridor_mode':'strict'}})
+    headers = {'X-Mission-Control':'local'}
+    response = client.post('/api/flight-plans', json=request, headers=headers)
+    assert response.status_code == 200
+    key = response.json()['id']
+    assert client.get('/api/flight-plans').json()[0]['id'] == key
+    saved = client.get(f'/api/flight-plans/{key}').json()
+    assert saved['version'] == 2
+    assert saved['mission']['convex_settings'] == request['convex_settings']
+    assert saved['mission']['waypoints'][0]['position'] == [4,0,0]
+    assert client.post('/api/flight-plans', json={**request,'duration_s':120}, headers=headers).json()['id'] == key
+    assert client.get(f'/api/flight-plans/{key}').json()['mission']['duration_s'] == 120
+    assert client.get('/api/flight-plans/bad').status_code == 404
+    assert client.post('/api/flight-plans', json={'duration_s':601}, headers=headers).status_code == 422
+    assert client.post('/api/flight-plans', json=request).status_code == 403
+
+
 def test_api_requires_local_write_header_and_rejects_cross_origin():
     client = TestClient(server.app)
     assert client.post('/api/missions', json={}).status_code == 403
@@ -14,6 +58,14 @@ def test_read_only_api_and_path_validation():
     assert client.get('/api/config').json()['defaults']['hardware_profile'] == 'planned_8s'
     assert client.get('/api/missions/not-a-mission').status_code == 404
     assert client.get('/', headers={'Host':'external.example'}).status_code == 400
+
+
+def test_editor_html_versions_assets_and_revalidates_cache():
+    client = TestClient(server.app)
+    response = client.get('/')
+    assert response.headers['cache-control'] == 'no-cache'
+    style_version = (server.HERE / 'static/style.css').stat().st_mtime_ns
+    assert f'/static/style.css?v={style_version}' in response.text
 
 
 def test_convex_guidance_is_offered_and_may_fly_routes(monkeypatch):

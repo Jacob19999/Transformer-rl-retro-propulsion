@@ -49,7 +49,7 @@ export function createGuidancePanel(root, { onSeek }) {
   const previous = root.querySelector('[data-action="previous"]'), next = root.querySelector('[data-action="next"]');
   const canvases = Object.fromEntries([...root.querySelectorAll('canvas')].map(c => [c.dataset.plot, c]));
   const diagnostics = createGuidanceDiagnostics(root.querySelector('.guidance-diagnostics'), onSeek);
-  let frames = [], plans = [], time = 0;
+  let frames = [], plans = [], time = 0, pad = [0,0,0];
   previous.onclick = () => { const p = plans.filter(p => p.t < time - .001).at(-1); if (p) onSeek(p.t); };
   next.onclick = () => { const p = plans.find(p => p.t > time + .001); if (p) onSeek(p.t); };
 
@@ -73,17 +73,17 @@ export function createGuidancePanel(root, { onSeek }) {
     put('gap', `${fmt(Number.isFinite(s?.convexification_gap) ? s.convexification_gap * 100 : null, 3)} %`);
     const headroom = Number.isFinite(g.thrust_available_n) && Number.isFinite(g.thrust_command_n) ? g.thrust_available_n - g.thrust_command_n : null;
     put('headroom', `${fmt(headroom)} N`); field('headroom').classList.toggle('negative', headroom != null && headroom < 0);
-    const details = s ? `${s.solves ?? '—'} candidate solves · ${s.iterations ?? '—'} iterations · terminal miss ${fmt(s.terminal_miss_m, 2)} m. ` : '';
+    const details = s ? `${s.solves ?? '—'} candidate solves · ${s.iterations ?? '—'} iterations · terminal miss ${fmt(s.terminal_miss_m, 2)} m · corridor excess ${fmt(s.corridor_excess_m, 3)} m. ` : '';
     put('note', (status.tone === 'warning' && s?.mode === 'soft_terminal' ? 'No safe terminal plan; showing the maximum-braking fallback. ' : '') + details +
       (plan ? 'Thrust plan shows the optimizer’s slack σ. Amber line is current available thrust, not a recorded optimization bound. Headroom = available − commanded thrust.' : 'Waiting for the first recorded trajectory. Live reference and vehicle position are shown when available.'));
     if (!root.getClientRects().length) return;
     diagnostics.update(frames, frame, time);
     const flown = frames.filter(f => f.t <= time);
-    drawTrack(canvases.track, plan, flown, frame, status);
+    drawTrack(canvases.track, plan, flown, frame, status, pad);
     drawHorizon(canvases.altitude, 'altitude', plan, flown, frame, time, status);
     drawHorizon(canvases.thrust, 'thrust', plan, flown, frame, time, status);
   }
-  return { setData(data, indexedPlans) { frames = data; plans = indexedPlans; }, update };
+  return { setData(data, indexedPlans, landingPad=[0,0,0]) { frames = data; plans = indexedPlans; pad=landingPad; }, update };
 }
 
 function plot(canvas, xRange, yRange, equalScale = false) {
@@ -136,14 +136,14 @@ function range(values, minimumSpan = 2) {
   return [min - pad, max + pad];
 }
 
-function drawTrack(canvas, plan, flown, frame, status) {
-  const points = [...(plan?.positions ?? []), ...flown.map(f => f.position), [-1.25, -1.25, 0], [1.25, 1.25, 0], frame.guidance.reference_position].filter(Boolean);
+function drawTrack(canvas, plan, flown, frame, status, pad) {
+  const points = [...(plan?.positions ?? []), ...flown.map(f => f.position), [pad[0]-1.25,pad[1]-1.25,0], [pad[0]+1.25,pad[1]+1.25,0], frame.guidance.reference_position].filter(Boolean);
   const p = plot(canvas, range(points.map(v => v[0])), range(points.map(v => v[1])), true);
   if (!p) return;
   const color = status.tone === 'warning' ? colors.warning : colors.plan;
   // Use the same actual pad radius as the 3D view, rather than inventing a
   // glide cone or presenting an unrecorded constraint as measured telemetry.
-  p.ctx.strokeStyle = colors.muted; p.ctx.beginPath(); p.ctx.arc(p.x(0), p.y(0), Math.abs(p.x(1.25) - p.x(0)), 0, Math.PI * 2); p.ctx.stroke();
+  p.ctx.strokeStyle = colors.muted; p.ctx.beginPath(); p.ctx.arc(p.x(pad[0]), p.y(pad[1]), Math.abs(p.x(1.25) - p.x(0)), 0, Math.PI * 2); p.ctx.stroke();
   line(p, flown.map(f => [f.position[0], f.position[1]]), colors.actual);
   line(p, (plan?.positions ?? []).map(v => [v[0], v[1]]), color, [5, 4], 2);
   const actual = frame.position.slice(0, 2), ref = frame.guidance.reference_position?.slice(0, 2);

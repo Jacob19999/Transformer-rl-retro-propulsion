@@ -115,11 +115,16 @@ class ConvexGuidanceController(BaseController):
     """Single-vehicle controller (the SOCP is solved per vehicle)."""
 
     def __init__(self, settings: dict, vehicle: VehicleModel, pad_position, touchdown_height_m: float,
-                 dt: float, max_command_angle: float = 0.262, servo_deadband_rad: float = 0.0):
+                 dt: float, max_command_angle: float = 0.262, servo_deadband_rad: float = 0.0,
+                 landing_corridor_m: float | None = None, landing_speed_m_s: float | None = None):
         super().__init__(settings)
         if dt <= 0.0:
             raise ValueError('Controller dt must be positive')
         self.vehicle, self.dt = vehicle, float(dt)
+        # The flight plan's Landing step: corridor half-width and speed limit
+        # of the leg from the last waypoint to the gate (None: defaults).
+        self.landing_corridor_m = landing_corridor_m
+        self.landing_speed_m_s = landing_speed_m_s
         g, tr, att = settings['guidance'], settings['tracking'], settings['attitude']
         self.g, self.tr, self.att = g, tr, att
         self.spool_rate = float(settings['spool_up']['throttle_rate_per_s'])
@@ -176,7 +181,9 @@ class ConvexGuidanceController(BaseController):
             max_leg_nodes=int(g['max_leg_nodes']), flypass_capture_fraction=float(g['flypass_capture_fraction']),
             max_solve_time_s=float(g['max_solve_time_s']),
             corridor_m=None if g.get('route_corridor_m') is None else float(g['route_corridor_m']),
-            corridor_weight=float(g.get('route_corridor_weight', 10.0)))
+            corridor_weight=float(g.get('route_corridor_weight', 10.0)),
+            corridor_mode=str(g.get('route_corridor_mode', 'soft')),
+            workers=int(g.get('solver_workers', 4)))
         self.reset()
 
     def _planning_ceiling(self, available_n: float, strict: bool = False) -> float:
@@ -535,9 +542,11 @@ class ConvexGuidanceController(BaseController):
         result = []
         for i, wp in enumerate(route):
             if isinstance(wp, dict):  # WaypointMission.record() entries
+                corridor = wp.get('corridor_m')
                 wp = RouteWaypoint(position=tuple(float(x) for x in wp['position']), kind=wp.get('type', 'flypass'),
                                    radius_m=float(wp.get('radius_m', 1.0)), speed_m_s=float(wp.get('speed_m_s', 3.0)),
-                                   hold_s=float(wp.get('hold_s', 0.0)))
+                                   hold_s=float(wp.get('hold_s', 0.0)),
+                                   corridor_m=None if corridor is None else float(corridor))
             hold = wp.hold_s if wp.kind == HOVER else 0.0
             if i == 0 and wp.kind == HOVER:
                 hold = max(0.0, hold - hold_elapsed_s)
@@ -548,8 +557,10 @@ class ConvexGuidanceController(BaseController):
         """The route corridor's curves, one per remaining leg (landing included).
 
         A direct landing draws no route and keeps the glide-slope approach.
+        The planner keeps a leg's curve only where that leg has a corridor
+        half-width (its step's own, else the configured default).
         """
-        if points is None or self.guidance.corridor_m is None or len(points) <= 2:
+        if points is None or len(points) < 2:
             return None
         key = (tuple(tuple(float(x) for x in p) for p in points), int(index))
         if self._path_key != key:
@@ -562,7 +573,8 @@ class ConvexGuidanceController(BaseController):
                 # pulled the plan down to the 0.8 m floor at 2.3 m/s (offline
                 # replica: touchdown 17 m from the pad). The corridor never
                 # runs below the lower end of its leg.
-                curve = catmull_rom_leg(points, leg)
+                curve = (np.linspace(points[0], points[1], 49) if len(points) == 2
+                         else catmull_rom_leg(points, leg))
                 curve[:, 2] = np.maximum(curve[:, 2], min(curve[0, 2], curve[-1, 2]))
                 self._path_curves.append(curve)
         if len(self._path_curves) != remaining + 1:
@@ -612,7 +624,8 @@ class ConvexGuidanceController(BaseController):
             emergency_thrust_max_n=available,
             emergency_thrust_rate_n_s=self._thrust_rate(volts, self.spool_rate))
         self._last_attempt_t = self._t
-        new = self.guidance.plan(*start, self.gate, waypoints, landing_time_hint=hint, path=path)
+        new = self.guidance.plan(*start, self.gate, waypoints, landing_time_hint=hint, path=path,
+                                 landing_corridor_m=self.landing_corridor_m, landing_speed_m_s=self.landing_speed_m_s)
         self._plan_origin = origin
         if new is None:
             if plan is None or len(waypoints) != self._plan_route_len:

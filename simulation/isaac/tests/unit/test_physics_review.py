@@ -42,7 +42,7 @@ def test_bounce_does_not_erase_earlier_impact_speed():
     from tvc_env.envs.direct_rl_env import TVCDirectRLEnv
     false = lambda *args: torch.tensor([False])
     env = SimpleNamespace(
-        _contact_sm=ContactStateMachine(1, dwell_frames=3),
+        _contact_sm=ContactStateMachine(1, dwell_frames=3), _navigation=None,
         _touchdown_speed=torch.zeros(1),
         _airborne_frames=torch.full((1,), 1 << 30, dtype=torch.int32),
         _body_iface=SimpleNamespace(get_root_quaternion_wxyz=lambda: torch.tensor([[1., 0., 0., 0.]])),
@@ -68,7 +68,7 @@ def test_angular_rate_gate_judges_arrival_from_flight_not_contact_impulse():
     from tvc_env.envs.direct_rl_env import TVCDirectRLEnv
     from tvc_env.sim.crash_logic import CrashDetector
     env = SimpleNamespace(
-        _contact_sm=ContactStateMachine(1, dwell_frames=3),
+        _contact_sm=ContactStateMachine(1, dwell_frames=3), _navigation=None,
         _touchdown_speed=torch.zeros(1),
         _airborne_frames=torch.full((1,), 1 << 30, dtype=torch.int32),
         _body_iface=SimpleNamespace(get_root_quaternion_wxyz=lambda: torch.tensor([[1., 0., 0., 0.]])),

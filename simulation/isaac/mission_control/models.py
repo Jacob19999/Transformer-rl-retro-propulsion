@@ -24,14 +24,25 @@ CLASSICAL_CONTROLLERS = ('convex',)
 # mission 6421f6ec55a4), were removed from mission control on 2026-09-26.
 # Recorded legacy and PID missions still replay.
 VANE_MODELS = ('momentum',)
-DEFAULTS = dict(name='Landing test', controller='convex', seed=2026, duration_s=30.,
+# Landing pads are flat targets on the ground plane (the Isaac scene has no
+# pad collider; the ground is the contact surface). The landing step names
+# one; without a landing step the vehicle lands on the first pad.
+HOME_PAD = dict(name='Home pad', position=[0., 0., 0.])
+MAX_PADS = 4
+PAD_SEPARATION_M = 3.   # pad markings are 2.5 m across
+# 10 simulated minutes: the 8S 5 Ah pack hovers for roughly 6 minutes, so
+# the battery, not the clock, bounds the longest flights.
+MAX_DURATION_S = 600.
+DEFAULTS = dict(name='Landing test', controller='convex', seed=2026, duration_s=120., fast_live=True,
                 hardware_profile='planned_8s', vane_model='momentum',
                 position=[-.28, .82, 18.], velocity=[0., 0., -1.],
                 attitude_deg=[0., 0., 0.], angular_rate_deg_s=[0., 0., 0.],
-                initial_motor_fraction=0., disturbance=[],
-                waypoints=[],
+                initial_motor_fraction=0., disturbance=[], disturbance_settings={},
+                pads=[HOME_PAD], waypoints=[], convex_settings={},
                 battery=dict(enabled=True, capacity_ah=5., c_rating=45., initial_soc=1.,
                              cell_resistance_ohm=.003, max_current_a=120.))
+WAYPOINT_FIELDS = {'position', 'type', 'hold_s', 'radius_m', 'speed_m_s', 'name', 'corridor_m', 'pad',
+                   'approach_speed_m_s'}
 
 
 def finite(value, low, high, name):
@@ -48,6 +59,11 @@ def validate_spline_clearance(start, waypoints):
     """
     heights = [start[2], *(wp['position'][2] for wp in waypoints), 0.]
     for leg in range(len(waypoints)):
+        previous = start if leg == 0 else waypoints[leg-1]['position']
+        if waypoints[leg]['position'] == previous:
+            continue  # Consecutive equal positions denote a stationary leg.
+        if waypoints[leg].get('type') in ('takeoff', 'descent'):
+            continue  # These legs use straight vertical references, not cubics.
         p0, p1, p2, p3 = (heights[max(0,leg-1)], heights[leg], heights[leg+1], heights[leg+2])
         a = .5*(-p0+3*p1-3*p2+p3)
         b = .5*(2*p0-5*p1+4*p2-p3)
@@ -66,11 +82,47 @@ def validate_spline_clearance(start, waypoints):
             raise ValueError(f'Spline before waypoint {leg+1} drops below ground clearance; raise or reposition its neighboring waypoints')
 
 
+def validate_pads(value):
+    if not isinstance(value, list) or not 1 <= len(value) <= MAX_PADS:
+        raise ValueError(f'Provide 1-{MAX_PADS} landing pads')
+    pads = []
+    for i, item in enumerate(value):
+        if not isinstance(item, dict) or set(item) - {'name', 'position'}:
+            raise ValueError(f'Pad {i+1}: unknown fields')
+        position = item.get('position')
+        if not isinstance(position, list) or len(position) != 3:
+            raise ValueError(f'Pad {i+1}: position requires three numbers')
+        x, y = (finite(v, -100, 100, f'Pad {i+1} position') for v in position[:2])
+        if finite(position[2], -1, 1, f'Pad {i+1} height') != 0:
+            raise ValueError(f'Pad {i+1}: pads lie on the ground plane (Z = 0)')
+        name = item.get('name') or f'Pad {i+1}'
+        if not isinstance(name, str) or len(name.strip()) > 24:
+            raise ValueError(f'Pad {i+1}: names are limited to 24 characters')
+        for other in pads:
+            if math.dist(other['position'][:2], (x, y)) < PAD_SEPARATION_M:
+                raise ValueError(f'Pads must be at least {PAD_SEPARATION_M:.0f} m apart')
+        pads.append(dict(name=name.strip(), position=[x, y, 0.]))
+    return pads
+
+
+def landing_pad(mission):
+    """The pad the mission lands on: its landing step's, else the first."""
+    step = next((w for w in mission.get('waypoints', []) if w['type'] == 'land'), None)
+    pads = mission.get('pads') or [HOME_PAD]
+    return pads[step.get('pad', 0) if step else 0]
+
+
 def validate_mission(value):
     if not isinstance(value, dict) or set(value) - set(DEFAULTS):
         raise ValueError('Unknown mission fields')
     result = copy.deepcopy(DEFAULTS)
     result.update(value)
+    from .convex_parameters import validate_settings, max_speed
+    result['convex_settings'] = validate_settings(result['convex_settings'])
+    if result['convex_settings'] and result['controller'] != 'convex':
+        raise ValueError('Optimizer parameters apply to convex guidance only')
+    result['pads'] = validate_pads(result['pads'])
+    speed_limit = max_speed(result['convex_settings']) if result['controller'] == 'convex' else 15.
     if not isinstance(result['name'], str) or not 1 <= len(result['name'].strip()) <= 80:
         raise ValueError('Mission name must contain 1–80 characters')
     result['name'] = result['name'].strip()
@@ -85,6 +137,8 @@ def validate_mission(value):
     if not isinstance(selected, list) or any(x not in ('wind', 'sensor_noise', 'com_shift') for x in selected):
         raise ValueError('Unknown disturbance')
     result['disturbance'] = sorted(set(selected))
+    from .disturbance_parameters import validate_settings as validate_disturbances
+    result['disturbance_settings'] = validate_disturbances(result['disturbance_settings'])
     if result['hardware_profile'] not in ('planned_8s', 'legacy_6s'):
         raise ValueError('Unknown hardware profile')
     if result['vane_model'] is None:
@@ -98,7 +152,9 @@ def validate_mission(value):
     if seed != int(seed):
         raise ValueError('Seed must be an integer')
     result['seed'] = int(seed)
-    result['duration_s'] = finite(result['duration_s'], 1, 180, 'Duration')
+    result['duration_s'] = finite(result['duration_s'], 1, MAX_DURATION_S, 'Duration')
+    if not isinstance(result['fast_live'], bool):
+        raise ValueError('Fast live must be a boolean')
     for key, limits in [('position', [(-100, 100), (-100, 100), (.34, 100)]),
                         ('velocity', [(-20, 20)] * 3), ('attitude_deg', [(-180, 180)] * 3),
                         ('angular_rate_deg_s', [(-720, 720)] * 3)]:
@@ -110,23 +166,65 @@ def validate_mission(value):
         raise ValueError('Provide up to 12 waypoints')
     waypoints=[]
     for i, item in enumerate(result['waypoints']):
-        if not isinstance(item,dict) or set(item)-{'position','type','hold_s','radius_m','speed_m_s'}:
+        if not isinstance(item,dict) or set(item)-WAYPOINT_FIELDS:
             raise ValueError(f'Waypoint {i+1}: unknown fields')
+        kind=item.get('type','flypass')
+        if kind not in ('hover','flypass','takeoff','descent','land'):
+            raise ValueError('Waypoint type must be takeoff, hover, flypass, descent or land')
+        pad = None
+        if kind == 'land':
+            # The landing step flies to its pad; its position is the pad's.
+            pad = item.get('pad', 0)
+            if isinstance(pad, bool) or not isinstance(pad, int) or not 0 <= pad < len(result['pads']):
+                raise ValueError(f'Waypoint {i+1}: landing pad must be one of the {len(result["pads"])} pads')
+            item = dict(item, position=list(result['pads'][pad]['position']))
+        elif 'pad' in item or 'approach_speed_m_s' in item:
+            raise ValueError(f'Waypoint {i+1}: only a landing step selects a pad and an approach speed')
         position=item.get('position')
         if not isinstance(position,list) or len(position)!=3:
             raise ValueError(f'Waypoint {i+1}: position requires three numbers')
-        position=[finite(v,lo,hi,f'Waypoint {i+1} position') for v,(lo,hi) in zip(position,[(-100,100),(-100,100),(1,100)])]
-        kind=item.get('type','flypass')
-        if kind not in ('hover','flypass'):
-            raise ValueError('Waypoint type must be hover or flypass')
-        waypoints.append(dict(position=position,type=kind,
+        position=[finite(v,lo,hi,f'Waypoint {i+1} position') for v,(lo,hi) in zip(position,[(-100,100),(-100,100),(0 if kind=='land' else 1,100)])]
+        name = item.get('name', '')
+        if not isinstance(name, str) or len(name.strip()) > 40:
+            raise ValueError('Waypoint name must contain at most 40 characters')
+        previous = waypoints[-1]['position'] if waypoints else result['position']
+        if kind == 'flypass' and position == previous:
+            raise ValueError('Fly-through must differ from the preceding point; use Hover for a stationary step')
+        if kind == 'takeoff' and (i != 0 or position[2] <= previous[2]):
+            raise ValueError('Takeoff must be the first waypoint and above the start')
+        if kind == 'descent' and position[2] >= previous[2]:
+            raise ValueError('Descent must be below the preceding waypoint')
+        if kind in ('takeoff','descent') and position[:2] != previous[:2]:
+            raise ValueError('Takeoff and descent legs must be vertical (same X/Y as preceding point)')
+        if kind == 'land' and i != len(result['waypoints'])-1:
+            raise ValueError('Landing must be the final waypoint')
+        if kind in ('takeoff','descent','land') and result['controller'] != 'convex':
+            raise ValueError('Takeoff, descent and landing waypoints require convex guidance')
+        corridor = item.get('corridor_m')
+        if corridor is not None:
+            if result['controller'] != 'convex':
+                raise ValueError('Route corridors are convex-guidance constraints')
+            corridor = finite(corridor, .2, 25, f'Waypoint {i+1} corridor half-width')
+        waypoint = dict(position=position,type=kind,name=name.strip(),
             hold_s=finite(item.get('hold_s',2.),.1,60,'Hover hold'),
             radius_m=finite(item.get('radius_m',1.),.1,10,'Waypoint radius'),
-            speed_m_s=finite(item.get('speed_m_s',3.),.1,15,'Path reference speed')))
+            # A leg's speed limit (fly-through: also its arrival speed along
+            # the route); a landing step's is the touchdown speed.
+            speed_m_s=finite(item.get('speed_m_s',.15 if kind=='land' else 3.),.1,
+                             .5 if kind=='land' else speed_limit,
+                             'Waypoint speed'),
+            corridor_m=corridor)
+        if kind == 'land':
+            approach = item.get('approach_speed_m_s')
+            waypoint.update(pad=pad, approach_speed_m_s=None if approach is None else
+                            finite(approach, .3, speed_limit, 'Landing approach speed'))
+        waypoints.append(waypoint)
     result['waypoints']=waypoints
-    validate_spline_clearance(result['position'], waypoints)
+    validate_spline_clearance(result['position'], [w for w in waypoints if w['type'] != 'land'])
     if waypoints and result['controller'] not in ('ppo_mission', 'convex'):
         raise ValueError('Waypoints require the waypoint-flight PPO policy or convex guidance; other controllers do not observe route targets')
+    if result['controller'] != 'convex' and landing_pad(result)['position'] != [0., 0., 0.]:
+        raise ValueError('PPO policies are trained to land on the origin pad; other pads require convex guidance')
     result['initial_motor_fraction'] = finite(result['initial_motor_fraction'], 0, 1, 'Initial motor fraction')
     b = copy.deepcopy(DEFAULTS['battery'])
     if not isinstance(result['battery'], dict) or set(result['battery']) - set(b):
@@ -299,6 +397,8 @@ def disturbance_config(mission):
         # Wind's unrelated COM defaults must not reduce a selected 10 mm
         # COM disturbance to 5 mm just because wind is merged last.
         result = deep_merge(result, {'disturbances': {key: source[key] for key in sections[name]}})
+    from .disturbance_parameters import validate_settings as validate_disturbances
+    result = deep_merge(result, {'disturbances': validate_disturbances(mission.get('disturbance_settings', {}))})
     settings = result['disturbances']
     settings['enabled'] = bool(selected)
     for name in ('wind', 'sensor_noise', 'com_offset'):

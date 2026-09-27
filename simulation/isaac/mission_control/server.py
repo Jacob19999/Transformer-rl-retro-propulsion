@@ -15,7 +15,7 @@ import uuid
 from collections import OrderedDict
 import psutil
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .models import ROOT, DEFAULTS, validate_mission, policy_paths, default_mission, convex_available, braking_envelopes
@@ -30,7 +30,10 @@ CONVEX_NOTE = ('Deterministic classical controller, no checkpoint. A second-orde
 RUNS = ROOT / 'runs/mission_control'
 RUNS.mkdir(parents=True, exist_ok=True)
 app = FastAPI(title='EDF Mission Control', docs_url=None, redoc_url=None)
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
+# Hosts the service answers to. --lan adds this machine's LAN names at startup
+# (the middleware reads the list when the app builds its stack, on first request).
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost', 'testserver']
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
 lock = threading.Lock()
 process = None
 active_id = None
@@ -330,6 +333,8 @@ def status(mid):
 
 @app.get('/api/config')
 def config():
+    from .convex_parameters import schema
+    from .disturbance_parameters import defaults as disturbance_defaults
     paths = policy_paths()
     policies = {}
     if convex_available():
@@ -340,9 +345,63 @@ def config():
         policies = {'ppo_mission': 'EXPERIMENTAL PPO · waypoint flight + landing', **policies}
     training = active_training_command()
     return dict(defaults=default_mission(paths), hardware=read_json(HERE / 'hardware.json'),
-                policies=policies, vehicles=braking_envelopes(),
+                policies=policies, vehicles=braking_envelopes(), convex_parameters=schema(),
+                disturbance_defaults=disturbance_defaults(),
                 engine='NVIDIA Isaac Sim / PhysX', training=bool(training), training_metrics=training_snapshot(training),
                 active=active_id if process and process.poll() is None else None)
+
+
+@app.post('/api/flight-plan/validate')
+async def validate_plan(request: Request):
+    try:
+        return validate_mission(await request.json())
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get('/api/convex-profiles')
+def convex_profiles():
+    from .convex_parameters import list_profiles
+    return list_profiles()
+
+
+@app.get('/api/flight-plans')
+def flight_plans():
+    from .flight_plans import list_plans
+    return list_plans()
+
+
+@app.get('/api/flight-plans/{key}')
+def flight_plan(key: str):
+    from .flight_plans import read_plan
+    try:
+        return read_plan(key)
+    except (ValueError, KeyError, FileNotFoundError) as exc:
+        raise HTTPException(404, 'Saved flight plan is missing or invalid') from exc
+
+
+@app.post('/api/flight-plans')
+async def save_flight_plan(request: Request):
+    from .flight_plans import save_plan
+    try:
+        value = await request.json()
+        with lock:
+            return save_plan(value)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.post('/api/convex-profiles')
+async def save_convex_profile(request: Request):
+    from .convex_parameters import save_profile
+    try:
+        body = await request.json()
+        if not isinstance(body, dict) or set(body) - {'name', 'settings', 'note'}:
+            raise ValueError('Expected profile name, settings and optional note')
+        with lock:
+            return save_profile(body.get('name'), body.get('settings'), body.get('note', ''))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @app.get('/api/missions')
@@ -457,7 +516,15 @@ def video(mid: str):
 
 @app.get('/')
 def index():
-    return FileResponse(HERE / 'static/index.html')
+    # Keep the UI bundle and stylesheet in sync after a local update. The old
+    # fixed query string let a cached pre-editor CSS leave the canvas 300x150.
+    html = (HERE / 'static/index.html').read_text(encoding='utf-8')
+    for filename in ('style.css', 'fin-labels.css', 'app.js'):
+        path = HERE / 'static' / filename
+        if path.is_file():
+            html = re.sub(r'/static/' + re.escape(filename) + r'(?:\?[^"\s]*)?',
+                          f'/static/{filename}?v={path.stat().st_mtime_ns}', html)
+    return HTMLResponse(html, headers={'Cache-Control': 'no-cache'})
 
 
 app.mount('/static', StaticFiles(directory=HERE / 'static'), name='static')
@@ -467,5 +534,16 @@ if __name__ == '__main__':
     import uvicorn
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=8830)
+    parser.add_argument('--lan', action='store_true',
+                        help='Listen on every interface so devices on the local network can open the console. '
+                             'There is no login: anyone on the network can launch and stop Isaac missions.')
     args = parser.parse_args()
-    uvicorn.run(app, host='127.0.0.1', port=args.port)
+    host = '127.0.0.1'
+    if args.lan:
+        import socket
+        host = '0.0.0.0'
+        names = {socket.gethostname(), socket.getfqdn()}
+        addresses = {info[4][0] for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)}
+        ALLOWED_HOSTS.extend(sorted(names | addresses))
+        print('Mission control on the LAN: ' + ', '.join(f'http://{a}:{args.port}' for a in sorted(addresses)))
+    uvicorn.run(app, host=host, port=args.port)

@@ -59,6 +59,7 @@ class ContactStateMachine:
         in_contact: Tensor,       # (num_envs,) bool — any landing contact
         is_crashed: Tensor,       # (num_envs,) bool — crash detected by crash_logic
         contact_force: Tensor,    # (num_envs,) float — contact force magnitude (N)
+        landing_enabled: Tensor | None = None,
     ) -> Tensor:
         """Update state machine for one step.
 
@@ -104,6 +105,12 @@ class ContactStateMachine:
             (self._state == ContactState.GROUND_CONTACT_CANDIDATE) &
             (self._dwell_count >= self.dwell_frames)
         )
+        # An explicit ground takeoff must be able to spool while supported by
+        # its legs. Contact remains CANDIDATE and crash checks remain active;
+        # ordinary landing missions retain the original detector behavior.
+        if landing_enabled is not None:
+            self._dwell_count[~landing_enabled] = 0
+            dwell_met &= landing_enabled
         self._state[dwell_met] = ContactState.LANDED
 
         # Transition: ANY non-LANDED → CRASHED on crash detection

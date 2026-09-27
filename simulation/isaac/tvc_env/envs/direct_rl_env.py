@@ -813,7 +813,23 @@ class TVCDirectRLEnv(TVCEnvBase):
         is_crashed = is_crashed | self._crash_detector.check_angular_rate_at_contact(arrival_rate, from_flight)
         is_crashed = is_crashed | self._crash_detector.check_excessive_tilt(q)
 
-        self._contact_sm.update(in_contact, is_crashed, contact_force)
+        landing_enabled = None
+        if self._navigation is not None:
+            nav = self._navigation
+            altitude = self._body_iface.get_root_position()[:, 2] - nav.origins[:, 2]
+            # Arm landing once a declared ground takeoff clears the legs.
+            # Without this, launch contact satisfies the landing dwell before
+            # the cold rotor can spool, terminating the mission on the pad.
+            lifted_off = nav.launch_pending & (altitude >= .8)
+            nav.launch_pending &= ~lifted_off
+            # Launch support/settling is not the mission's eventual touchdown.
+            # Isaac a767e141043b retained 0.734 m/s from the initial 0.34 m
+            # spawn settling even after completing every waypoint and landing.
+            # Crash checks above still see its true arrival speed; clear only
+            # the landing metric once this explicit launch has lifted off.
+            self._touchdown_speed[lifted_off] = 0.
+            landing_enabled = ~nav.launch_pending
+        self._contact_sm.update(in_contact, is_crashed, contact_force, landing_enabled=landing_enabled)
 
     def _build_vehicle_state(self) -> VehicleState:
         """Collect all state into a VehicleState dataclass."""

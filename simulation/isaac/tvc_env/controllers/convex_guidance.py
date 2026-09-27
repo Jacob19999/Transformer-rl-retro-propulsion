@@ -36,11 +36,14 @@ between them too):
   * upright arrival: the last thrust vector is vertical (eq. 12 / 37);
   * waypoints: a fly-through node lies inside a capture ball; a hover node is
     at rest on the point and stays there for the remaining hold time;
-  * route corridor (optional, soft): each node stays within a half-width of
-    the drawn route, the mission sequencer's Catmull-Rom curve, measured from
-    a chord of it (the distance to a segment is convex: an SOC per node). Any
-    excess is a penalized slack, so a start the corridor cannot contain still
-    has a plan.
+  * leg speed: every node of a waypoint leg (and of the landing leg, when an
+    approach speed is set) stays under that leg's speed, after braking an
+    entry faster than it at the planner's braking acceleration;
+  * route corridor (optional, soft): each node stays within its leg's
+    half-width of the drawn route, the mission sequencer's Catmull-Rom curve,
+    measured from a chord of it (the distance to a segment is convex: an SOC
+    per node). Any excess is a penalized slack, so a start the corridor
+    cannot contain still has a plan.
 
 A plan that follows a corridor may use the full thrust (the soft-terminal
 ceiling) while it brakes an over-speed start back under the speed bound.
@@ -72,6 +75,8 @@ from scipy import sparse
 
 GRAVITY = 9.81
 FLYPASS, HOVER = 'flypass', 'hover'
+TAKEOFF, DESCENT = 'takeoff', 'descent'
+STOP_KINDS = (HOVER, TAKEOFF, DESCENT)
 _OK = ('Solved', 'AlmostSolved')
 _GOLDEN = (math.sqrt(5.0) - 1.0) / 2.0
 CORRIDOR_WINDOW = 0.1   # refined corridor chords span +-10% of the leg around each node
@@ -141,6 +146,7 @@ class RouteWaypoint:
     radius_m: float = 1.0
     speed_m_s: float = 3.0
     hold_s: float = 0.0      # remaining hold time for a hover waypoint
+    corridor_m: float | None = None   # corridor half-width of the leg to this waypoint (None: planner default)
 
 
 @dataclass(frozen=True)
@@ -205,6 +211,9 @@ class _Segment:
     radius: float = 0.0
     curve: np.ndarray | None = None   # (M, 3) drawn route of this leg (corridor)
     along: np.ndarray | None = None   # (nodes,) arc fractions of the leg's nodes on the curve
+    speed: float | None = None        # leg speed limit
+    arrival_velocity: np.ndarray | None = None
+    corridor: float | None = None     # corridor half-width around `curve`
 
 
 def _arc(curve: np.ndarray) -> np.ndarray:
@@ -242,6 +251,8 @@ def catmull_rom_leg(points, leg: int, samples: int = 49) -> np.ndarray:
     p = np.asarray(points, dtype=float)
     a, b = p[max(0, leg - 1)], p[leg]
     c, d = p[leg + 1], p[min(len(p) - 1, leg + 2)]
+    if np.linalg.norm(c - b) < 1e-9:
+        return np.repeat(b[None, :], samples, axis=0)
     t = np.linspace(0.0, 1.0, samples)[:, None]
     return 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t * t + (-a + 3 * b - 3 * c + d) * t ** 3)
 
@@ -307,7 +318,7 @@ class ConvexGuidance:
                  objective: str = 'energy', landing_nodes: int = 24, route_dt_s: float = 0.35,
                  max_leg_nodes: int = 40, flypass_capture_fraction: float = 0.5,
                  max_solve_time_s: float = 0.5, corridor_m: float | None = None,
-                 corridor_weight: float = 10.0):
+                 corridor_weight: float = 10.0, workers: int = 4, corridor_mode: str = 'soft'):
         if objective not in ('energy', 'delta_v'):
             raise ValueError("objective must be 'energy' or 'delta_v'")
         if objective == 'energy' and energy is None:
@@ -324,12 +335,42 @@ class ConvexGuidance:
         self.max_solve_time_s = float(max_solve_time_s)
         self.corridor_m = None if corridor_m is None else float(corridor_m)
         self.corridor_weight = float(corridor_weight)
+        if corridor_mode not in ('soft', 'strict'):
+            raise ValueError('Corridor mode must be soft or strict')
+        self.corridor_mode = corridor_mode
+        # Independent SOCPs of one plan (the free-final-time sweep, the
+        # soft-terminal durations) are solved on this many threads. Every
+        # problem has the same equations as a serial solve. Wall-time solver
+        # limits can still affect feasibility under CPU contention.
+        self.workers = max(1, int(workers))
+        self._executor = None
+
+    def _pool(self):
+        if self._executor is None:
+            from concurrent.futures import ThreadPoolExecutor
+            self._executor = ThreadPoolExecutor(self.workers, thread_name_prefix='socp')
+        return self._executor
+
+    def close(self):
+        if self._executor is not None:
+            self._executor.shutdown(wait=True)
+            self._executor = None
+
+    def _solve_many(self, problems, stats, **options) -> list:
+        """_solve for each (r0, v0, thrust, gate, segments), in order; concurrently when workers > 1."""
+        if self.workers == 1 or len(problems) == 1:
+            return [self._solve(*problem, stats, **options) for problem in problems]
+        runs = [dict(solves=0) for _ in problems]
+        plans = list(self._pool().map(lambda job: self._solve(*job[0], job[1], **options), zip(problems, runs)))
+        stats['solves'] += sum(run['solves'] for run in runs)
+        return plans
 
     # ---- public API ----
 
     def plan(self, position, velocity, thrust_now_n, gate: LandingGate,
              route: tuple[RouteWaypoint, ...] | list = (), landing_time_hint: float | None = None,
-             path=None) -> GuidancePlan | None:
+             path=None, landing_corridor_m: float | None = None,
+             landing_speed_m_s: float | None = None) -> GuidancePlan | None:
         """Plan from the current state through `route` to `gate`.
 
         `thrust_now_n` is the rotor's present thrust, a world-frame vector in
@@ -337,8 +378,10 @@ class ConvexGuidance:
         changes at the bounded rate. `landing_time_hint` (the previous plan's
         remaining powered-descent time) narrows the line search. `path` is the
         drawn route, one (M, 3) curve per leg: path[i] leads to route[i] and
-        path[len(route)] to the gate; with a corridor half-width set, the plan
-        stays near it.
+        path[len(route)] to the gate. A leg follows its curve within its
+        corridor half-width: route[i].corridor_m (landing_corridor_m for the
+        landing leg), else the planner's corridor_m; a leg with neither has
+        no corridor. `landing_speed_m_s` caps the landing leg's speed.
         """
         r0 = np.asarray(position, dtype=float)
         v0 = np.asarray(velocity, dtype=float)
@@ -346,21 +389,28 @@ class ConvexGuidance:
         stats = dict(solves=0)
         route = tuple(route)
         curves = [None] * (len(route) + 1)
-        if path is not None and self.corridor_m is not None:
+        widths = [wp.corridor_m if wp.corridor_m is not None else self.corridor_m for wp in route]
+        widths.append(landing_corridor_m if landing_corridor_m is not None else self.corridor_m)
+        if any(w is not None and w <= 0.0 for w in widths):
+            raise ValueError('Corridor half-widths must be positive')
+        if path is not None:
             if len(path) != len(route) + 1:
                 raise ValueError(f'path needs one curve per leg: {len(route) + 1}, got {len(path)}')
-            curves = [None if c is None or _arc(np.asarray(c, dtype=float))[-1] < 1e-6
-                      else np.asarray(c, dtype=float) for c in path]
+            curves = [None if c is None or width is None or _arc(np.asarray(c, dtype=float))[-1] < 1e-6
+                      else np.asarray(c, dtype=float) for c, width in zip(path, widths)]
+        land_speed = None if landing_speed_m_s is None else min(float(landing_speed_m_s), self.limits.max_speed_m_s)
         best = None
         for scale in (1.0, 1.5, 2.25):
-            segments = self._route_segments(r0, v0, route, scale, curves)
+            segments = self._route_segments(r0, v0, route, scale, curves, widths)
             best = self._search_landing_time(r0, v0, thrust_now_n, gate, segments, landing_time_hint, stats,
-                                             land_curve=curves[-1])
+                                             land_curve=curves[-1], land_corridor=widths[-1], land_speed=land_speed)
             if best is not None:
                 break
         if best is not None and any(c is not None for c in curves):
             best = self._refine_corridor(r0, v0, thrust_now_n, gate, best, stats)
-        if best is None:
+        # Strict corridors never silently degrade into an unconstrained
+        # emergency trajectory. The adapter reports HOLD when no plan exists.
+        if best is None and not (self.corridor_mode == 'strict' and any(c is not None for c in curves)):
             best = self._soft_terminal(r0, v0, thrust_now_n, gate, route, stats)
         if best is not None:
             best.solve_time_s = time.perf_counter() - started
@@ -395,21 +445,29 @@ class ConvexGuidance:
         lim = self.limits
         return 0.5 * lim.gravity * math.tan(lim.max_tilt_rad)
 
-    def _route_segments(self, r0, v0, route, scale, curves=None) -> list[_Segment]:
+    def _route_segments(self, r0, v0, route, scale, curves=None, widths=None) -> list[_Segment]:
         """Waypoint legs with durations from each leg's reference speed.
 
         Rest-to-rest hover legs also get acceleration and braking time. The
         planner retries with longer legs (scale) before giving up on a route.
+        A leg on a corridor is timed along its curve, which a hard speed
+        limit makes longer than the chord.
         """
         curves = curves or [None] * (len(route) + 1)
+        widths = widths or [self.corridor_m] * (len(route) + 1)
         segments = []
         start, speed_in = r0, float(np.linalg.norm(v0))
         accel = self._lateral_accel()
         for i, wp in enumerate(route):
             target = np.asarray(wp.position, dtype=float)
+            if wp.kind in (TAKEOFF, DESCENT) and curves[i] is not None:
+                curves = list(curves)
+                curves[i] = np.linspace(curves[i][0], target, 49)
             distance = float(np.linalg.norm(target - start))
-            cruise = min(max(float(wp.speed_m_s), 0.3), self.limits.max_speed_m_s)
-            if wp.kind == HOVER:
+            if curves[i] is not None:
+                distance = max(distance, float(_arc(curves[i])[-1]))
+            cruise = min(max(float(wp.speed_m_s), 0.1), self.limits.max_speed_m_s)
+            if wp.kind in STOP_KINDS:
                 # Rest to rest: trapezoidal speed profile, or bang-bang when
                 # the hop is too short to reach the cruise speed.
                 duration = (distance / cruise + cruise / accel if distance > cruise * cruise / accel
@@ -418,9 +476,15 @@ class ConvexGuidance:
                 duration = distance / cruise
             if i == 0:
                 duration += speed_in / accel
-            duration = max(duration * scale, 1.0 if wp.kind == HOVER else 0.6)
+            duration = max(duration * scale, 1.0 if wp.kind in STOP_KINDS else 0.6)
+            direction = target - start
+            if curves[i] is not None:
+                _, direction = curve_point(curves[i], 1.0)
+            direction = direction / max(float(np.linalg.norm(direction)), 1e-9)
             segments.append(_Segment(wp.kind, duration, self._nodes(duration), target,
-                                     float(wp.radius_m), curve=curves[i]))
+                                     float(wp.radius_m), curve=curves[i], speed=cruise,
+                                     arrival_velocity=direction * cruise if wp.kind == FLYPASS else None,
+                                     corridor=None if curves[i] is None else widths[i]))
             if wp.kind == HOVER:
                 hold = max(float(wp.hold_s), 0.0) + 0.5
                 segments.append(_Segment('hold', hold, max(2, self._nodes(hold)), target))
@@ -432,32 +496,53 @@ class ConvexGuidance:
 
     # ---- free final time (Algorithm 1) ----
 
-    def _search_landing_time(self, r0, v0, thrust_now, gate, segments, hint, stats, land_curve=None):
+    def _search_landing_time(self, r0, v0, thrust_now, gate, segments, hint, stats, land_curve=None,
+                             land_corridor=None, land_speed=None):
         lim = self.limits
         start = segments[-1].target if segments else r0
         g = np.asarray(gate.position, dtype=float)
         distance = float(np.linalg.norm(g - start))
-        speed_cap = max(lim.max_speed_m_s, float(np.linalg.norm(v0)))
+        if land_curve is not None:
+            distance = max(distance, float(_arc(land_curve)[-1]))
+        cruise = lim.max_speed_m_s if land_speed is None else land_speed
+        speed_cap = max(cruise, float(np.linalg.norm(v0)))
         t_lo = max(0.8, 0.8 * distance / speed_cap)
-        t_hi = max(3.0 * t_lo, distance / 0.75 + 6.0)
+        t_hi = max(3.0 * t_lo, distance / min(0.75, 0.8 * cruise) + 6.0)
         cache = {}
+
+        def land(t_land):
+            return _Segment('land', t_land, self.landing_nodes, curve=land_curve, speed=land_speed,
+                            corridor=None if land_curve is None else land_corridor)
 
         def cost(t_land):
             key = round(t_land, 4)
             if key not in cache:
-                cache[key] = self._solve(r0, v0, thrust_now, gate, segments + [
-                    _Segment('land', t_land, self.landing_nodes, curve=land_curve)], stats)
+                cache[key] = self._solve(r0, v0, thrust_now, gate, segments + [land(t_land)], stats)
             plan = cache[key]
             return math.inf if plan is None else plan.cost
+
+        def sweep(candidates):
+            # The sweep's durations are independent problems: solve them
+            # concurrently (Clarabel releases the GIL while it iterates).
+            # Each problem, and so each plan, is identical to a serial solve.
+            fresh = {}
+            for t in candidates:
+                fresh.setdefault(round(t, 4), t)       # the duration a serial cost(t) would solve
+            fresh = {key: t for key, t in fresh.items() if key not in cache}
+            if len(fresh) > 1:
+                for key, plan in zip(fresh, self._solve_many(
+                        [(r0, v0, thrust_now, gate, segments + [land(t)]) for t in fresh.values()], stats)):
+                    cache[key] = plan
+            return [cost(t) for t in candidates]
 
         if hint is not None and hint > 0.3:
             candidates = [max(0.5, hint * f) for f in (0.85, 1.0, 1.2)]
         else:
             candidates = list(np.geomspace(t_lo, t_hi, 8))
-        values = [cost(t) for t in candidates]
+        values = sweep(candidates)
         if not any(math.isfinite(v) for v in values) and hint is not None:
             candidates = list(np.geomspace(t_lo, t_hi, 8))
-            values = [cost(t) for t in candidates]
+            values = sweep(candidates)
         if not any(math.isfinite(v) for v in values):
             return None
         j = int(np.argmin(values))
@@ -466,7 +551,7 @@ class ConvexGuidance:
         b = candidates[j + 1] if j + 1 < len(candidates) else candidates[j] * 1.25
         c, d = b - _GOLDEN * (b - a), a + _GOLDEN * (b - a)
         for _ in range(6):
-            fc, fd = cost(c), cost(d)
+            fc, fd = sweep([c, d])
             # Infeasibility lies at short durations: with both probes
             # infeasible the minimum is to the right.
             if math.isfinite(fc) and fc <= fd:
@@ -512,19 +597,19 @@ class ConvexGuidance:
         # (+-CORRIDOR_WINDOW of the leg), 0.2-0.6 m from the curve where the
         # whole chord is 1-3 m.
         corridor = []
-        if soft_weight is None and self.corridor_m is not None:
+        if soft_weight is None:
             node = 0
             for seg in segments:
                 first, node = node, node + seg.nodes
-                if seg.curve is None:
+                if seg.curve is None or seg.corridor is None:
                     continue
                 for j, k in enumerate(range(first + 1, node + 1)):
                     if seg.along is None:
-                        corridor.append((k, seg.curve[0], seg.curve[-1]))
+                        corridor.append((k, seg.curve[0], seg.curve[-1], seg.corridor))
                     else:
                         lo, _ = curve_point(seg.curve, seg.along[j] - CORRIDOR_WINDOW)
                         hi, _ = curve_point(seg.curve, seg.along[j] + CORRIDOR_WINDOW)
-                        corridor.append((k, lo, hi))
+                        corridor.append((k, lo, hi, seg.corridor))
         off_w = off_e + (3 if soft_weight is not None else 0)
         n_var = off_w + 2 * len(corridor)      # per corridor node: excess, chord parameter
         cones = _Cones()
@@ -620,20 +705,47 @@ class ConvexGuidance:
         node, waypoint_nodes = 0, []
         z_floor = min(lim.route_floor_m, float(r0[2]))
         apex = np.asarray(gate.apex, dtype=float)
+        previous_speed = float(np.linalg.norm(v0))
+        horizontal_slew = min(rate, g * lim.tilt_rate_rad_s) if lim.tilt_rate_rad_s else rate
+        # A newly requested slower leg cannot brake before thrust has tilted
+        # into the braking direction. Include that actuator ramp in the entry
+        # envelope (a 3.5 m/s crosswind entry otherwise has no feasible route
+        # at a 3 m/s leg limit despite a soft spatial corridor).
+        brake_ramp = g * math.tan(lim.max_tilt_rad) / horizontal_slew
+        def leg_speed_cap(seg, first, k):
+            # A waypoint speed is a leg cap, not just a time-allocation hint.
+            # Retain the physical entry braking envelope on replans.
+            return max(seg.speed, entry_speed - brake * max(0., float(times[k]) - settle - brake_ramp),
+                       previous_speed - brake * float(times[k] - times[first]))
+
         for seg in segments:
             first, node = node, node + seg.nodes
             if seg.kind == 'land':
                 land_first = first
+                if soft_weight is None and seg.speed is not None:
+                    # Landing approach speed (a Landing step's setting).
+                    for k in range(first + 1, node + 1):
+                        cones.soc([([], leg_speed_cap(seg, first, k))] + [([(X(k, 3+i), 1.)], 0.) for i in range(3)])
                 continue
             if soft_weight is None:
                 for k in range(first + 1, node + 1):
                     cones.le([(X(k, 2), -1.0)], -z_floor)
+                    if seg.speed is not None:
+                        cones.soc([([], leg_speed_cap(seg, first, k))] + [([(X(k, 3+i), 1.)], 0.) for i in range(3)])
+                    if seg.kind in (TAKEOFF, DESCENT):
+                        # Vertical legs stay over their column; speed can ramp
+                        # during acceleration/braking and the endpoint is at rest.
+                        cones.soc([([], seg.radius)] + [
+                            ([(X(k, i), 1.)], -seg.target[i]) for i in range(2)])
             if seg.kind == FLYPASS:
                 waypoint_nodes.append(node)
                 ball = self.flypass_capture_fraction * seg.radius
                 if soft_weight is None:
                     cones.soc([([], ball)] + [([(X(node, i), 1.0)], -seg.target[i]) for i in range(3)])
-            elif seg.kind == HOVER:
+                    if seg.arrival_velocity is not None:
+                        for i in range(3):
+                            cones.eq([(X(node, 3+i), 1.)], seg.arrival_velocity[i])
+            elif seg.kind in STOP_KINDS:
                 # At rest on the point: position, velocity and hover thrust.
                 # Under the first-order hold, zero velocity at every hold node
                 # only fixes u_k + u_k+1 = 2 g, so without the thrust the plan
@@ -649,6 +761,7 @@ class ConvexGuidance:
                 for k in range(first + 1, node + 1):
                     for i in range(3):
                         cones.eq([(U(k, i), 1.0)], -gvec[i])
+            previous_speed = seg.speed if seg.kind == FLYPASS else 0.0
 
         gate_r = np.asarray(gate.position, dtype=float)
         gate_v = np.asarray(gate.velocity, dtype=float)
@@ -727,12 +840,14 @@ class ConvexGuidance:
         # 0 <= lambda <= 1, the excess priced at corridor_weight seconds of
         # hover cost per m s.
         hover_cost = g ** 1.5 if self.objective == 'energy' else g
-        for j, (k, a, b) in enumerate(corridor):
+        for j, (k, a, b, width) in enumerate(corridor):
             excess, lam = off_w + 2 * j, off_w + 2 * j + 1
             cones.le([(excess, -1.0)], 0.0)
+            if self.corridor_mode == 'strict':
+                cones.eq([(excess, 1.0)], 0.0)
             cones.le([(lam, -1.0)], 0.0)
             cones.le([(lam, 1.0)], 1.0)
-            cones.soc([([(excess, 1.0)], self.corridor_m)]
+            cones.soc([([(excess, 1.0)], width)]
                       + [([(X(k, i), 1.0), (lam, -float(b[i] - a[i]))], -float(a[i])) for i in range(3)])
             q[excess] = self.corridor_weight * hover_cost * weights[k]
 
@@ -782,7 +897,25 @@ class ConvexGuidance:
                 seg = replace(seg, along=along)
             segments.append(seg)
         refined = self._solve(r0, v0, thrust_now, gate, segments, stats)
-        return plan if refined is None else refined
+        candidate = plan if refined is None else refined
+        # Chord constraints approximate a curved tube. Strict mode additionally
+        # checks the actual sampled centerline, including between SOCP nodes,
+        # so a shortcut cannot be labelled a feasible corridor plan.
+        if self.corridor_mode == 'strict':
+            node = 0
+            for seg in candidate.segments:
+                first, node = node, node + seg.nodes
+                if seg.curve is None or seg.corridor is None:
+                    continue
+                samples = np.linspace(candidate.times[first], candidate.times[node], seg.nodes * 8 + 1)
+                positions = np.array([candidate.sample(float(t))[0] for t in samples])
+                delta = seg.curve[1:] - seg.curve[:-1]
+                alpha = np.clip(np.sum((positions[:, None] - seg.curve[:-1]) * delta, axis=2)
+                                / np.maximum(np.sum(delta * delta, axis=1), 1e-12), 0, 1)
+                distance = np.linalg.norm(positions[:, None] - seg.curve[:-1] - alpha[:, :, None] * delta, axis=2).min(axis=1)
+                if distance.max() > seg.corridor + 1e-4:
+                    return None
+        return candidate
 
     def _soft_terminal(self, r0, v0, thrust_now, gate, route, stats):
         """No feasible duration: minimize the miss of the next target.
@@ -798,10 +931,10 @@ class ConvexGuidance:
             wp = route[0]
             target = LandingGate(position=tuple(wp.position), velocity=(0.0, 0.0, 0.0), apex=gate.apex)
         best = None
-        for t_land in (2.0, 4.0, 8.0, 14.0):
-            plan = self._solve(r0, v0, thrust_now, target, [_Segment('land', t_land, self.landing_nodes)],
-                               stats, soft_weight=1.0e3,
-                               velocity_weight=1.0e3 if not route or route[0].kind == HOVER else 50.0)
+        plans = self._solve_many([(r0, v0, thrust_now, target, [_Segment('land', t_land, self.landing_nodes)])
+                                  for t_land in (2.0, 4.0, 8.0, 14.0)], stats, soft_weight=1.0e3,
+                                 velocity_weight=1.0e3 if not route or route[0].kind == HOVER else 50.0)
+        for plan in plans:
             if plan is not None and (best is None or plan.cost < best.cost):
                 best = plan
         if best is not None and route:
