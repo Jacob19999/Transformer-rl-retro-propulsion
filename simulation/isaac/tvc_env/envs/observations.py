@@ -136,6 +136,18 @@ def apply_sensor_noise(obs: Tensor, config: dict) -> Tensor:
     return noisy
 
 
+def measured_state(obs: Tensor, target_position: Tensor) -> dict[str, Tensor]:
+    """Recover the measured vehicle state from a (possibly noisy) observation.
+
+    Inverts assemble_observation's [0:13] layout: the position the flight
+    computer believes it holds is target - obs[0:3]. With sensor noise off
+    this equals the true state.
+    """
+    return dict(position=target_position.to(obs.device) - obs[:, 0:3],
+                quaternion_wxyz=obs[:, 3:7], linear_vel_frd=obs[:, 7:10],
+                angular_vel_frd=obs[:, 10:13])
+
+
 def get_observation_space(include_wind: bool = False):
     """Return the Gymnasium Box observation space definition.
 

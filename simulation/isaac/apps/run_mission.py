@@ -100,6 +100,22 @@ def flight_record(env):
                 outcome=record['outcome'], waypoints=route)
 
 
+def imu_record(measurement, vec):
+    """World-frame pose and velocity the flight computer measured, for the UI.
+
+    Velocity is measured in body FRD; it is rotated to world with the measured
+    attitude, which is how the flight computer itself would resolve it.
+    """
+    if measurement is None:
+        return None
+    from tvc_env.common.frames import frd_velocity_to_isaac
+    from tvc_env.common.quaternions import normalize, rotate_vector
+    q = normalize(measurement['quaternion_wxyz'][:1])
+    velocity = rotate_vector(q, frd_velocity_to_isaac(measurement['linear_vel_frd'][:1]))
+    return dict(position=vec(measurement['position']), quaternion=vec(q),
+                velocity=vec(velocity), gyro=vec(measurement['angular_vel_frd']))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--request', type=Path, required=True)
@@ -342,7 +358,10 @@ def main():
                 battery = {k: v[0].item() for k, v in env._battery_model.telemetry().items()} if env._battery_model else None
                 frame = dict(t=t, control_phase=control_phase, position=vec(state.position), quaternion=vec(state.quaternion_wxyz),
                              velocity=vec(state.linear_vel_world), gyro=vec(state.angular_vel_frd),
-                             observed_gyro=vec(obs[:, 10:13]),
+                             # The state the controller acted on: what the IMU and
+                             # position sensor reported, sensor noise included.
+                             # Equal to the PhysX state when noise is off.
+                             imu=imu_record(env.sensor_measurement, vec),
                              fin_angles=vec(state.fin_angles), fin_rates=vec(state.fin_rates),
                              fin_commands=vec(action[:, :4]), fin_command_rates=vec(rate),
                              fin_positions=vec(art.body_pos_w[:, ids]), fin_quaternions=vec(art.body_quat_w[:, ids]),

@@ -259,6 +259,7 @@ class WaypointFlightTask:
         self.n, self.device, self.dt = num_envs, device, float(rl_dt)
         self.origins = env_origins.to(device)
         self.ids = torch.arange(num_envs, device=device)
+        self.measurement = None  # measured state behind the latest observation()
         flight = config['task']['waypoint_flight']
         self.touchdown_height = float(flight['touchdown_root_height_m'])
         self.min_clearance = float(flight['min_airborne_clearance_m'])
@@ -627,6 +628,10 @@ class WaypointFlightTask:
             linear_vel_frd = linear_vel_frd + torch.randn(n, 3, device=dev) * float(noise.get('velocity_std', 0.0))
             angular_vel_frd = angular_vel_frd + torch.randn(n, 3, device=dev) * float(
                 noise.get('angular_velocity_std', 0.0))
+        # The state as the flight computer measured it (truth when noise is
+        # off); telemetry records it beside the PhysX pose.
+        self.measurement = dict(position=position, quaternion_wxyz=quaternion_wxyz,
+                                linear_vel_frd=linear_vel_frd, angular_vel_frd=angular_vel_frd)
         q_inv = inverse(normalize(quaternion_wxyz))
 
         def body(vector):
