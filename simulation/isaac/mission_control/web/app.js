@@ -13,13 +13,16 @@ import { createModels } from './models.js';
 import { createChecklist } from './checklist.js';
 import { createRotorAnimation } from './rotor.js';
 import { collectPlans, planAt, createGuidancePanel } from './guidance.js';
+import { hasImu, imuError, eulerDelta, sensorNote } from './imu.js';
 
 const $ = id => document.getElementById(id);
 const deg = 180 / Math.PI;
 const finNames = ['FWD', 'RIGHT', 'AFT', 'LEFT'];
 const linkNames = ['FwdFin', 'RightFin', 'AftFin', 'LeftFin'];
 const contactNames = ['AIRBORNE', 'CONTACT DWELL', 'LANDED', 'CRASHED'];
-const state = { id: null, frames: [], metadata: null, time: 0, playing: false, live: true, busy: false, recording: false, result: null, training:false, requestError:null, milestones: [], mission: null, connected: false };
+const state = { id: null, frames: [], metadata: null, time: 0, playing: false, live: true, busy: false, recording: false, result: null, training:false, requestError:null, milestones: [], mission: null, connected: false, hasImu: false, imuOverlay: false };
+// Per-viewer preference only; the page works the same when storage is blocked.
+try { state.imuOverlay = localStorage.getItem('missionControl.imuOverlay') === '1'; } catch {}
 let config, previousPosition = new THREE.Vector3(), orbitInitialized = false;
 const fmt = (n, d = 1) => Number.isFinite(n) ? n.toFixed(d) : '—';
 const clock = t => `T+ ${String(Math.floor(t / 60)).padStart(2, '0')}:${(t % 60).toFixed(2).padStart(5, '0')}`;
@@ -117,6 +120,8 @@ for(const id of ['initial_motor_fraction','hardware_profile'])$(id).addEventList
 $('finRows').innerHTML = finNames.map((n,i)=>`<tr><td>${n}</td><td class="defl"><div class="dbar"><i id="fd${i}" style="background:${series[i]}"></i><b id="fdc${i}"></b></div></td><td id="fc${i}">—</td><td id="fa${i}">—</td></tr>`).join('');
 $('finRateRows').innerHTML = finNames.map((n,i)=>`<tr><td>${n}</td><td id="fcr${i}">—</td><td id="far${i}">—</td></tr>`).join('');
 $('gyro').innerHTML = ['P · ROLL','Q · PITCH','R · YAW'].map((n,i)=>`<div class="gyro-row"><span>${n}</span><div class="gbar"><i id="gb${i}" style="background:${series[i]}"></i><span class="limit" style="left:25%"></span><span class="limit" style="left:75%"></span></div><b id="g${i}">—</b></div>`).join('');
+const imuChannels=[['POS X','m',3],['POS Y','m',3],['POS Z','m',3],['ROLL','°',2],['PITCH','°',2],['YAW','°',2],['P','°/s',1],['Q','°/s',1],['R','°/s',1]];
+$('imuRows').innerHTML=imuChannels.map(([name,unit],i)=>`<tr><td>${name} · ${unit}</td><td id="imuA${i}">—</td><td id="imuI${i}">—</td><td id="imuD${i}">—</td></tr>`).join('');
 const rotationFields=[['peak_rate_deg_s','PEAK °/s',1],['angular_travel_deg','TRAVEL °',0],['excess_rotation_deg','EXCESS °',0],['time_above_limit_s','OVER / s',2]];
 $('rotationRows').innerHTML=rotationFields.map(([key,title])=>`<tr><td>${title}</td>${[0,1,2].map(i=>`<td id="rotation_${key}_${i}">—</td>`).join('')}</tr>`).join('');
 const batteryFields = [['voltage_v','BUS VOLTAGE','V',2],['current_a','CURRENT','A',1],['power_w','POWER','W',0],['energy_wh','USED ENERGY','Wh',2],['temperature_c','PACK TEMP','°C',1],['ocv_v','OPEN CIRCUIT','V',2]];
@@ -233,6 +238,18 @@ model.scene.traverse(object=>{if(object.isMesh)Object.assign(object.material,{si
 scene.add(model.scene);
 for (const link of geometry.links) { const obj=links[link.name]; if(obj){obj.position.fromArray(link.neutral_position);obj.quaternion.set(link.neutral_quaternion[1],link.neutral_quaternion[2],link.neutral_quaternion[3],link.neutral_quaternion[0]);} }
 
+// IMU overlay: a translucent ghost of the body at the pose the controller
+// measured (frame.imu), its thrust axis, the measured track and a segment from
+// the actual to the measured position. Drawn through the real body so the
+// offset stays visible when the two overlap.
+const imuMaterial=new THREE.MeshBasicMaterial({color:0x5fd4ff,transparent:true,opacity:.22,depthWrite:false,depthTest:false});
+const imuGhost=links.Body.clone();imuGhost.traverse(object=>{if(object.isMesh){object.material=imuMaterial;object.renderOrder=6;}});scene.add(imuGhost);
+const imuAxis=new THREE.ArrowHelper(new THREE.Vector3(0,0,1),new THREE.Vector3(),.4,0x5fd4ff,.05,.025);scene.add(imuAxis);
+const imuTrail=new THREE.Line(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:0x5fd4ff,transparent:true,opacity:.5}));scene.add(imuTrail);
+const imuErrorLine=new THREE.Line(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:0x5fd4ff,depthTest:false}));
+imuErrorLine.geometry.setAttribute('position',new THREE.Float32BufferAttribute(new Float32Array(6),3));imuErrorLine.renderOrder=7;imuErrorLine.frustumCulled=false;scene.add(imuErrorLine);
+const imuObjects=[imuGhost,imuAxis,imuTrail,imuErrorLine];
+
 // Per-frame scratch objects: the render path allocates nothing.
 const scratch={v:new THREE.Vector3(),q:new THREE.Quaternion(),pos:new THREE.Vector3(),move:new THREE.Vector3(),a:new THREE.Vector3(),b:new THREE.Vector3()};
 function pose(obj, aPos, aQuat, bPos, bQuat, alpha) {
@@ -252,6 +269,12 @@ function renderViews(width=$('views').clientWidth,height=$('views').clientHeight
   rotorAnimation.update(sample);
   if(sample){const {a,b,alpha}=sample;pose(links.Body,a.position,a.quaternion,b.position,b.quaternion,alpha);linkNames.forEach((name,i)=>pose(links[name],a.fin_positions[i],a.fin_quaternions[i],b.fin_positions[i],b.fin_quaternions[i],alpha));}
   const pos=scratch.pos.copy(links.Body.position);
+  const imuShown=!!(state.imuOverlay&&sample?.a.imu);
+  if(imuShown){
+    const {a,b,alpha}=sample,next=b.imu??a.imu;pose(imuGhost,a.imu.position,a.imu.quaternion,next.position,next.quaternion,alpha);
+    const ends=imuErrorLine.geometry.attributes.position;ends.setXYZ(0,pos.x,pos.y,pos.z);ends.setXYZ(1,imuGhost.position.x,imuGhost.position.y,imuGhost.position.z);ends.needsUpdate=true;
+    imuTrail.geometry.setDrawRange(0,sample.index+1);
+  }
   if(cameraMode==='plan'&&guidancePlanShown){
     if(!orbitInitialized||overviewPlan!==guidancePlanShown||overviewSize!==`${width}:${height}`){
       const bounds=new THREE.Box3().setFromPoints([...guidancePlanShown.positions.map(p=>new THREE.Vector3(...p)),pos.clone(),new THREE.Vector3()]);
@@ -286,10 +309,11 @@ function renderViews(width=$('views').clientWidth,height=$('views').clientHeight
   cameras[3].up.set(1,0,0).applyQuaternion(q);
   cameras[3].lookAt(scratch.a.copy(pos).add(scratch.v.set(0,0,-.13).applyQuaternion(q)));
   thrustVector.position.copy(pos);thrustVector.setDirection(scratch.v.set(0,0,1).applyQuaternion(q));thrustVector.setLength(.015+(sample?.a.thrust_n??0)/90,.045,.022);
+  if(imuShown){imuAxis.position.copy(imuGhost.position);imuAxis.setDirection(scratch.v.set(0,0,1).applyQuaternion(imuGhost.quaternion));imuAxis.setLength(.015+(sample.a.thrust_n??0)/90,.045,.022);}
   const split=Math.floor(width*.66),right=width-split,third=height/3;
   const rects=[[0,0,split-1,height],[split+1,2*third,right-1,third-1],[split+1,third,right-1,third-1],[split+1,0,right-1,third-1]];
   renderer.setScissorTest(true);
-  rects.forEach(([x,y,w,h],i)=>{renderer.setViewport(x,y,w,h);renderer.setScissor(x,y,w,h);cameras[i].aspect=w/h;if(i===3){cameras[i].left=-.1*w/h;cameras[i].right=.1*w/h;}cameras[i].updateProjectionMatrix();links.Body.visible=i!==3;trajectory.visible=i<3;plannedRoute.visible=i<3;routeLabels.visible=i===0;guidancePath.visible=i<3;guidanceMarkers.visible=i===0&&cameraMode==='plan'&&!!guidance;thrustVector.visible=i===0;groundObjects.forEach(object=>{object.visible=i!==3;});renderer.render(scene,cameras[i]);});
+  rects.forEach(([x,y,w,h],i)=>{renderer.setViewport(x,y,w,h);renderer.setScissor(x,y,w,h);cameras[i].aspect=w/h;if(i===3){cameras[i].left=-.1*w/h;cameras[i].right=.1*w/h;}cameras[i].updateProjectionMatrix();links.Body.visible=i!==3;trajectory.visible=i<3;plannedRoute.visible=i<3;routeLabels.visible=i===0;guidancePath.visible=i<3;guidanceMarkers.visible=i===0&&cameraMode==='plan'&&!!guidance;thrustVector.visible=i===0;imuObjects.forEach(object=>{object.visible=imuShown&&i<3;});imuAxis.visible=imuShown&&i===0;groundObjects.forEach(object=>{object.visible=i!==3;});renderer.render(scene,cameras[i]);});
   links.Body.visible=true;groundObjects.forEach(object=>{object.visible=true;});renderer.setScissorTest(false);
   drawBottomLabels(fitCanvas(finLabels,width,height),width,height,sample);
 }
@@ -370,6 +394,7 @@ function dataChanged(){
   guidancePanel.setData(state.frames,state.plans,landingPad);
   $('cameraPlan').hidden=!state.plans.length;
   if(!state.plans.length&&cameraMode==='plan')setCameraMode('vehicle');
+  state.hasImu=hasImu(state.frames);updateImuToggle();
   state.milestones=computeMilestones();maxima=webcastMaxima();
   const events=state.milestones.filter(m=>m.label!=='START'),context=chartContext();
   charts.setData(state.frames,context,events);flightCharts.setData(state.frames,context,events);
@@ -434,7 +459,15 @@ function updateTelemetry() {
   text('rotationNote',`Soft limits: ${rotationLimits.map(v=>fmt(v,0)).join(' / ')} °/s; gyro bars span ±2× each limit. ${f.rotation?'Travel counts turns and reversals; excess counts rotation above each limit.':'Cumulative rotation was not recorded in this older replay.'}`);
   const recordedController=state.metadata?.policy.controller;
   const rateNote=recordedController==='pid'?'PID uses attitude feedback and fin mixing; its internal mix commands are not calibrated body-rate setpoints.':recordedController==='convex'?'Convex guidance plans a thrust-vector trajectory (SOCP); a geometric attitude loop turns the thrust direction into fin efforts. No body-rate setpoint is generated.':'PPO commands fin angles and throttle directly; no body-rate setpoint is generated.';
-  text('rateNote',`${rateNote}${f.observed_gyro?' Sensor P/Q/R: '+f.observed_gyro.map(v=>fmt(v*deg,1)).join(' / ')+' °/s.':''}`);
+  const sensedGyro=f.imu?.gyro??f.observed_gyro;
+  text('rateNote',`${rateNote}${sensedGyro?' Sensor P/Q/R: '+sensedGyro.map(v=>fmt(v*deg,1)).join(' / ')+' °/s.':''}`);
+  if(state.imuOverlay&&f.imu){
+    const error=imuError(f),sensed=attitude(f.imu.quaternion),delta=eulerDelta(sensed,att);
+    text('imuDist',fmt(error.distance,3));text('imuAtt',fmt(error.attitude,2));text('imuVel',fmt(error.speed,3));text('imuRate',fmt(error.rate,1));
+    const rows=[...[0,1,2].map(i=>[f.position[i],f.imu.position[i],error.position[i]]),...['roll','pitch','yaw'].map((k,i)=>[att[k],sensed[k],delta[i]]),...[0,1,2].map(i=>[f.gyro[i]*deg,f.imu.gyro[i]*deg,error.gyro[i]])];
+    rows.forEach(([actual,measured,difference],i)=>{const d=imuChannels[i][2];text(`imuA${i}`,fmt(actual,d));text(`imuI${i}`,fmt(measured,d));text(`imuD${i}`,`${difference>=0?'+':''}${fmt(difference,d)}`);});
+    text('imuNote',sensorNote(state.metadata));
+  }
   text('soc',f.battery?fmt(f.battery.soc*100,1):'OFF');$('socBar').style.width=`${(f.battery?.soc??0)*100}%`;
   text('batteryState',!f.battery?'IDEAL BUS':f.battery.cutoff?'CUTOFF':f.battery.current_limited?'CURRENT LIMIT':'DISCHARGING');
   batteryFields.forEach(([key,,unit,d])=>text(`b_${key}`,fmt(f.battery?.[key],d)));
@@ -472,7 +505,18 @@ function drawRotationPlots(){
   const x=left+state.time/end*(right-left);ctx.strokeStyle='rgba(244,246,247,.7)';ctx.lineWidth=1;ctx.beginPath();
   for(let axis=0;axis<3;axis++){const center=27+axis*54;ctx.moveTo(x,center-22);ctx.lineTo(x,center+22);}ctx.stroke();
 }
-function updateTrajectory(){setLinePoints(trajectory,state.frames.map(f=>f.position));}
+function updateTrajectory(){setLinePoints(trajectory,state.frames.map(f=>f.position));setLinePoints(imuTrail,state.frames.map(f=>f.imu?.position??f.position));}
+function updateImuToggle(){
+  const button=$('imuToggle'),on=state.imuOverlay&&state.hasImu;
+  button.disabled=!state.hasImu;button.setAttribute('aria-pressed',on);
+  button.title=state.hasImu?'Overlay the IMU-estimated pose (cyan ghost) on the actual PhysX pose · key I':state.frames.length?'This replay predates IMU recording; run the mission again to record it':'No telemetry loaded';
+  $('imuSection').hidden=!on;
+}
+function setImuOverlay(on){
+  state.imuOverlay=on;try{localStorage.setItem('missionControl.imuOverlay',on?'1':'0');}catch{}
+  updateImuToggle();invalidate();
+}
+$('imuToggle').onclick=()=>setImuOverlay(!state.imuOverlay);updateImuToggle();
 function updateEvents(){
   const rows=state.milestones.filter(m=>m.label!=='START'||state.frames.length).map(m=>{const d=document.createElement('div');d.textContent=`${clock(m.t)}  ${m.detail??m.label}`;if(m.tone)d.className='tone-'+m.tone;return d;});
   if(!rows.length){$('events').textContent='Awaiting simulation.';return;}
@@ -555,6 +599,7 @@ document.addEventListener('keydown',e=>{
   if(/^[1-5]$/.test(e.key)){showPage(pages[Number(e.key)-1]);return;}
   if(!state.frames.length)return;
   if(e.code==='Space'){e.preventDefault();$('play').click();}
+  else if((e.key==='i'||e.key==='I')&&state.hasImu)setImuOverlay(!state.imuOverlay);
   else if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();state.live=false;state.playing=false;state.time=THREE.MathUtils.clamp(state.time+(e.key==='ArrowLeft'?-1:1)*(e.shiftKey?5:.5),0,state.frames.at(-1).t);}
 });
 
@@ -577,6 +622,7 @@ function captureFrame(){
   ctx.fillStyle='#7c878f';ctx.font='11px Bahnschrift, Arial';ctx.fillText('FIN       CMD °        ACT °',1210,y);y+=24;
   finNames.forEach((n,i)=>{ctx.font='15px Consolas';ctx.fillStyle='#f4f6f7';ctx.fillText(`${n.padEnd(6)} ${fmt(f.fin_commands[i]*deg,2).padStart(7)}   ${fmt(THREE.MathUtils.lerp(f.fin_angles[i],sample.b.fin_angles[i],sample.alpha)*deg,2).padStart(7)}`,1210,y);y+=23;});y+=12;
   line('GYRO P / Q / R · °/s',f.gyro.map(v=>fmt(v*deg,1)).join(' / '));
+  if(state.imuOverlay&&f.imu){const error=imuError(f);line('IMU ERROR POSITION / ATTITUDE',`${fmt(error.distance,3)} m / ${fmt(error.attitude,2)}°`,'#a8e6ff');}
   if(f.rotation){
     line('PEAK P / Q / R · °/s',f.rotation.peak_rate_deg_s.map(v=>fmt(v,0)).join(' / '));
     line('ABOVE SOFT LIMITS · seconds',f.rotation.time_above_limit_s.map(v=>fmt(v,2)).join(' / '));

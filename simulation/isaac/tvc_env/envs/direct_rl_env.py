@@ -135,6 +135,8 @@ class TVCDirectRLEnv(TVCEnvBase):
         self._config.config["_target_position_world"] = self._target_position
         self._config.config["_omega_max_world"] = float(self._omega_max)
         self._navigation = None
+        # Measured state behind the latest observation (see _get_observations).
+        self.sensor_measurement = None
         if self._config.config.get('task',{}).get('navigation',{}).get('enabled'):
             from tvc_env.envs.waypoints import WaypointMission
             self._navigation = WaypointMission(self._config.num_envs,device,self._config.config,env_origins,self._target_position)
@@ -690,20 +692,25 @@ class TVCDirectRLEnv(TVCEnvBase):
 
     def _get_observations(self, state: VehicleState | None = None) -> dict:
         """Assemble observation dict with 'policy' key."""
-        from tvc_env.envs.observations import apply_sensor_noise, assemble_observation
+        from tvc_env.envs.observations import apply_sensor_noise, assemble_observation, measured_state
 
         if state is None:
             state = self._build_vehicle_state()
         if self._flight is not None:
             rotor = (state.motor_omega / max(float(self._omega_max), 1.0)).clamp(0.0, 1.0)
-            return {"policy": self._flight.observation(
+            obs = self._flight.observation(
                 state.position, state.quaternion_wxyz, state.linear_vel_frd, state.angular_vel_frd,
                 state.height, state.fin_angles, state.fin_rates, rotor, state.contact_state,
                 self._battery_model.observation(), self._previous_action,
                 float(self._servo_model.max_command_angle), float(self._servo_model.max_angular_velocity),
-                self._config.config.get('disturbances', {}).get('sensor_noise'))}
-        obs = assemble_observation(state, self._navigation.goal if self._navigation else self._target_position, self._omega_max)
+                self._config.config.get('disturbances', {}).get('sensor_noise'))
+            self.sensor_measurement = self._flight.measurement
+            return {"policy": obs}
+        target = self._navigation.goal if self._navigation else self._target_position
+        obs = assemble_observation(state, target, self._omega_max)
         obs = apply_sensor_noise(obs, self._config.config)
+        # What the controller measured (IMU/position noise included), for telemetry.
+        self.sensor_measurement = measured_state(obs, target)
         if self._config.config.get('env', {}).get('observe_battery', False):
             obs = torch.cat([obs, self._battery_model.observation()], dim=-1)
         if self._navigation:

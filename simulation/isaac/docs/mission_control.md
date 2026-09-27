@@ -81,6 +81,15 @@ figures.
 
 ![IMU hardware presets](presets-imu-desktop.png)
 
+**IMU vs ACTUAL** (Flight page camera bar, or key **I**) overlays what the
+controller measured on the actual PhysX flight. CAM 01–03 draw a cyan ghost
+of the body at the measured pose, with its thrust axis, the measured track
+and a segment from the actual to the measured position. The Vehicle panel
+adds position, attitude, velocity and body-rate error and a per-channel
+actual / IMU / Δ table. The Telemetry page plots the four errors over the
+flight. The toggle is disabled for replays recorded before the `imu` channel
+existed; the choice is remembered in this browser.
+
 The simulator draws independent Gaussian noise at every 30 Hz control step
 (`tvc_env/envs/observations.apply_sensor_noise`). It has no bias, drift or
 correlation model, so each datasheet figure becomes one white-noise sigma:
@@ -642,6 +651,13 @@ not a complete electrical system or hardware flight qualification.
   recorded individually; the renderer does not guess hinge axes.
 - Gyro: body FRD, radians/s in JSON, degrees/s in the display. The controller's
   noisy gyro observation is recorded separately where available.
+- `imu` (replays recorded from 2026-09-27): the state the controller acted on
+  each control step, i.e. what the IMU and position source reported, sensor
+  noise included. `position`/`velocity` are world XYZ, `quaternion` wxyz,
+  `gyro` body FRD. Velocity is measured in body FRD and rotated to world with
+  the measured attitude. With sensor noise off it equals the PhysX state. It
+  replaces `observed_gyro`, which in waypoint-flight replays read the wrong
+  observation slice.
 - Fin commands and angles: radians in JSON, degrees on screen. Target motion
   rate is the change in the rate-limited servo target divided by the control
   interval. It is distinct from measured joint velocity.

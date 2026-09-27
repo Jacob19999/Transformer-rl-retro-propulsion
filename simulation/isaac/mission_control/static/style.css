@@ -259,6 +259,11 @@ h2 { font-weight: 300; letter-spacing: .04em; }
 .camera-modes button { padding: 5px 8px; font-size: 8px; }
 .camera-modes button[aria-pressed=true] { background: #192c28; border-color: #48dba2; color: #8cecc6; }
 .camera-modes button[hidden], .optimization-panel[hidden] { display: none; }
+.overlay-modes { margin-left: 0; }
+.overlay-modes button[aria-pressed=true] { background: #122833; border-color: #5fd4ff; color: #a8e6ff; }
+#imuSection[hidden] { display: none; }
+.imu-grid b { font-size: 18px; }
+.imu-table td:nth-child(4) { color: #a8e6ff; }
 .optimization-panel { border-top: 2px solid #48dba2; overflow: hidden; }
 .optimization-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 18px 18px 12px; }
 .optimization-heading h2 { font-size: 20px; font-weight: 400; letter-spacing: .03em; margin: 5px 0 0; }

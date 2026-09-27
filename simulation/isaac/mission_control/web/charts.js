@@ -2,6 +2,7 @@
 // one quantity with one y-scale; hovering shows a crosshair with readouts,
 // clicking or dragging seeks the replay to that time.
 import { fitCanvas, ink, series, status } from './instruments.js';
+import { imuError } from './imu.js';
 
 const deg = 180 / Math.PI;
 const sans = 'Bahnschrift, "DIN Alternate", "Segoe UI", Arial, sans-serif';
@@ -24,6 +25,11 @@ export const CHARTS = [
     bands: c => [c.finLimit] },
   { title: 'BUS VOLTAGE', unit: 'V', digits: 2, series: [{ name: 'V', get: f => f.battery?.voltage_v }] },
   { title: 'PACK CURRENT', unit: 'A', digits: 1, zero: true, series: [{ name: 'A', get: f => f.battery?.current_a }], limit: c => c.maxCurrent },
+  // IMU estimate minus PhysX truth (frame.imu); empty for replays recorded before it.
+  { title: 'IMU POSITION ERROR', unit: 'm', digits: 3, zero: true, series: ['X', 'Y', 'Z'].map((name, i) => ({ name, get: f => imuError(f)?.position[i] })) },
+  { title: 'IMU VELOCITY ERROR', unit: 'm/s', digits: 3, zero: true, series: ['X', 'Y', 'Z'].map((name, i) => ({ name, get: f => imuError(f)?.velocity[i] })) },
+  { title: 'IMU ATTITUDE ERROR', unit: '°', digits: 2, zero: true, series: [{ name: 'ANGLE', get: f => imuError(f)?.attitude }] },
+  { title: 'IMU BODY-RATE ERROR', unit: '°/s', digits: 1, zero: true, series: ['P', 'Q', 'R'].map((name, i) => ({ name, get: f => imuError(f)?.gyro[i] })) },
 ];
 
 function niceStep(range) {
@@ -73,7 +79,7 @@ export function createCharts(root, { onSeek, titles }) {
     for (let v = lo; v <= hi + step / 2; v += step) {
       ctx.strokeStyle = Math.abs(v) < step / 1e3 && lo < 0 ? 'rgba(255,255,255,.22)' : ink.grid;
       ctx.beginPath(); ctx.moveTo(left, Math.round(y(v)) + .5); ctx.lineTo(w - right, Math.round(y(v)) + .5); ctx.stroke();
-      ctx.fillText(fmt(v, step < 1 ? 1 : 0), left - 5, y(v) + 3);
+      ctx.fillText(fmt(v, step < 1 ? Math.max(1, Math.ceil(-Math.log10(step) - 1e-9)) : 0), left - 5, y(v) + 3);
     }
     ctx.textAlign = 'center';
     const tStep = niceStep(end * 1.4);

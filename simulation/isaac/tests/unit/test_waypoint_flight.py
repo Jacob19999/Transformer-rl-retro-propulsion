@@ -247,6 +247,24 @@ def test_observation_is_body_frame_and_sized_to_contract():
     assert obs[0, 51:54].tolist() == pytest.approx([1.5, 0.0, 0.0], abs=1e-5)
 
 
+def test_observation_records_the_measured_state_it_was_built_from():
+    flight, start = task(1, missions=[[dict(position=[10, 0, 5], type='flypass', radius_m=1.0),
+                                       dict(position=[10, 0, 1], type='land')]])
+    q = from_euler(torch.zeros(1), torch.zeros(1), torch.zeros(1))
+    args = (start, q, torch.zeros(1, 3), torch.zeros(1, 3), start[:, 2], torch.zeros(1, 4), torch.zeros(1, 4),
+            torch.full((1,), 0.83), torch.zeros(1, dtype=torch.long), torch.zeros(1, 4), torch.zeros(1, 5), 0.262, 6.98)
+    flight.observation(*args)
+    assert torch.equal(flight.measurement['position'], start)          # noise off: truth
+    torch.manual_seed(3)
+    noise = dict(enabled=True, position_std=0.1, velocity_std=0.1, attitude_std=0.05, angular_velocity_std=0.1)
+    obs = flight.observation(*args, noise)
+    m = flight.measurement
+    assert not torch.equal(m['position'], start) and not torch.equal(m['quaternion_wxyz'], q)
+    # The policy saw exactly this measurement: its target vector and body rates.
+    assert obs[0, 28:31].tolist() == pytest.approx((m['angular_vel_frd'][0] / math.pi).tolist(), abs=1e-6)
+    assert obs[0, 25:28].tolist() == pytest.approx((m['linear_vel_frd'][0] / flight.velocity_scale).tolist(), abs=1e-6)
+
+
 def test_explicit_mission_validation():
     with pytest.raises(ValueError, match='only allowed as the final'):
         wf.parse_mission([dict(position=[0, 0, 0], type='land'), dict(position=[1, 0, 5], type='hover')],
