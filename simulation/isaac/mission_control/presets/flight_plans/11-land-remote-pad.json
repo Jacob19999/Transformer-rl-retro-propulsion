@@ -1,0 +1,115 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "sample": {
+    "category": "land",
+    "summary": "Start over home, divert 13 m to a remote pad through a strict corridor.",
+    "profile": "land-precision",
+    "profile_name": "Landing - precision strict"
+  },
+  "mission": {
+    "name": "Landing 15 m - divert to remote pad",
+    "controller": "convex",
+    "seed": 2026,
+    "duration_s": 120.0,
+    "fast_live": true,
+    "hardware_profile": "planned_8s",
+    "vane_model": "momentum",
+    "position": [
+      0.0,
+      0.0,
+      15.0
+    ],
+    "velocity": [
+      0.0,
+      0.0,
+      -1.0
+    ],
+    "attitude_deg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_motor_fraction": 0.84,
+    "disturbance": [],
+    "disturbance_settings": {},
+    "pads": [
+      {
+        "name": "Home",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Remote pad",
+        "position": [
+          12.0,
+          6.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          6.0,
+          3.0,
+          10.0
+        ],
+        "type": "flypass",
+        "name": "Divert",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 2.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          12.0,
+          6.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "Touchdown",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 0.15,
+        "corridor_m": 1.5,
+        "pad": 1,
+        "approach_speed_m_s": 1.5
+      }
+    ],
+    "convex_settings": {
+      "guidance": {
+        "route_corridor_mode": "strict",
+        "route_corridor_m": 0.75,
+        "max_speed_m_s": 3.0,
+        "max_tilt_deg": 12.0,
+        "glide_slope_deg": 40.0,
+        "glide_slope_final_s": 4.0,
+        "gate_height_m": 0.6,
+        "gate_capture_radius_m": 0.25,
+        "terminal_center_radius_m": 0.15,
+        "landing_nodes": 30
+      },
+      "tracking": {
+        "max_tilt_deg": 20.0
+      }
+    },
+    "battery": {
+      "enabled": true,
+      "capacity_ah": 5.0,
+      "c_rating": 45.0,
+      "initial_soc": 1.0,
+      "cell_resistance_ohm": 0.003,
+      "max_current_a": 120.0
+    }
+  }
+}

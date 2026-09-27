@@ -9,12 +9,121 @@ It listens on the LAN by default (other devices use http://<this-PC-IP>:8830,
 and Windows Firewall must allow inbound TCP 8830); pass `-Local` to serve only
 this machine.
 
+## Presets and Mission plan layout (2026-09-27)
+
+The Mission plan page runs top to bottom in four numbered sections: **01 Route**,
+**02 Guidance**, **03 Environment** and **04 Vehicle & launch**. A sticky launch
+bar at the bottom shows the route, guidance profile and environment that
+**Run Isaac simulation** will fly. Each section header shows live summary chips,
+so a folded section still tells you what it is set to.
+
+![Route section](presets-route-desktop.png)
+
+- **Route.** *Sample flight plans* is a gallery of repository plans with an
+  altitude thumbnail, filtered by Hops, Landings and Hover. **Load** replaces
+  the route, start state, pads, guidance profile and environment. **Undo**
+  restores the previous draft. *My plans* (saved plans) and JSON import/export
+  sit in one bar. In the 3D scene, legs take the colour of the step they fly
+  to. Dashed plumb lines and ground shadows show each marker's altitude, and
+  the selected step shows its capture sphere. Labels include altitude, and
+  Fit / 3D / Top / Side set the camera. The **altitude profile** under the
+  scene plots altitude against distance along the drawn route, with the route
+  floor. Click a marker to select its step. The flight sequence is a timeline
+  from Start to the landing. An expanded step groups its fields into Step,
+  Position, Arrival and Path, and fields that do not apply to the step type
+  are left out.
+- **Guidance.** *Mission profile* holds the built-in convex profiles below,
+  plus your saved ones under *My profiles*. **Apply** replaces every optimizer
+  override. *Why these values?* lists each override against its default, with
+  the evidence behind it. The card for the profile that matches the current
+  settings shows *Applied*. *Key constraints* shows corridor enforcement
+  (soft/strict), corridor half-width, planned and feedback tilt, speed, glide
+  slope and cost as sliders, next to a schematic of the envelope. A feedback
+  tilt below the planned tilt is flagged in the form. The complete 38-parameter
+  editor and saving profiles are under *All parameters & saved profiles*.
+- **Environment.** Presets: Calm, Light breeze, Moderate wind, Gusty
+  crosswind, Noisy sensors, COM offset 1 cm, Combined stress. Each source tab
+  shows ON/OFF and has an *Apply … to this flight* switch. When a source is
+  off, its values stay editable but are dimmed and marked as not flown. Gusts
+  are drawn on an illustrative 60 s timeline.
+
+![Guidance section](presets-guidance-desktop.png)
+![Environment section](presets-environment-desktop.png)
+
+### Built-in convex profiles
+
+Stored in `mission_control/presets/convex_profiles.json` and validated by
+`convex_parameters.validate_settings`. Presets are served read-only at
+`/api/convex-presets` and never written. No profile changes the identified
+tracking gains (kp/kd/ki) or `tilt_rate_authority_fraction`. Every profile
+keeps the feedback tilt limit at least 7° above the planned tilt.
+
+| Profile | Mission | Corridor | Planned / feedback tilt | Speed | Notable overrides |
+|---|---|---|---|---|---|
+| Hop - gentle low tilt | hop | soft 1.0 m, weight 25 | 8° / 16° | 2.0 m/s | first hops |
+| Hop - soft corridor | hop | soft 1.0 m, weight 25 | 15° / 22° | 3.0 m/s | |
+| Hop - strict corridor | hop | strict 1.0 m | 12° / 20° | 2.5 m/s | re-plan triggers 0.6 m, 0.6 m/s |
+| Hop - agile wide tilt | hop | soft 1.5 m | 20° / 28° | 5.0 m/s | route_dt 0.3 s, correction 3.5 m/s² |
+| Hover - precision hold strict | hover | strict 0.75 m | 10° / 18° | 1.5 m/s | re-plan 0.4 s, 0.5 m, 0.5 m/s; fly-through aim 0.4 |
+| Hover - gust tolerant soft | hover | soft 1.5 m | 15° / 26° | 3.0 m/s | thrust reserve 0.6, correction 4 m/s² |
+| Hover - endurance efficient | hover | soft 2.0 m, weight 5 | 10° / 18° | 2.0 m/s | 2 solver workers, re-plan 0.75 s |
+| Landing - precision strict | land | strict 0.75 m | 12° / 20° | 3.0 m/s | glide 40°, gate 0.6 m, capture 0.25 m, 30 nodes |
+| Landing - soft touchdown | land | soft | 15° / 22° | 3.0 m/s | descent/brake 0.8, gate 0.8 m |
+| Landing - crosswind soft | land | soft 1.5 m | 18° / 26° | 4.0 m/s | glide 40°, reserve 0.6, centring 0.3 m |
+| Landing - high altitude fast | land | soft 1.5 m | 15° / 22° | 6.0 m/s | 32 landing nodes, solve 0.6 s, re-plan 0.6 s |
+| Landing - delta-v objective | land | soft | 15° / 22° | 4.0 m/s | objective delta_v |
+
+### Sample flight plans
+
+Seventeen plans in `mission_control/presets/flight_plans/` (edf-flight-plan
+version 2, stored exactly as `validate_mission` returns them), served at
+`/api/flight-plan-samples`. Each carries the settings of its profile. Hops and
+hover missions start on the ground with the rotor stopped. Airborne landing
+starts use the 0.84 hover rotor fraction unless the sample tests a cold rotor.
+
+Before commit, every sample was flown in an offline closed-loop replica. The
+replica is the rigid-body plant from `tests/unit/test_convex_guidance.py`: rotor
+gyro, servo model with deadband, 25 ms vane-joint lag and momentum-bounded
+vanes. It adds a ground plane for launches, the mission `WaypointMission`
+sequencer and the real `ConvexGuidanceController` with the sample's resolved
+settings. It is **not Isaac**. It models no contact dynamics, gust or
+sensor-noise realisation, and wind only as body drag. It checks feasibility
+and sequencing, not flight qualification.
+
+| Sample | Profile | Replica touchdown | Pad error | Flight time |
+|---|---|---|---|---|
+| 01 Hop 2 m - pad to pad | hop-gentle | 0.160 m/s | 0.005 m | 16.6 s |
+| 02 Hop 5 m - vertical | hop-soft | 0.149 m/s | 0.000 m | 15.3 s |
+| 03 Hop 10 m - 8 m lateral transfer | hop-soft | 0.152 m/s | 0.000 m | 34.6 s |
+| 04 Hop 20 m - high vertical | hop-strict | 0.166 m/s | 0.000 m | 43.5 s |
+| 05 Hop 3 m - strict slalom | hop-strict | 0.171 m/s | 0.002 m | 29.3 s |
+| 06 Hop 6 m - agile 16 m transfer | hop-agile | 0.155 m/s | 0.001 m | 23.1 s |
+| 07 Landing 18 m - nominal descent | land-precision | 0.157 m/s | 0.052 m | 12.9 s |
+| 08 Landing 30 m - offset high altitude | land-high-altitude | 0.151 m/s | 0.017 m | 10.5 s |
+| 09 Landing 25 m - 6 m/s fast sink | land-high-altitude | 0.154 m/s | 0.001 m | 8.6 s |
+| 10 Landing 15 m - crosswind and gusts | land-crosswind | 0.159 m/s | 0.043 m | 16.7 s |
+| 11 Landing 15 m - divert to remote pad | land-precision | 0.156 m/s | 0.029 m | 19.4 s |
+| 12 Landing 20 m - attitude upset recovery | land-crosswind | 0.155 m/s | 0.029 m | 10.2 s |
+| 13 Landing 12 m - noisy sensors and COM offset | land-soft-touchdown | 0.123 m/s | 0.003 m | 35.5 s |
+| 14 Landing 12 m - cold-rotor drop | land-soft-touchdown | 0.123 m/s | 0.000 m | 10.2 s |
+| 15 Hover 10 m - station keeping in gusts | hover-gust | 0.156 m/s | 0.007 m | 34.4 s |
+| 16 Hover 6 m - survey box | hover-precision | 0.152 m/s | 0.000 m | 54.7 s |
+| 17 Hover 4 m - 60 s endurance hold | hover-endurance | 0.151 m/s | 0.000 m | 71.5 s |
+
+Every run completed its route. The strict-corridor samples (04, 05, 11, 16)
+each spent about 0.5 s in HOLD, 13-16 control steps at 30 Hz, while no strict
+plan was feasible. They then planned and flew normally. Sample 13 carried a
+lateral COM offset of (7, -5) mm. None of these has been flown in Isaac yet,
+so treat them as starting points and confirm each in Isaac before relying on
+it.
+
 ## Advanced flight plans
 
 The route scene now sits beside a selectable flight sequence. Expand one step
 to edit it and see its arrival conditions. Environment controls have a separate
-section with Wind, Sensor noise and Center of mass tabs; optimizer profiles
-are under **Saved profiles & repository defaults**. See the
+section with Wind, Sensor noise and Center of mass tabs; saved optimizer
+profiles are under **Guidance → All parameters & saved profiles** (see the
+section above for the current layout). See the
 [2026-09-27 verification](waypoint_planner_2026-09-27.md) for the fix to repeated
 replans postponing waypoint arrival, two successful Isaac replays and screenshots.
 
@@ -97,9 +206,10 @@ add a Landing step to give it one.
 
 **Convex optimizer** exposes validated guidance and tracking settings, including
 speed/tilt/thrust bounds, objective, discretization, replanning, corridor width
-and penalty. **Save profile** stores a named profile locally under
-`mission_control/library/convex/`; **Load profile** restores it and **Repository
-defaults** removes the overrides. Saving an existing name replaces that profile.
+and penalty. **Save profile** (under *All parameters & saved profiles*) stores a
+named profile locally under `mission_control/library/convex/`; **Load** restores
+it, it also appears under *Mission profile → My profiles*, and **Restore
+repository defaults** removes the overrides. Saving an existing name replaces that profile.
 Profiles apply to future runs; recorded requests and resolved parameters remain
 with each mission. The full flight-plan export also carries the overrides.
 

@@ -365,6 +365,33 @@ def convex_profiles():
     return list_profiles()
 
 
+@app.get('/api/convex-presets')
+def convex_presets():
+    from .presets import convex_presets
+    return convex_presets()
+
+
+@app.get('/api/disturbance-presets')
+def disturbance_presets():
+    from .presets import disturbance_presets
+    return disturbance_presets()
+
+
+@app.get('/api/flight-plan-samples')
+def flight_plan_samples():
+    from .presets import list_samples
+    return list_samples()
+
+
+@app.get('/api/flight-plan-samples/{key}')
+def flight_plan_sample(key: str):
+    from .presets import read_sample
+    try:
+        return read_sample(key)
+    except (ValueError, KeyError, FileNotFoundError) as exc:
+        raise HTTPException(404, 'Sample flight plan is missing or invalid') from exc
+
+
 @app.get('/api/flight-plans')
 def flight_plans():
     from .flight_plans import list_plans
@@ -519,7 +546,7 @@ def index():
     # Keep the UI bundle and stylesheet in sync after a local update. The old
     # fixed query string let a cached pre-editor CSS leave the canvas 300x150.
     html = (HERE / 'static/index.html').read_text(encoding='utf-8')
-    for filename in ('style.css', 'fin-labels.css', 'app.js'):
+    for filename in ('style.css', 'fin-labels.css', 'planner-workspace.css', 'app.js'):
         path = HERE / 'static' / filename
         if path.is_file():
             html = re.sub(r'/static/' + re.escape(filename) + r'(?:\?[^"\s]*)?',

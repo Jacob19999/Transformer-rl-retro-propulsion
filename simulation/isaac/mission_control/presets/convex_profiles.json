@@ -1,0 +1,164 @@
+{
+  "format": "edf-convex-presets",
+  "version": 1,
+  "note": "Built-in convex guidance profiles, one per mission type and corridor behaviour. Each entry is a bounded override of configs/controllers/convex_guidance.yaml validated by convex_parameters.validate_settings. Tracking gains kp/kd/ki are never changed: the 1.0/1.2/0.3 horizontal set is the one the hover-loop damping analysis (zeta 0.37) and the Isaac sweeps chose, and kd 1.6 wobbled in terminal descent. tilt_rate_authority_fraction stays at 0.4 in every profile: planning the thrust-rate bound's ~30 deg/s slew saturated every vane offline (2026-09-25). Tracking max tilt always keeps >= 7 deg of margin over the planned tilt for feedback.",
+  "profiles": [
+    {
+      "id": "hop-gentle",
+      "name": "Hop - gentle low tilt",
+      "mission": "hop",
+      "corridor": "soft",
+      "summary": "First hops and short pad-to-pad transfers: slow, near-vertical thrust, generous margins.",
+      "rationale": "8 deg planned tilt and 2 m/s keep lateral acceleration under ~1.4 m/s^2, leaving most of the vane authority for disturbance rejection. The corridor penalty is raised 2.5x so a short arc is followed closely without giving up the soft emergency fallback.",
+      "settings": {
+        "guidance": {"route_corridor_mode": "soft", "route_corridor_m": 1.0, "route_corridor_weight": 25.0,
+                     "max_speed_m_s": 2.0, "max_tilt_deg": 8.0},
+        "tracking": {"max_tilt_deg": 16.0}
+      }
+    },
+    {
+      "id": "hop-soft",
+      "name": "Hop - soft corridor",
+      "mission": "hop",
+      "corridor": "soft",
+      "summary": "General takeoff, transfer and landing hops. Follows the drawn arc but always gets a plan.",
+      "rationale": "Repository tilt limits with a 3 m/s speed cap suited to hops under ~20 m. Corridor excess priced at 25 s of hover energy per m*s (default 10) so the plan hugs the route; soft mode still brakes an over-speed start at full thrust when the corridor is unreachable.",
+      "settings": {
+        "guidance": {"route_corridor_mode": "soft", "route_corridor_m": 1.0, "route_corridor_weight": 25.0,
+                     "max_speed_m_s": 3.0}
+      }
+    },
+    {
+      "id": "hop-strict",
+      "name": "Hop - strict corridor",
+      "mission": "hop",
+      "corridor": "strict",
+      "summary": "Hops that must stay inside the corridor (obstacles, test-range limits). Holds instead of leaving it.",
+      "rationale": "Strict corridors reject any plan with slack and hold if infeasible, so the profile keeps plans comfortably feasible: 2.5 m/s, 12 deg planned tilt and a 1 m half-width. Tighter re-plan triggers (0.6 m, 0.6 m/s) restart from the measured state before the tube is exhausted.",
+      "settings": {
+        "guidance": {"route_corridor_mode": "strict", "route_corridor_m": 1.0, "max_speed_m_s": 2.5,
+                     "max_tilt_deg": 12.0, "replan_error_m": 0.6, "replan_velocity_error_m_s": 0.6},
+        "tracking": {"max_tilt_deg": 20.0}
+      }
+    },
+    {
+      "id": "hop-agile",
+      "name": "Hop - agile wide tilt",
+      "mission": "hop",
+      "corridor": "soft",
+      "summary": "Longer, faster transfers (10-20 m). Wider tilt cone and speed, looser corridor.",
+      "rationale": "20 deg planned tilt still leaves 1.2 W * cos 20 = 1.13 W of vertical thrust inside the planning ceiling (8S, T/W 1.41, half the excess reserved). Tracking tilt 28 deg keeps 8 deg of feedback margin and the correction bound rises to 3.5 m/s^2. The tilt-rate share is unchanged (0.4): the cone widens, the slew does not.",
+      "settings": {
+        "guidance": {"route_corridor_mode": "soft", "route_corridor_m": 1.5, "route_corridor_weight": 10.0,
+                     "max_speed_m_s": 5.0, "max_tilt_deg": 20.0, "route_dt_s": 0.3},
+        "tracking": {"max_tilt_deg": 28.0, "max_correction_m_s2": 3.5}
+      }
+    },
+    {
+      "id": "hover-precision",
+      "name": "Hover - precision hold strict",
+      "mission": "hover",
+      "corridor": "strict",
+      "summary": "Station keeping and slow survey points with tight capture. Strict tube between hold points.",
+      "rationale": "1.5 m/s and 10 deg planned tilt make every hold approach gentle so the 0.4 m/s capture gate is met on arrival. 0.75 m strict corridor between closely spaced hover points; re-plans every 0.4 s from a 0.5 m / 0.5 m/s error so the hold reference stays current. Fly-throughs aim inside 40% of their radius.",
+      "settings": {
+        "guidance": {"route_corridor_mode": "strict", "route_corridor_m": 0.75, "max_speed_m_s": 1.5,
+                     "max_tilt_deg": 10.0, "replan_period_s": 0.4, "replan_error_m": 0.5,
+                     "replan_velocity_error_m_s": 0.5, "flypass_capture_fraction": 0.4},
+        "tracking": {"max_tilt_deg": 18.0}
+      }
+    },
+    {
+      "id": "hover-gust",
+      "name": "Hover - gust tolerant soft",
+      "mission": "hover",
+      "corridor": "soft",
+      "summary": "Holding position in wind and gusts. Reserves more thrust and tilt for feedback.",
+      "rationale": "The plan withholds 60% (default 50%) of the thrust above weight for the tracking loop, and the command tilt limit rises to 26 deg with a 4 m/s^2 correction bound so a 5 m/s gust can be rejected without the plan itself tilting further. A 1.5 m soft corridor absorbs gust drift instead of forcing aggressive re-routing.",
+      "settings": {
+        "guidance": {"route_corridor_mode": "soft", "route_corridor_m": 1.5, "route_corridor_weight": 10.0,
+                     "max_speed_m_s": 3.0, "thrust_excess_reserve_fraction": 0.6},
+        "tracking": {"max_tilt_deg": 26.0, "max_correction_m_s2": 4.0}
+      }
+    },
+    {
+      "id": "hover-endurance",
+      "name": "Hover - endurance efficient",
+      "mission": "hover",
+      "corridor": "soft",
+      "summary": "Long holds and slow repositioning in calm air with minimum electrical energy.",
+      "rationale": "Energy objective with 2 m/s and 10 deg keeps transfer legs near hover power. A wide, cheaply priced corridor (2 m, weight 5) lets the optimizer take the lowest-energy path. Two solver workers and a 0.75 s re-plan period reduce CPU load on long runs; the landing leg still freezes 0.8 s before the gate.",
+      "settings": {
+        "guidance": {"objective": "energy", "route_corridor_mode": "soft", "route_corridor_m": 2.0,
+                     "route_corridor_weight": 5.0, "max_speed_m_s": 2.0, "max_tilt_deg": 10.0,
+                     "solver_workers": 2, "replan_period_s": 0.75},
+        "tracking": {"max_tilt_deg": 18.0}
+      }
+    },
+    {
+      "id": "land-precision",
+      "name": "Landing - precision strict",
+      "mission": "land",
+      "corridor": "strict",
+      "summary": "Pad-centred landings with a narrow approach cone. Strict corridor on any routed approach.",
+      "rationale": "40 deg glide slope finishes lateral motion higher than the 45 deg default (45 landed 0.29 m from centre where 55 missed by 0.68 m and 70 by 0.58 m; missions c2090264e9af, f546162f3741). The gate is raised to 0.6 m and hands over only within 0.25 m, then full descent rate only within 0.15 m of centre. 30 landing nodes resolve the narrower cone.",
+      "settings": {
+        "guidance": {"route_corridor_mode": "strict", "route_corridor_m": 0.75, "max_speed_m_s": 3.0,
+                     "max_tilt_deg": 12.0, "glide_slope_deg": 40.0, "glide_slope_final_s": 4.0,
+                     "gate_height_m": 0.6, "gate_capture_radius_m": 0.25, "terminal_center_radius_m": 0.15,
+                     "landing_nodes": 30},
+        "tracking": {"max_tilt_deg": 20.0}
+      }
+    },
+    {
+      "id": "land-soft-touchdown",
+      "name": "Landing - soft touchdown",
+      "mission": "land",
+      "corridor": "soft",
+      "summary": "Gentle final descent for sensitive payloads or noisy sensors. Lower planned sink acceleration.",
+      "rationale": "descent_brake_ratio 0.8 raises the thrust floor so planned downward acceleration never exceeds 80% of the braking acceleration (a 6S plan that out-fell its braking hit at 2.1 m/s, mission 201f2c58bb9e). The gate is raised to 0.8 m for a longer settled vertical segment. Pair it with a Landing step at 0.10-0.12 m/s: that step sets the terminal descent clamp (1.2x touchdown speed).",
+      "settings": {
+        "guidance": {"route_corridor_mode": "soft", "max_speed_m_s": 3.0, "descent_brake_ratio": 0.8,
+                     "gate_height_m": 0.8, "terminal_center_radius_m": 0.15, "terminal_max_descent_m_s": 0.12}
+      }
+    },
+    {
+      "id": "land-crosswind",
+      "name": "Landing - crosswind soft",
+      "mission": "land",
+      "corridor": "soft",
+      "summary": "Landings in steady crosswind and gusts, or after an attitude upset. More feedback authority.",
+      "rationale": "A 70 deg cone let a crosswind approach brake 2.2 m/s sideways at 1.1 m and miss by 0.58 m (mission f546162f3741), so the cone is 40 deg with 4 s of narrowing. Tracking tilt 26 deg, 4 m/s^2 correction and a 60% thrust reserve hold the wind trim; terminal full-rate centring widens to 0.3 m so a gust does not stall the descent off centre (0289417f5d60 stalled until timeout).",
+      "settings": {
+        "guidance": {"route_corridor_mode": "soft", "route_corridor_m": 1.5, "max_tilt_deg": 18.0,
+                     "glide_slope_deg": 40.0, "glide_slope_final_s": 4.0, "thrust_excess_reserve_fraction": 0.6,
+                     "terminal_center_radius_m": 0.3},
+        "tracking": {"max_tilt_deg": 26.0, "max_correction_m_s2": 4.0}
+      }
+    },
+    {
+      "id": "land-high-altitude",
+      "name": "Landing - high altitude fast",
+      "mission": "land",
+      "corridor": "soft",
+      "summary": "Descents from 25-40 m or fast-falling starts. Higher speed cone and finer long-leg resolution.",
+      "rationale": "6 m/s lets a 30 m descent finish in reasonable time; an over-speed start keeps its speed and brakes back under the cap rather than ratcheting it (0289417f5d60). 32 landing nodes, 50 nodes per leg and a 0.6 s solve budget with a 0.6 s re-plan period resolve the longer powered descent without re-solving faster than the solver can finish.",
+      "settings": {
+        "guidance": {"route_corridor_mode": "soft", "route_corridor_m": 1.5, "max_speed_m_s": 6.0,
+                     "glide_slope_final_s": 4.0, "landing_nodes": 32, "max_leg_nodes": 50,
+                     "max_solve_time_s": 0.6, "replan_period_s": 0.6, "freeze_time_s": 1.0}
+      }
+    },
+    {
+      "id": "land-delta-v",
+      "name": "Landing - delta-v objective",
+      "mission": "land",
+      "corridor": "soft",
+      "summary": "Research comparison: minimise propulsive delta-v (the paper's fuel analog) instead of energy.",
+      "rationale": "Identical constraints to the repository defaults; only the cost changes from electrical Wh to the integral of |T|/m, so energy and delta-v trajectories can be compared on the same mission and seed.",
+      "settings": {
+        "guidance": {"objective": "delta_v", "route_corridor_mode": "soft"}
+      }
+    }
+  ]
+}

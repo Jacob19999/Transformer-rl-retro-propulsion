@@ -56,3 +56,31 @@ export function optimizerVisual(group,get){
   }
   return `<figure><svg viewBox="0 0 320 165" role="img" aria-label="${escapeHtml(caption)}">${drawing}</svg><figcaption>${escapeHtml(caption)}</figcaption></figure><div class="optimizer-visual-metrics">${metrics.map(([label,v])=>`<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(v??'—')}</strong></div>`).join('')}</div>`;
 }
+
+// One schematic of the key constraints (not to scale): thrust cones of the
+// planned and feedback tilt, the corridor band and speed cap, the route floor,
+// and the landing glide-slope cone with its gate.
+export function envelopeVisual(get){
+  const g=key=>get('guidance',key),t=key=>get('tracking',key);
+  if(g('max_tilt_deg')===undefined)return '';
+  const rad=d=>d*Math.PI/180,ground=205,padX=305;
+  const cone=(deg,r)=>{const a=rad(Math.min(80,deg));return `M92 70 L${(92-r*Math.sin(a)).toFixed(1)} ${(70-r*Math.cos(a)).toFixed(1)} A${r} ${r} 0 0 1 ${(92+r*Math.sin(a)).toFixed(1)} ${(70-r*Math.cos(a)).toFixed(1)} Z`;};
+  const glide=rad(Math.min(85,g('glide_slope_deg'))),height=150,spread=Math.min(170,height*Math.tan(glide));
+  const width=Math.max(6,Math.min(46,4+g('route_corridor_m')*9)),strict=g('route_corridor_mode')==='strict';
+  const band='M104 84 C170 92 220 70 '+(padX-18)+' 118';
+  const text=(x,y,label,cls='')=>`<text x="${x}" y="${y}" class="${cls}">${escapeHtml(label)}</text>`;
+  return `<svg viewBox="0 0 420 230" role="img" aria-label="Schematic of the configured guidance envelope">
+    <path class="env-glide" d="M${padX} ${ground} L${padX-spread} ${ground-height} L${padX+spread} ${ground-height} Z"/>
+    <line class="env-glide-edge" x1="${padX}" y1="${ground}" x2="${padX-spread}" y2="${ground-height}"/><line class="env-glide-edge" x1="${padX}" y1="${ground}" x2="${padX+spread}" y2="${ground-height}"/>
+    <path class="env-band ${strict?'is-strict':''}" d="${band}" style="stroke-width:${width}"/><path class="env-route ${strict?'':'is-soft'}" d="${band}"/>
+    <line class="env-floor" x1="16" x2="250" y1="${ground-16}" y2="${ground-16}"/>${text(18,ground-21,`route floor ${g('route_floor_m')} m`)}
+    <line class="env-ground" x1="8" x2="412" y1="${ground}" y2="${ground}"/><rect class="env-pad" x="${padX-22}" y="${ground-3}" width="44" height="5"/>
+    <line class="env-gate" x1="${padX-16}" x2="${padX+16}" y1="${ground-26}" y2="${ground-26}"/>${text(padX+22,ground-22,`gate ${g('gate_height_m')} m`)}
+    ${text(padX-spread+4,ground-height-8,`glide ±${g('glide_slope_deg')}°`,'env-label')}
+    <path class="env-command" d="${cone(t('max_tilt_deg'),54)}"/><path class="env-plan" d="${cone(g('max_tilt_deg'),46)}"/><line class="env-axis" x1="92" y1="70" x2="92" y2="8"/>
+    <rect class="env-vehicle" x="84" y="66" width="16" height="22" rx="3"/>
+    ${text(14,112,`plan ≤ ${g('max_tilt_deg')}°`,'env-label env-plan-text')}${text(14,127,`feedback ≤ ${t('max_tilt_deg')}°`,'env-label env-command-text')}
+    ${text(150,64,`${strict?'STRICT':'SOFT'} corridor ±${g('route_corridor_m')} m · ≤ ${g('max_speed_m_s')} m/s`,'env-label')}
+    ${text(18,224,`cost: ${g('objective')==='delta_v'?'propulsive delta-v':'electrical energy'} · schematic, not to scale`)}
+  </svg>`;
+}

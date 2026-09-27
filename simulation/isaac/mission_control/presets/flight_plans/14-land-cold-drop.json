@@ -1,0 +1,87 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "sample": {
+    "category": "land",
+    "summary": "Rotor stopped while falling at 2 m/s from 12 m: spool-up race before braking.",
+    "profile": "land-soft-touchdown",
+    "profile_name": "Landing - soft touchdown"
+  },
+  "mission": {
+    "name": "Landing 12 m - cold-rotor drop",
+    "controller": "convex",
+    "seed": 2026,
+    "duration_s": 90.0,
+    "fast_live": true,
+    "hardware_profile": "planned_8s",
+    "vane_model": "momentum",
+    "position": [
+      0.0,
+      0.0,
+      12.0
+    ],
+    "velocity": [
+      0.0,
+      0.0,
+      -2.0
+    ],
+    "attitude_deg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_motor_fraction": 0.0,
+    "disturbance": [],
+    "disturbance_settings": {},
+    "pads": [
+      {
+        "name": "Home pad",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "Touchdown",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 0.12,
+        "corridor_m": null,
+        "pad": 0,
+        "approach_speed_m_s": null
+      }
+    ],
+    "convex_settings": {
+      "guidance": {
+        "route_corridor_mode": "soft",
+        "max_speed_m_s": 3.0,
+        "descent_brake_ratio": 0.8,
+        "gate_height_m": 0.8,
+        "terminal_center_radius_m": 0.15,
+        "terminal_max_descent_m_s": 0.12
+      }
+    },
+    "battery": {
+      "enabled": true,
+      "capacity_ah": 5.0,
+      "c_rating": 45.0,
+      "initial_soc": 1.0,
+      "cell_resistance_ohm": 0.003,
+      "max_current_a": 120.0
+    }
+  }
+}

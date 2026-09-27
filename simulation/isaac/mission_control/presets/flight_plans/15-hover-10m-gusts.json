@@ -1,0 +1,134 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "sample": {
+    "category": "hover",
+    "summary": "Climb to 10 m and hold for 20 s in a 6 m/s gusty crosswind, then land.",
+    "profile": "hover-gust",
+    "profile_name": "Hover - gust tolerant soft"
+  },
+  "mission": {
+    "name": "Hover 10 m - station keeping in gusts",
+    "controller": "convex",
+    "seed": 2026,
+    "duration_s": 120.0,
+    "fast_live": true,
+    "hardware_profile": "planned_8s",
+    "vane_model": "momentum",
+    "position": [
+      0.0,
+      0.0,
+      0.34
+    ],
+    "velocity": [
+      0.0,
+      0.0,
+      -1.0
+    ],
+    "attitude_deg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_motor_fraction": 0.0,
+    "disturbance": [
+      "wind"
+    ],
+    "disturbance_settings": {
+      "wind": {
+        "steady_vector": [
+          0.0,
+          -6.0,
+          0.0
+        ]
+      },
+      "gust": {
+        "magnitude": 5.0,
+        "duration": 1.0,
+        "interval": [
+          3.0,
+          8.0
+        ]
+      }
+    },
+    "pads": [
+      {
+        "name": "Home pad",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          0.0,
+          0.0,
+          10.0
+        ],
+        "type": "takeoff",
+        "name": "Climb",
+        "hold_s": 2.0,
+        "radius_m": 0.75,
+        "speed_m_s": 1.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          10.0
+        ],
+        "type": "hover",
+        "name": "Station keep",
+        "hold_s": 20.0,
+        "radius_m": 1.0,
+        "speed_m_s": 1.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "Touchdown",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 0.15,
+        "corridor_m": null,
+        "pad": 0,
+        "approach_speed_m_s": null
+      }
+    ],
+    "convex_settings": {
+      "guidance": {
+        "route_corridor_mode": "soft",
+        "route_corridor_m": 1.5,
+        "route_corridor_weight": 10.0,
+        "max_speed_m_s": 3.0,
+        "thrust_excess_reserve_fraction": 0.6
+      },
+      "tracking": {
+        "max_tilt_deg": 26.0,
+        "max_correction_m_s2": 4.0
+      }
+    },
+    "battery": {
+      "enabled": true,
+      "capacity_ah": 5.0,
+      "c_rating": 45.0,
+      "initial_soc": 1.0,
+      "cell_resistance_ohm": 0.003,
+      "max_current_a": 120.0
+    }
+  }
+}
