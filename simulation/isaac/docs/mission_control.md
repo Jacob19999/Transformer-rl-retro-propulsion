@@ -43,6 +43,11 @@ so a folded section still tells you what it is set to.
   tilt below the planned tilt is flagged in the form. *Parameter groups* is
   always visible: the full 38-parameter editor, one diagram per group. Saving
   and loading your own profiles sits under the profile cards.
+  Section 02 is shown for every controller. When the selected controller is
+  not convex guidance (for example the PPO policy, which the service picks by
+  default when its checkpoint is present), the section is dimmed. A notice
+  explains that its settings are not sent with that run, and a button
+  switches to convex guidance.
 - **Environment.** Presets: Calm, Light breeze, Moderate wind, Gusty
   crosswind, Noisy sensors, COM offset 1 cm, Combined stress. Each source tab
   shows ON/OFF and has an *Apply … to this flight* switch. When a source is

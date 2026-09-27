@@ -213,6 +213,10 @@ details:is(.sample-gallery,.precision-views,.route-pads,.route-help)[open] > sum
 #plannerHint { border-left: 2px solid #3987e5; padding: 10px 14px; background: #0d151e; margin-bottom: 14px; font-size: 11px; }
 
 /* 02 Guidance */
+.guidance-inactive { display: flex; align-items: center; justify-content: space-between; gap: 12px 18px; flex-wrap: wrap; margin-bottom: 18px; padding: 12px 16px; background: #1a150a; border-left: 2px solid #c9922e; border-radius: 0 6px 6px 0; font-size: 12px; line-height: 1.5; color: #e6d3a8; }
+.guidance-inactive[hidden] { display: none; }
+.guidance-inactive button { padding: 8px 14px; border-color: #2c557e; color: #dcecff; background: #11243a; flex-shrink: 0; }
+.optimizer-settings.is-inactive .config-body > :not(.guidance-inactive) { opacity: .5; }
 .preset-panel { margin-bottom: 22px; }
 .preset-cards { display: grid; grid-template-columns: repeat(auto-fill,minmax(240px,1fr)); gap: 12px; }
 .preset-card.is-active { border-color: #4e89bd; background: #0f1d2c; box-shadow: 0 0 0 1px #4e89bd55; }
