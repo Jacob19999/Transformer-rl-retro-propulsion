@@ -5,7 +5,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createMissionPlanner, samplePlannerSpline } from './planner.js';
 import {createOptimizerSettings} from './optimizer-settings.js';
 import {createDisturbanceEditor} from './disturbances.js';
-import {waypointColors,waypointLabel,waypointDetail,convexCaptureStatus,escapeHtml} from './flight-plan.js';
+import {waypointColors,waypointLabel,waypointDetail,convexCaptureStatus,escapeHtml,pickRoute} from './flight-plan.js';
 import { checkRoute } from './braking.js';
 import { attitude, drawAdi, drawWebcast, fitCanvas, series } from './instruments.js';
 import { createCharts } from './charts.js';
@@ -98,6 +98,8 @@ const planner=createMissionPlanner($('missionPlanner'),{readInitial:readPlannerI
   writeSettings:value=>optimizer.set(value),
   readDisturbances:()=>disturbances?.preview(),
   readMission:missionRequest,writeMission:fillMissionForm,validateMission:request=>api('/api/flight-plan/validate',request),
+  readRoute:()=>pickRoute(missionRequest()),writeRoute:fillRoute,validateRoute:route=>api('/api/flight-plan/route',route),
+  applyProfile:id=>optimizer.applyPreset(id),applyEnvironment:environment=>{disturbances.set(environment.selected,environment.settings);planner.draw();renderBoard();updateLaunchSummary();},
   writeInitial:initial=>initialKeys.forEach(key=>initial[key].forEach((v,i)=>{$(`${key}_${i}`).value=Math.round(v*100)/100;})),
   editStart:()=>{const details=$('initialState');details.open=true;details.scrollIntoView({behavior:'smooth',block:'center'});},
   onChange:()=>{updatePlannedRoute();renderBoard();updateLaunchSummary();},overlay:waypoints=>routeCheck(waypoints)});
@@ -519,6 +521,13 @@ function fillMissionForm(request){
   text('packLabel',request.hardware_profile==='planned_8s'?'8S / ESTIMATED':'6S / ESTIMATED');
   $('fast_live').checked=request.fast_live??true;
   planner.setPads(request.pads);planner.setWaypoints(request.waypoints??[]);optimizer.set(request.convex_settings);checklist.update();updateLaunchSummary();
+}
+// Route fields only: loading a flight plan keeps the chosen guidance and environment.
+function fillRoute(route){
+  for(const key of ['name','duration_s'])if(route[key]!==undefined)$(key).value=route[key];
+  for(const key of ['position','velocity','attitude_deg','angular_rate_deg_s'])route[key]?.forEach((v,i)=>{$(`${key}_${i}`).value=v;});
+  if(route.initial_motor_fraction!==undefined)$('initial_motor_fraction').value=route.initial_motor_fraction*100;
+  planner.setPads(route.pads);planner.setWaypoints(route.waypoints??[]);checklist.update();updateLaunchSummary();
 }
 function missionRequest(){
   const result={};for(const key of ['name','controller','hardware_profile'])result[key]=$(key).value;

@@ -21,8 +21,9 @@ so a folded section still tells you what it is set to.
 
 - **Route.** *Sample flight plans* is a gallery of repository plans with an
   altitude thumbnail, filtered by Hops, Landings and Hover. **Load** replaces
-  the route, start state, pads, guidance profile and environment. **Undo**
-  restores the previous draft. *My plans* (saved plans) and JSON import/export
+  only the route (see *Flight plans are routes* below). The message then
+  offers the sample's suggested guidance profile and environment as one-click
+  buttons. **Undo** restores the previous route. *My plans* (saved plans) and JSON import/export
   sit in one bar. In the 3D scene, legs take the colour of the step they fly
   to. Dashed plumb lines and ground shadows show each marker's altitude, and
   the selected step shows its capture sphere. Labels include altitude, and
@@ -39,16 +40,106 @@ so a folded section still tells you what it is set to.
   settings shows *Applied*. *Key constraints* shows corridor enforcement
   (soft/strict), corridor half-width, planned and feedback tilt, speed, glide
   slope and cost as sliders, next to a schematic of the envelope. A feedback
-  tilt below the planned tilt is flagged in the form. The complete 38-parameter
-  editor and saving profiles are under *All parameters & saved profiles*.
+  tilt below the planned tilt is flagged in the form. *Parameter groups* is
+  always visible: the full 38-parameter editor, one diagram per group. Saving
+  and loading your own profiles sits under the profile cards.
 - **Environment.** Presets: Calm, Light breeze, Moderate wind, Gusty
   crosswind, Noisy sensors, COM offset 1 cm, Combined stress. Each source tab
   shows ON/OFF and has an *Apply … to this flight* switch. When a source is
   off, its values stay editable but are dimmed and marked as not flown. Gusts
   are drawn on an illustrative 60 s timeline.
 
+### Flight plans are routes
+
+A flight plan holds only the route: mission name, duration, start state
+(position, velocity, attitude, body rate, initial rotor), landing pads and
+steps. Guidance (convex optimizer) settings and the environment (disturbances)
+are chosen per run and are never saved with a plan. That covers **Save**,
+**Open**, sample loading, and **Import / Export JSON**, all of which use
+`flight_plans.validate_route` and the `/api/flight-plan/route` endpoint.
+Plan files are `edf-flight-plan` version 2 with `"scope": "route"`. Plans saved
+or exported before this change still load; their guidance and environment
+fields are ignored, and an import says so.
+
+A route is validated against the widest speed limit any guidance profile may
+set (10 m/s). The guidance you pick is checked at launch. If a loaded route
+does not fit the current guidance (for example a 5 m/s step with a 3 m/s
+speed limit), the route still loads and the message names the conflict.
+Recorded missions keep the complete resolved request, guidance and
+environment included.
+
 ![Guidance section](presets-guidance-desktop.png)
 ![Environment section](presets-environment-desktop.png)
+
+### IMU hardware presets
+
+The Sensor noise tab lists three sensors as **IMU hardware** cards. **Apply**
+sets all four noise channels and switches sensor noise on, leaving wind and
+COM as they are. The Environment chips and the launch bar then name the
+sensor, e.g. "BNO085 IMU". Each card's *Datasheet & mapping* shows the source
+figures.
+
+![IMU hardware presets](presets-imu-desktop.png)
+
+The simulator draws independent Gaussian noise at every 30 Hz control step
+(`tvc_env/envs/observations.apply_sensor_noise`). It has no bias, drift or
+correlation model, so each datasheet figure becomes one white-noise sigma:
+
+- `attitude_std`: the published pitch/roll error, the dynamic figure when the
+  maker publishes one, else the static one.
+- `angular_velocity_std`: the gyro noise density × √(15 Hz), the control
+  loop's Nyquist band, when a density is published. Otherwise the published
+  gyro accuracy or stability figure.
+- `position_std` / `velocity_std`: none of these parts measures position or
+  velocity to landing precision, so these stay at the repository defaults
+  (0.01 m, 0.05 m/s). That stands for an external source such as motion
+  capture or RTK.
+
+| Preset | Class | Source figures | attitude_std | angular_velocity_std |
+|---|---|---|---|---|
+| BNO085 | hobby | game rotation vector dynamic error 2.5° (static 1.5°); gyroscope accuracy 3.1°/s | 2.5° (0.0436 rad) | 3.1°/s (0.0541 rad/s) |
+| WITMOTION WTGAHRS1 | hobby | X/Y angle accuracy 0.05° (static only); gyro stability 0.05°/s; GPS 2.5 m (not modelled) | 0.05° (0.00087 rad) | 0.05°/s (0.00087 rad/s) |
+| VectorNav VN-110E | tactical | pitch/roll dynamic 1.0° RMS (static 0.05°); gyro noise density 5°/hr/√Hz; bias 0.6°/hr | 1.0° (0.0175 rad) | 0.0054°/s (9.4e-5 rad/s) |
+
+Sources: the WTGAHRS1 datasheet v20-0615, §3.1 (the WITMOTION PDF). CEVA's
+BNO08X datasheet (rev 1.16/1.17). VectorNav's VN-110/VN-110E product brief and
+datasheet. The vendor pages for the last two were not reachable from the
+build environment, so their figures come from excerpts of those datasheets;
+check them against the PDFs before relying on them.
+
+Caveats:
+- The BNO085 figures are for the game rotation vector, which uses no
+  magnetometer. The EDF's high-current bus (limited at 120 A) would disturb a
+  magnetometer.
+- The WTGAHRS1 publishes only a static angle accuracy, so its preset is
+  optimistic in flight; measure it on the bench. Its GPS (2.5 m) exceeds both
+  the 0.5 m noise bound and the 0.5 m landing criterion.
+- A datasheet error is mostly slow bias, while the simulator's noise is
+  white. White noise at the spec magnitude shakes the controller harder but
+  averages out, where a bias would not.
+
+Offline replica check (same replica as the sample table below, with
+`apply_sensor_noise` on the controller's observation; not Isaac):
+
+| Noise applied | 5 m vertical hop, 4 seeds | 18 m cold-rotor landing, 4 seeds |
+|---|---|---|
+| none | 0.15 m/s every seed | 0.16 m/s every seed |
+| position/velocity only (0.01 m, 0.05 m/s) | 2 of 4 land hard (0.68, 0.75 m/s) | all land (0.14-0.17 m/s) |
+| VN-110E attitude + rate only | all land (0.15 m/s) | 1 of 4 lost (6.4 m/s impact) |
+| BNO085 attitude + rate only | all land (0.14-0.15 m/s) | 4 of 4 lost during spool-up |
+
+Two existing controller sensitivities show up here, and neither is caused by
+the presets:
+- **Hover landings and position/velocity noise.** In the failing hop runs the
+  vehicle is still in powered descent at 2.5 m/s through 3 m, with throttle
+  held to the 0.25/s duty rate, and never reaches the gate.
+- **Cold-rotor descents and attitude/rate noise.** The vehicle is lost while
+  the rotor spools up from zero. Vane authority scales with rotor speed
+  squared, so attitude/rate noise has most effect then.
+
+Flying the three presets in Isaac, and treating these two sensitivities
+through the convex controller's estimation and robustness, is the next step.
+Neither is patched in the preset values.
 
 ### Built-in convex profiles
 
@@ -75,9 +166,11 @@ keeps the feedback tilt limit at least 7° above the planned tilt.
 
 ### Sample flight plans
 
-Seventeen plans in `mission_control/presets/flight_plans/` (edf-flight-plan
-version 2, stored exactly as `validate_mission` returns them), served at
-`/api/flight-plan-samples`. Each carries the settings of its profile. Hops and
+Seventeen routes in `mission_control/presets/flight_plans/` (route-only
+edf-flight-plan version 2, stored exactly as `validate_route` returns them),
+served at `/api/flight-plan-samples`. Each names a suggested guidance profile,
+and samples 10, 13 and 15 also suggest an environment. Neither is applied
+unless you click it. Hops and
 hover missions start on the ground with the rotor stopped. Airborne landing
 starts use the 0.84 hover rotor fraction unless the sample tests a cold rotor.
 
@@ -85,8 +178,8 @@ Before commit, every sample was flown in an offline closed-loop replica. The
 replica is the rigid-body plant from `tests/unit/test_convex_guidance.py`: rotor
 gyro, servo model with deadband, 25 ms vane-joint lag and momentum-bounded
 vanes. It adds a ground plane for launches, the mission `WaypointMission`
-sequencer and the real `ConvexGuidanceController` with the sample's resolved
-settings. It is **not Isaac**. It models no contact dynamics, gust or
+sequencer and the real `ConvexGuidanceController` with the suggested profile's
+resolved settings. It is **not Isaac**. It models no contact dynamics, gust or
 sensor-noise realisation, and wind only as body drag. It checks feasibility
 and sequencing, not flight qualification.
 

@@ -1,6 +1,7 @@
 {
   "format": "edf-flight-plan",
   "version": 2,
+  "scope": "route",
   "sample": {
     "category": "hop",
     "summary": "Strict-corridor climb to 20 m, 3 s hold, controlled descent to 6 m and landing.",
@@ -9,12 +10,7 @@
   },
   "mission": {
     "name": "Hop 20 m - high vertical",
-    "controller": "convex",
-    "seed": 2026,
     "duration_s": 120.0,
-    "fast_live": true,
-    "hardware_profile": "planned_8s",
-    "vane_model": "momentum",
     "position": [
       0.0,
       0.0,
@@ -36,8 +32,6 @@
       0.0
     ],
     "initial_motor_fraction": 0.0,
-    "disturbance": [],
-    "disturbance_settings": {},
     "pads": [
       {
         "name": "Home pad",
@@ -103,27 +97,6 @@
         "pad": 0,
         "approach_speed_m_s": null
       }
-    ],
-    "convex_settings": {
-      "guidance": {
-        "route_corridor_mode": "strict",
-        "route_corridor_m": 1.0,
-        "max_speed_m_s": 2.5,
-        "max_tilt_deg": 12.0,
-        "replan_error_m": 0.6,
-        "replan_velocity_error_m_s": 0.6
-      },
-      "tracking": {
-        "max_tilt_deg": 20.0
-      }
-    },
-    "battery": {
-      "enabled": true,
-      "capacity_ah": 5.0,
-      "c_rating": 45.0,
-      "initial_soc": 1.0,
-      "cell_resistance_ohm": 0.003,
-      "max_current_a": 120.0
-    }
+    ]
   }
 }

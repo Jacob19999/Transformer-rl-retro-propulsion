@@ -2,7 +2,8 @@
 
 presets/convex_profiles.json    convex guidance profiles per mission type
 presets/disturbance_presets.json starting points for the Environment section
-presets/flight_plans/*.json      sample flight plans (edf-flight-plan v2)
+presets/flight_plans/*.json      sample routes (route-only edf-flight-plan v2) with
+                                 a suggested guidance profile and environment
 
 User-saved profiles and plans live in the git-ignored library/ folder; these
 presets are never written by the service. Every preset is validated with the
@@ -44,20 +45,43 @@ def disturbance_presets() -> list[dict]:
     for item in _read('disturbance_presets.json')['presets']:
         if set(item['selected']) - {'wind', 'sensor_noise', 'com_shift'}:
             raise ValueError(f"Disturbance preset {item['id']}: unknown source")
+        if item.get('group') == 'imu':
+            # A hardware preset replaces the whole sensor model and nothing else.
+            noise = item['settings'].get('sensor_noise', {})
+            if item['selected'] != ['sensor_noise'] or set(item['settings']) != {'sensor_noise'} \
+                    or set(noise) != {'position_std', 'velocity_std', 'attitude_std', 'angular_velocity_std'}:
+                raise ValueError(f"IMU preset {item['id']} must set all four sensor_noise channels only")
+            if not {'part', 'source', 'datasheet', 'mapping'} <= set(item.get('hardware', {})):
+                raise ValueError(f"IMU preset {item['id']} needs its datasheet source and mapping")
         result.append(dict(item, selected=sorted(item['selected']), settings=validate_settings(item['settings'])))
     return result
 
 
 def read_sample(key: str) -> dict:
-    """One sample plan, re-validated like an imported file."""
-    from .models import validate_mission
+    """One sample plan: a route, plus the guidance profile and environment it suggests.
+
+    Plans are route-only (flight_plans.validate_route); the suggestions are
+    applied only when the operator chooses to.
+    """
+    from .disturbance_parameters import validate_settings
+    from .flight_plans import record, validate_route
     if not isinstance(key, str) or not SAMPLE_ID.fullmatch(key):
         raise FileNotFoundError(key)
-    record = json.loads((FOLDER / 'flight_plans' / f'{key}.json').read_text(encoding='utf-8'))
-    if record.get('format') != 'edf-flight-plan' or record.get('version') != 2:
-        raise ValueError(f'Sample {key} is not an edf-flight-plan version 2 file')
-    return dict(format='edf-flight-plan', version=2, sample=dict(record['sample'], id=key),
-                mission=validate_mission(record['mission']))
+    saved = json.loads((FOLDER / 'flight_plans' / f'{key}.json').read_text(encoding='utf-8'))
+    if saved.get('format') != 'edf-flight-plan' or saved.get('version') != 2 or saved.get('scope') != 'route':
+        raise ValueError(f'Sample {key} is not a route-only edf-flight-plan version 2 file')
+    sample = dict(saved['sample'], id=key)
+    profile = next((p for p in convex_presets() if p['id'] == sample.get('profile')), None)
+    if profile is None:
+        raise ValueError(f'Sample {key} suggests an unknown guidance profile')
+    sample['profile_name'] = profile['name']
+    if 'environment' in sample:
+        environment = sample['environment']
+        if set(environment['selected']) - {'wind', 'sensor_noise', 'com_shift'}:
+            raise ValueError(f'Sample {key} suggests an unknown disturbance')
+        sample['environment'] = dict(selected=sorted(environment['selected']),
+                                     settings=validate_settings(environment['settings']))
+    return dict(record(validate_route(saved['mission'])), sample=sample)
 
 
 def list_samples() -> list[dict]:
@@ -65,12 +89,12 @@ def list_samples() -> list[dict]:
     from .models import landing_pad
     result = []
     for path in sorted((FOLDER / 'flight_plans').glob('*.json')):
-        record = read_sample(path.stem)
-        mission = record['mission']
-        points = [mission['position'], *(w['position'] for w in mission['waypoints'])]
-        if not any(w['type'] == 'land' for w in mission['waypoints']):
-            points.append(landing_pad(mission)['position'])
-        result.append(dict(record['sample'], name=mission['name'], max_altitude_m=max(p[2] for p in points),
-                           steps=len(mission['waypoints']), pads=len(mission['pads']),
-                           disturbance=mission['disturbance'], route=points))
+        plan = read_sample(path.stem)
+        route = plan['mission']
+        points = [route['position'], *(w['position'] for w in route['waypoints'])]
+        if not any(w['type'] == 'land' for w in route['waypoints']):
+            points.append(landing_pad(route)['position'])
+        result.append(dict(plan['sample'], name=route['name'], max_altitude_m=max(p[2] for p in points),
+                           steps=len(route['waypoints']), pads=len(route['pads']),
+                           disturbance=plan['sample'].get('environment', {}).get('selected', []), route=points))
     return result

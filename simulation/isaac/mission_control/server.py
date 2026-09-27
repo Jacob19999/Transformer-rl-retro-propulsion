@@ -359,6 +359,16 @@ async def validate_plan(request: Request):
         raise HTTPException(422, str(exc)) from exc
 
 
+@app.post('/api/flight-plan/route')
+async def validate_route(request: Request):
+    """Route fields only: plans are independent of guidance and environment."""
+    from .flight_plans import validate_route as route_only
+    try:
+        return route_only(await request.json())
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 @app.get('/api/convex-profiles')
 def convex_profiles():
     from .convex_parameters import list_profiles

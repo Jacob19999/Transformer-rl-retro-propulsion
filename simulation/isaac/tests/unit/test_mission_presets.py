@@ -1,11 +1,10 @@
 """Built-in convex profiles, environment presets and sample flight plans."""
 import json
 
-import pytest
 from fastapi.testclient import TestClient
 
 from mission_control import server
-from mission_control.convex_parameters import base_settings, resolve
+from mission_control.convex_parameters import resolve
 from mission_control.models import validate_mission
 from mission_control.presets import FOLDER, convex_presets, disturbance_presets, list_samples, read_sample
 
@@ -39,31 +38,37 @@ def test_disturbance_presets_validate_and_start_calm():
         assert mission['disturbance'] == preset['selected']
 
 
-def test_sample_plans_validate_and_carry_their_profile():
+def test_sample_plans_are_routes_with_suggested_guidance_and_environment():
+    from mission_control.flight_plans import ROUTE_FIELDS
     samples = list_samples()
     assert len(samples) >= 10
     assert {s['category'] for s in samples} == {'hop', 'land', 'hover'}
     profiles = {p['id']: p for p in convex_presets()}
     for summary in samples:
-        record = read_sample(summary['id'])
-        mission = record['mission']
-        assert validate_mission(mission) == mission
-        assert mission['controller'] == 'convex'
-        assert mission['convex_settings'] == profiles[summary['profile']]['settings']
+        plan = read_sample(summary['id'])
+        route = plan['mission']
+        assert plan['scope'] == 'route' and set(route) == set(ROUTE_FIELDS)
         assert summary['profile_name'] == profiles[summary['profile']]['name']
+        # Each route launches with repository-default guidance and with its suggested profile.
+        validate_mission(dict(route, controller='convex'))
+        mission = validate_mission(dict(route, controller='convex', convex_settings=profiles[summary['profile']]['settings']))
+        if 'environment' in plan['sample']:
+            environment = plan['sample']['environment']
+            validate_mission(dict(mission, disturbance=environment['selected'], disturbance_settings=environment['settings']))
         if summary['category'] in ('hop', 'hover'):
-            assert mission['position'][2] < .5 and mission['waypoints'][0]['type'] == 'takeoff'
-        assert summary['route'][0] == mission['position'] and summary['route'][-1][2] == 0
+            assert route['position'][2] < .5 and route['waypoints'][0]['type'] == 'takeoff'
+        assert summary['route'][0] == route['position'] and summary['route'][-1][2] == 0
     hops = [s['max_altitude_m'] for s in samples if s['category'] == 'hop']
     assert min(hops) <= 3 and max(hops) >= 20
 
 
-def test_sample_files_are_canonical_version_2_plans():
+def test_sample_files_are_canonical_route_only_plans():
+    from mission_control.flight_plans import validate_route
     for path in sorted((FOLDER / 'flight_plans').glob('*.json')):
         record = json.loads(path.read_text(encoding='utf-8'))
-        assert record['format'] == 'edf-flight-plan' and record['version'] == 2
+        assert record['format'] == 'edf-flight-plan' and record['version'] == 2 and record['scope'] == 'route'
         # Stored exactly as validated, so an export of a loaded sample is identical.
-        assert validate_mission(record['mission']) == record['mission']
+        assert validate_route(record['mission']) == record['mission']
 
 
 def test_preset_endpoints_and_sample_path_validation():
@@ -77,10 +82,32 @@ def test_preset_endpoints_and_sample_path_validation():
         assert client.get(f'/api/flight-plan-samples/{key}').status_code == 404
 
 
-def test_sample_settings_resolve_against_the_repository_yaml():
-    base = base_settings()
-    for summary in list_samples():
-        settings = resolve(read_sample(summary['id'])['mission']['convex_settings'])
-        assert set(settings) == set(base)
-        with pytest.raises(KeyError):
-            settings['guidance']['not_a_parameter']
+def test_imu_hardware_presets_follow_their_documented_datasheet_mapping():
+    import math
+    imus = {p['id']: p for p in disturbance_presets() if p.get('group') == 'imu'}
+    assert {'imu-bno085', 'imu-wtgahrs1', 'imu-vn110e'} <= set(imus)
+    for preset in imus.values():
+        noise = preset['settings']['sensor_noise']
+        # IMU presets model attitude and rate only; position/velocity stay at the repository defaults.
+        assert (noise['position_std'], noise['velocity_std']) == (0.01, 0.05)
+        assert preset['selected'] == ['sensor_noise'] and preset['hardware']['source']
+    sheet = lambda key: imus[key]['hardware']['datasheet']
+    noise = lambda key: imus[key]['settings']['sensor_noise']
+    close = lambda a, b: math.isclose(a, b, rel_tol=2e-3)
+    # attitude_std: published pitch/roll error (dynamic when published) in rad.
+    assert close(noise('imu-bno085')['attitude_std'], math.radians(sheet('imu-bno085')['game_rotation_vector_dynamic_error_deg']))
+    assert close(noise('imu-vn110e')['attitude_std'], math.radians(sheet('imu-vn110e')['pitch_roll_dynamic_deg_rms']))
+    assert close(noise('imu-wtgahrs1')['attitude_std'], math.radians(sheet('imu-wtgahrs1')['angle_accuracy_xy_deg']))
+    # angular_velocity_std: noise density x sqrt(15 Hz), else the published rate accuracy.
+    density = sheet('imu-vn110e')['gyro_noise_density_deg_hr_rthz'] / 3600
+    assert close(noise('imu-vn110e')['angular_velocity_std'], math.radians(density * math.sqrt(15)))
+    assert close(noise('imu-bno085')['angular_velocity_std'], math.radians(sheet('imu-bno085')['gyroscope_accuracy_deg_s']))
+    assert close(noise('imu-wtgahrs1')['angular_velocity_std'], math.radians(sheet('imu-wtgahrs1')['gyro_stability_deg_s']))
+
+
+def test_imu_presets_reach_the_simulator_noise_model():
+    from mission_control.models import disturbance_config
+    preset = next(p for p in disturbance_presets() if p['id'] == 'imu-bno085')
+    mission = validate_mission(dict(disturbance=['sensor_noise', 'wind'], disturbance_settings=preset['settings']))
+    resolved = disturbance_config(mission)['disturbances']['sensor_noise']
+    assert resolved['enabled'] and resolved['attitude_std'] == preset['settings']['sensor_noise']['attitude_std']

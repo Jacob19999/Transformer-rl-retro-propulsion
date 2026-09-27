@@ -1,6 +1,7 @@
 {
   "format": "edf-flight-plan",
   "version": 2,
+  "scope": "route",
   "sample": {
     "category": "land",
     "summary": "Start over home, divert 13 m to a remote pad through a strict corridor.",
@@ -9,12 +10,7 @@
   },
   "mission": {
     "name": "Landing 15 m - divert to remote pad",
-    "controller": "convex",
-    "seed": 2026,
     "duration_s": 120.0,
-    "fast_live": true,
-    "hardware_profile": "planned_8s",
-    "vane_model": "momentum",
     "position": [
       0.0,
       0.0,
@@ -36,8 +32,6 @@
       0.0
     ],
     "initial_motor_fraction": 0.84,
-    "disturbance": [],
-    "disturbance_settings": {},
     "pads": [
       {
         "name": "Home",
@@ -85,31 +79,6 @@
         "pad": 1,
         "approach_speed_m_s": 1.5
       }
-    ],
-    "convex_settings": {
-      "guidance": {
-        "route_corridor_mode": "strict",
-        "route_corridor_m": 0.75,
-        "max_speed_m_s": 3.0,
-        "max_tilt_deg": 12.0,
-        "glide_slope_deg": 40.0,
-        "glide_slope_final_s": 4.0,
-        "gate_height_m": 0.6,
-        "gate_capture_radius_m": 0.25,
-        "terminal_center_radius_m": 0.15,
-        "landing_nodes": 30
-      },
-      "tracking": {
-        "max_tilt_deg": 20.0
-      }
-    },
-    "battery": {
-      "enabled": true,
-      "capacity_ah": 5.0,
-      "c_rating": 45.0,
-      "initial_soc": 1.0,
-      "cell_resistance_ohm": 0.003,
-      "max_current_a": 120.0
-    }
+    ]
   }
 }
