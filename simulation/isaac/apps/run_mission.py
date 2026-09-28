@@ -355,6 +355,10 @@ def main():
             def capture(t, action, rate):
                 nonlocal frames, latest
                 state = env._build_vehicle_state()
+                # IMU overlay still uses this; batched host transfer below covers
+                # the PhysX/actuator fields without per-field syncs.
+                def vec(x):
+                    return x[0].detach().cpu().tolist()
                 art = env._drone.data
                 ids = env._art_map.fin_body_indices
                 debug = env._last_dynamics_debug if hasattr(env, '_last_dynamics_debug') else {}
