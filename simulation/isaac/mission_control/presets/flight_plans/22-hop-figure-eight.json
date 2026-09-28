@@ -1,0 +1,206 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "scope": "route",
+  "mission": {
+    "name": "Hop challenge - fast figure eight",
+    "duration_s": 240.0,
+    "position": [
+      0.0,
+      0.0,
+      0.34
+    ],
+    "velocity": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "attitude_deg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_motor_fraction": 0.0,
+    "pads": [
+      {
+        "name": "Home pad",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          0.0,
+          0.0,
+          8.0
+        ],
+        "type": "takeoff",
+        "name": "Vertical launch",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 1.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          8.0,
+          8.0,
+          8.0
+        ],
+        "type": "flypass",
+        "name": "East entry",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 4.0,
+        "corridor_m": 1.5
+      },
+      {
+        "position": [
+          12.0,
+          0.0,
+          8.0
+        ],
+        "type": "flypass",
+        "name": "East outer",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 4.0,
+        "corridor_m": 1.5
+      },
+      {
+        "position": [
+          8.0,
+          -8.0,
+          8.0
+        ],
+        "type": "flypass",
+        "name": "East exit",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 4.0,
+        "corridor_m": 1.5
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          8.0
+        ],
+        "type": "flypass",
+        "name": "First crossover",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 4.0,
+        "corridor_m": 1.5
+      },
+      {
+        "position": [
+          -8.0,
+          8.0,
+          8.0
+        ],
+        "type": "flypass",
+        "name": "West entry",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 4.0,
+        "corridor_m": 1.5
+      },
+      {
+        "position": [
+          -12.0,
+          0.0,
+          8.0
+        ],
+        "type": "flypass",
+        "name": "West outer",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 4.0,
+        "corridor_m": 1.5
+      },
+      {
+        "position": [
+          -8.0,
+          -8.0,
+          8.0
+        ],
+        "type": "flypass",
+        "name": "West exit",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 4.0,
+        "corridor_m": 1.5
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          8.0
+        ],
+        "type": "flypass",
+        "name": "Second crossover",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 4.0,
+        "corridor_m": 1.5
+      },
+      {
+        "position": [
+          8.0,
+          4.0,
+          8.0
+        ],
+        "type": "flypass",
+        "name": "Braking leg",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 4.0,
+        "corridor_m": 1.5
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          8.0
+        ],
+        "type": "hover",
+        "name": "Home full stop",
+        "hold_s": 4.0,
+        "radius_m": 0.4,
+        "speed_m_s": 3.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "Precision touchdown",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 0.15,
+        "corridor_m": null,
+        "pad": 0,
+        "approach_speed_m_s": 1.5
+      }
+    ]
+  },
+  "sample": {
+    "category": "hop",
+    "summary": "Challenge: A 24 x 16 m figure eight with nine fly-through gates at up to 4 m/s. Alternating bank demand ends in a full-stop capture above home.",
+    "profile": "hop-agile",
+    "profile_name": "Hop - agile wide tilt"
+  }
+}

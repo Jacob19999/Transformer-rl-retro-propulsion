@@ -1,0 +1,141 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "scope": "route",
+  "mission": {
+    "name": "Hover challenge - endurance relocation",
+    "duration_s": 420.0,
+    "position": [
+      0.0,
+      0.0,
+      0.34
+    ],
+    "velocity": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "attitude_deg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_motor_fraction": 0.0,
+    "pads": [
+      {
+        "name": "Home pad",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          0.0,
+          0.0,
+          5.0
+        ],
+        "type": "takeoff",
+        "name": "Vertical launch",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 1.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          5.0
+        ],
+        "type": "hover",
+        "name": "Home endurance hold",
+        "hold_s": 45.0,
+        "radius_m": 0.4,
+        "speed_m_s": 1.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          8.0,
+          0.0,
+          8.0
+        ],
+        "type": "hover",
+        "name": "East endurance hold",
+        "hold_s": 45.0,
+        "radius_m": 0.4,
+        "speed_m_s": 2.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          8.0,
+          8.0,
+          5.0
+        ],
+        "type": "hover",
+        "name": "North endurance hold",
+        "hold_s": 45.0,
+        "radius_m": 0.4,
+        "speed_m_s": 2.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          8.0,
+          8.0
+        ],
+        "type": "hover",
+        "name": "West endurance hold",
+        "hold_s": 45.0,
+        "radius_m": 0.4,
+        "speed_m_s": 2.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          5.0
+        ],
+        "type": "hover",
+        "name": "Home recovery",
+        "hold_s": 5.0,
+        "radius_m": 0.4,
+        "speed_m_s": 2.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "Precision touchdown",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 0.15,
+        "corridor_m": null,
+        "pad": 0,
+        "approach_speed_m_s": 1.5
+      }
+    ]
+  },
+  "sample": {
+    "category": "hover",
+    "summary": "Challenge: Four 45 s holds separated by 8 m transfers and altitude changes. Tests station keeping as battery voltage falls; 180 s total dwell.",
+    "profile": "hover-endurance",
+    "profile_name": "Hover - endurance efficient"
+  }
+}

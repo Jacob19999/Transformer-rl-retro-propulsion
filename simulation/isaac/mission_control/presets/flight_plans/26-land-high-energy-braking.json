@@ -1,0 +1,128 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "scope": "route",
+  "mission": {
+    "name": "Landing challenge - high-energy capture",
+    "duration_s": 180.0,
+    "position": [
+      -25.0,
+      15.0,
+      45.0
+    ],
+    "velocity": [
+      6.0,
+      -3.0,
+      -8.0
+    ],
+    "attitude_deg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_motor_fraction": 0.84,
+    "pads": [
+      {
+        "name": "Home pad",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          -10.0,
+          8.0,
+          30.0
+        ],
+        "type": "flypass",
+        "name": "Offset braking gate",
+        "hold_s": 2.0,
+        "radius_m": 1.5,
+        "speed_m_s": 3.5,
+        "corridor_m": 3.0
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          16.0
+        ],
+        "type": "hover",
+        "name": "Arrest over pad",
+        "hold_s": 4.0,
+        "radius_m": 0.5,
+        "speed_m_s": 3.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          7.0
+        ],
+        "type": "descent",
+        "name": "Lower approach",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 3.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          7.0
+        ],
+        "type": "hover",
+        "name": "Final settle",
+        "hold_s": 3.0,
+        "radius_m": 0.35,
+        "speed_m_s": 2.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          3.0
+        ],
+        "type": "descent",
+        "name": "Terminal staging",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 1.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "Precision touchdown",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 0.15,
+        "corridor_m": null,
+        "pad": 0,
+        "approach_speed_m_s": 1.5
+      }
+    ]
+  },
+  "sample": {
+    "category": "land",
+    "summary": "Challenge: Starts at 45 m with 8 m/s sink and 6.7 m/s lateral speed. Brake through an offset gate, settle at 16 m, then stage the precision descent.",
+    "profile": "land-high-altitude",
+    "profile_name": "Landing - high altitude fast"
+  }
+}

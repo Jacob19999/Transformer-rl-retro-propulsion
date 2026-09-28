@@ -1,0 +1,141 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "scope": "route",
+  "mission": {
+    "name": "Landing challenge - upset and recovery sequence",
+    "duration_s": 210.0,
+    "position": [
+      14.0,
+      -10.0,
+      40.0
+    ],
+    "velocity": [
+      3.0,
+      2.0,
+      -5.0
+    ],
+    "attitude_deg": [
+      20.0,
+      -15.0,
+      30.0
+    ],
+    "angular_rate_deg_s": [
+      30.0,
+      -20.0,
+      15.0
+    ],
+    "initial_motor_fraction": 0.84,
+    "pads": [
+      {
+        "name": "Home pad",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          14.0,
+          -10.0,
+          26.0
+        ],
+        "type": "hover",
+        "name": "Arrest and attitude recovery",
+        "hold_s": 5.0,
+        "radius_m": 0.75,
+        "speed_m_s": 3.0,
+        "corridor_m": 3.0
+      },
+      {
+        "position": [
+          6.0,
+          -6.0,
+          18.0
+        ],
+        "type": "flypass",
+        "name": "Recovery transfer",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 3.0,
+        "corridor_m": 2.0
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          10.0
+        ],
+        "type": "hover",
+        "name": "Pad recapture",
+        "hold_s": 5.0,
+        "radius_m": 0.4,
+        "speed_m_s": 2.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          4.0
+        ],
+        "type": "descent",
+        "name": "Settled descent",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 1.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          4.0
+        ],
+        "type": "hover",
+        "name": "Final stability check",
+        "hold_s": 4.0,
+        "radius_m": 0.35,
+        "speed_m_s": 1.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "Precision touchdown",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 0.15,
+        "corridor_m": null,
+        "pad": 0,
+        "approach_speed_m_s": 1.5
+      }
+    ]
+  },
+  "sample": {
+    "category": "land",
+    "summary": "Challenge: Starts at 40 m, tilted 20/-15 deg with 30/-20/15 deg/s body rates and 5 m/s sink. Arrest, recapture, translate and land with suggested sensor noise.",
+    "profile": "land-crosswind",
+    "profile_name": "Landing - crosswind soft",
+    "environment": {
+      "selected": [
+        "sensor_noise"
+      ],
+      "settings": {
+        "sensor_noise": {
+          "position_std": 0.02,
+          "velocity_std": 0.1,
+          "attitude_std": 0.01,
+          "angular_velocity_std": 0.04
+        }
+      }
+    }
+  }
+}

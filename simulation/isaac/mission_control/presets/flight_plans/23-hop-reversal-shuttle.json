@@ -1,0 +1,162 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "scope": "route",
+  "mission": {
+    "name": "Hop challenge - reversal shuttle",
+    "duration_s": 270.0,
+    "position": [
+      0.0,
+      0.0,
+      0.34
+    ],
+    "velocity": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "attitude_deg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_motor_fraction": 0.0,
+    "pads": [
+      {
+        "name": "Home pad",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Shuttle pad",
+        "position": [
+          12.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          0.0,
+          0.0,
+          6.0
+        ],
+        "type": "takeoff",
+        "name": "Vertical launch",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 1.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          12.0,
+          0.0,
+          6.0
+        ],
+        "type": "hover",
+        "name": "East low",
+        "hold_s": 3.0,
+        "radius_m": 0.4,
+        "speed_m_s": 4.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          -12.0,
+          0.0,
+          9.0
+        ],
+        "type": "hover",
+        "name": "West climb",
+        "hold_s": 3.0,
+        "radius_m": 0.4,
+        "speed_m_s": 4.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          12.0,
+          0.0,
+          12.0
+        ],
+        "type": "hover",
+        "name": "East high",
+        "hold_s": 3.0,
+        "radius_m": 0.4,
+        "speed_m_s": 4.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          -12.0,
+          0.0,
+          9.0
+        ],
+        "type": "hover",
+        "name": "West descend",
+        "hold_s": 3.0,
+        "radius_m": 0.4,
+        "speed_m_s": 4.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          12.0,
+          0.0,
+          6.0
+        ],
+        "type": "hover",
+        "name": "Remote pad capture",
+        "hold_s": 3.0,
+        "radius_m": 0.4,
+        "speed_m_s": 4.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          12.0,
+          0.0,
+          3.0
+        ],
+        "type": "descent",
+        "name": "Vertical approach",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 2.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          12.0,
+          0.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "Precision touchdown",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 0.15,
+        "corridor_m": null,
+        "pad": 1,
+        "approach_speed_m_s": 1.5
+      }
+    ]
+  },
+  "sample": {
+    "category": "hop",
+    "summary": "Challenge: Four 24 m traverses at up to 4 m/s, full-stop reversals and 6-12 m altitude changes. Tests braking and thrust-vector reversal before a remote landing.",
+    "profile": "hop-agile",
+    "profile_name": "Hop - agile wide tilt"
+  }
+}

@@ -1,0 +1,141 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "scope": "route",
+  "mission": {
+    "name": "Landing challenge - strict descending dogleg",
+    "duration_s": 210.0,
+    "position": [
+      24.0,
+      -16.0,
+      30.0
+    ],
+    "velocity": [
+      -1.5,
+      1.0,
+      -1.0
+    ],
+    "attitude_deg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_motor_fraction": 0.84,
+    "pads": [
+      {
+        "name": "Home pad",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          18.0,
+          -12.0,
+          26.0
+        ],
+        "type": "flypass",
+        "name": "Entry gate",
+        "hold_s": 2.0,
+        "radius_m": 0.75,
+        "speed_m_s": 2.5,
+        "corridor_m": 0.75
+      },
+      {
+        "position": [
+          18.0,
+          0.0,
+          22.0
+        ],
+        "type": "flypass",
+        "name": "North turn",
+        "hold_s": 2.0,
+        "radius_m": 0.75,
+        "speed_m_s": 2.5,
+        "corridor_m": 0.75
+      },
+      {
+        "position": [
+          8.0,
+          6.0,
+          16.0
+        ],
+        "type": "flypass",
+        "name": "West turn",
+        "hold_s": 2.0,
+        "radius_m": 0.75,
+        "speed_m_s": 2.0,
+        "corridor_m": 0.75
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          10.0
+        ],
+        "type": "hover",
+        "name": "Pad alignment",
+        "hold_s": 4.0,
+        "radius_m": 0.3,
+        "speed_m_s": 2.0,
+        "corridor_m": 0.75
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          4.0
+        ],
+        "type": "descent",
+        "name": "Narrow vertical approach",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 1.5,
+        "corridor_m": 0.75
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          4.0
+        ],
+        "type": "hover",
+        "name": "Final precision hold",
+        "hold_s": 3.0,
+        "radius_m": 0.25,
+        "speed_m_s": 1.0,
+        "corridor_m": 0.75
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "Precision touchdown",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 0.12,
+        "corridor_m": null,
+        "pad": 0,
+        "approach_speed_m_s": 1.5
+      }
+    ]
+  },
+  "sample": {
+    "category": "land",
+    "summary": "Challenge: A 30 m start feeds three descending approach gates and two stop captures. Strict 0.75 m corridor and 0.12 m/s touchdown demand precise energy management.",
+    "profile": "land-precision",
+    "profile_name": "Landing - precision strict"
+  }
+}

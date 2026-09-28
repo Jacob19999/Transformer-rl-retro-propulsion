@@ -1,0 +1,167 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "scope": "route",
+  "mission": {
+    "name": "Hover challenge - altitude ladder",
+    "duration_s": 240.0,
+    "position": [
+      0.0,
+      0.0,
+      0.34
+    ],
+    "velocity": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "attitude_deg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_motor_fraction": 0.0,
+    "pads": [
+      {
+        "name": "Home pad",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          0.0,
+          0.0,
+          3.0
+        ],
+        "type": "takeoff",
+        "name": "Vertical launch",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 1.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          3.0
+        ],
+        "type": "hover",
+        "name": "Low hold",
+        "hold_s": 8.0,
+        "radius_m": 0.35,
+        "speed_m_s": 1.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          12.0
+        ],
+        "type": "hover",
+        "name": "Climb and capture 12 m",
+        "hold_s": 8.0,
+        "radius_m": 0.35,
+        "speed_m_s": 2.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          4.0
+        ],
+        "type": "descent",
+        "name": "Drop to 4 m",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 2.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          4.0
+        ],
+        "type": "hover",
+        "name": "Low recovery hold",
+        "hold_s": 8.0,
+        "radius_m": 0.35,
+        "speed_m_s": 1.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          18.0
+        ],
+        "type": "hover",
+        "name": "Climb and capture 18 m",
+        "hold_s": 8.0,
+        "radius_m": 0.35,
+        "speed_m_s": 2.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          6.0
+        ],
+        "type": "descent",
+        "name": "Drop to 6 m",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 2.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          6.0
+        ],
+        "type": "hover",
+        "name": "Final settled hold",
+        "hold_s": 8.0,
+        "radius_m": 0.35,
+        "speed_m_s": 1.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "Precision touchdown",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 0.15,
+        "corridor_m": null,
+        "pad": 0,
+        "approach_speed_m_s": 1.5
+      }
+    ]
+  },
+  "sample": {
+    "category": "hover",
+    "summary": "Challenge: Five 8 s captures from 3 to 18 m, alternating climbs and vertical descents. Tests thrust slew and settling after altitude reversals.",
+    "profile": "hover-gust",
+    "profile_name": "Hover - gust tolerant soft"
+  }
+}

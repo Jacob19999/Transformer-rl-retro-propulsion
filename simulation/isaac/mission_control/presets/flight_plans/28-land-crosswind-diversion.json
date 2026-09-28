@@ -1,0 +1,158 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "scope": "route",
+  "mission": {
+    "name": "Landing challenge - crosswind diversion",
+    "duration_s": 240.0,
+    "position": [
+      -18.0,
+      8.0,
+      30.0
+    ],
+    "velocity": [
+      2.0,
+      0.0,
+      -2.0
+    ],
+    "attitude_deg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_motor_fraction": 0.84,
+    "pads": [
+      {
+        "name": "Home pad",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Divert pad",
+        "position": [
+          24.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          -8.0,
+          8.0,
+          24.0
+        ],
+        "type": "flypass",
+        "name": "Home bypass",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 3.0,
+        "corridor_m": 2.0
+      },
+      {
+        "position": [
+          8.0,
+          4.0,
+          19.0
+        ],
+        "type": "flypass",
+        "name": "Crosswind transfer",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 3.5,
+        "corridor_m": 2.0
+      },
+      {
+        "position": [
+          24.0,
+          0.0,
+          12.0
+        ],
+        "type": "hover",
+        "name": "Divert pad capture",
+        "hold_s": 5.0,
+        "radius_m": 0.5,
+        "speed_m_s": 3.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          24.0,
+          0.0,
+          6.0
+        ],
+        "type": "descent",
+        "name": "Wind-trim descent",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 2.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          24.0,
+          0.0,
+          6.0
+        ],
+        "type": "hover",
+        "name": "Low wind-trim hold",
+        "hold_s": 4.0,
+        "radius_m": 0.5,
+        "speed_m_s": 2.0,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          24.0,
+          0.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "Precision touchdown",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 0.15,
+        "corridor_m": null,
+        "pad": 1,
+        "approach_speed_m_s": 1.5
+      }
+    ]
+  },
+  "sample": {
+    "category": "land",
+    "summary": "Challenge: Divert past home to a pad 24 m away through descending gates. Suggested 6 m/s crosswind and 5 m/s gusts test lateral braking and terminal centring.",
+    "profile": "land-crosswind",
+    "profile_name": "Landing - crosswind soft",
+    "environment": {
+      "selected": [
+        "wind"
+      ],
+      "settings": {
+        "wind": {
+          "steady_vector": [
+            0.0,
+            -6.0,
+            0.0
+          ]
+        },
+        "gust": {
+          "magnitude": 5.0,
+          "duration": 1.0,
+          "interval": [
+            3.0,
+            8.0
+          ]
+        }
+      }
+    }
+  }
+}

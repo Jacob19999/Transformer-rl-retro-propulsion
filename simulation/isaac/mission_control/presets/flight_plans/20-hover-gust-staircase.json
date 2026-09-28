@@ -1,0 +1,185 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "scope": "route",
+  "mission": {
+    "name": "Hover challenge - gust staircase",
+    "duration_s": 300.0,
+    "position": [
+      0.0,
+      0.0,
+      0.34
+    ],
+    "velocity": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "attitude_deg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_motor_fraction": 0.0,
+    "pads": [
+      {
+        "name": "Home pad",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          0.0,
+          0.0,
+          6.0
+        ],
+        "type": "takeoff",
+        "name": "Vertical launch",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 1.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          6.0,
+          6.0,
+          6.0
+        ],
+        "type": "hover",
+        "name": "Upwind low",
+        "hold_s": 10.0,
+        "radius_m": 0.5,
+        "speed_m_s": 2.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          6.0,
+          -6.0,
+          10.0
+        ],
+        "type": "hover",
+        "name": "Upper east",
+        "hold_s": 10.0,
+        "radius_m": 0.5,
+        "speed_m_s": 2.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          -6.0,
+          -6.0,
+          14.0
+        ],
+        "type": "hover",
+        "name": "High crossing",
+        "hold_s": 10.0,
+        "radius_m": 0.5,
+        "speed_m_s": 2.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          -6.0,
+          6.0,
+          10.0
+        ],
+        "type": "hover",
+        "name": "Descending west",
+        "hold_s": 10.0,
+        "radius_m": 0.5,
+        "speed_m_s": 2.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          6.0
+        ],
+        "type": "hover",
+        "name": "Return and settle",
+        "hold_s": 10.0,
+        "radius_m": 0.5,
+        "speed_m_s": 2.5,
+        "corridor_m": null
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "Precision touchdown",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 0.15,
+        "corridor_m": null,
+        "pad": 0,
+        "approach_speed_m_s": 1.5
+      }
+    ]
+  },
+  "sample": {
+    "category": "hover",
+    "summary": "Challenge: Five 10 s holds around a 12 m box at 6-14 m. Suggested 4 m/s wind, gusts, sensor noise and COM offset test combined disturbance rejection.",
+    "profile": "hover-gust",
+    "profile_name": "Hover - gust tolerant soft",
+    "environment": {
+      "selected": [
+        "com_shift",
+        "sensor_noise",
+        "wind"
+      ],
+      "settings": {
+        "wind": {
+          "steady_vector": [
+            3.46,
+            2.0,
+            0.0
+          ]
+        },
+        "gust": {
+          "magnitude": 4.0,
+          "duration": 0.8,
+          "interval": [
+            4.0,
+            10.0
+          ]
+        },
+        "sensor_noise": {
+          "position_std": 0.02,
+          "velocity_std": 0.1,
+          "attitude_std": 0.01,
+          "angular_velocity_std": 0.04
+        },
+        "com_offset": {
+          "range": [
+            [
+              -0.01,
+              -0.01,
+              -0.01
+            ],
+            [
+              0.01,
+              0.01,
+              0.01
+            ]
+          ]
+        }
+      }
+    }
+  }
+}
