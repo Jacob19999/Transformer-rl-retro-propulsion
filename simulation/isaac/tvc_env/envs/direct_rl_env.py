@@ -144,6 +144,12 @@ class TVCDirectRLEnv(TVCEnvBase):
         self._imu = imu_model_from_config(
             self._config.num_envs, device, self._config.physics_dt,
             self._config.config.get('disturbances', {}).get('sensor_noise'))
+        # Sensor fusion (IMU + rangefinder + optical flow + barometer through an EKF3-style filter) when
+        # sensor_noise.imu.fusion is enabled; it needs the IMU model's raw registers.
+        from tvc_env.dynamics.nav_fusion import nav_fusion_from_config
+        self._fusion = nav_fusion_from_config(
+            self._config.num_envs, device, self._config.physics_dt,
+            self._config.config.get('disturbances', {}).get('sensor_noise'), self._imu)
         if self._config.config.get('task',{}).get('navigation',{}).get('enabled'):
             from tvc_env.envs.waypoints import WaypointMission
             self._navigation = WaypointMission(self._config.num_envs,device,self._config.config,env_origins,self._target_position)
@@ -256,7 +262,11 @@ class TVCDirectRLEnv(TVCEnvBase):
         self._battery_energy_step_wh.zero_()
         self._propulsive_delta_v_step.zero_()
         self._rotation.begin_step()
-        navigation_before = self._body_iface.get_root_position().clone() if self._navigation else None
+        # With an estimated position source (strapdown or fused) the mission sequencer works from the
+        # position the flight computer holds, not from physics truth, exactly as the observation does.
+        estimated = self._estimated_state()
+        navigation_before = ((estimated[0] if estimated else self._body_iface.get_root_position()).clone()
+                             if self._navigation else None)
         normalized_action = torch.cat((self._pending_actions[:, :4] / self._servo_model.max_command_angle,
                                        self._pending_actions[:, 4:5] * 2.0 - 1.0), dim=-1)
         self._action_delta = normalized_action - self._previous_action
@@ -277,6 +287,10 @@ class TVCDirectRLEnv(TVCEnvBase):
             if self._imu is not None:
                 self._imu.step(self._body_iface.get_root_quaternion_wxyz(),
                                self._body_iface.get_root_linear_velocity_world(), rates_after)
+                if self._fusion is not None:
+                    self._fusion.step(self._body_iface.get_root_quaternion_wxyz(),
+                                      self._body_iface.get_root_linear_velocity_world(),
+                                      self._body_iface.get_root_position())
             self._rotation.update(rates_before, rates_after, self._config.physics_dt, rotation_active)
             landing_force, unsafe_contact = self._sensor_iface.read_contact_summary(
                 self._contact_sm.min_contact_force
@@ -292,9 +306,10 @@ class TVCDirectRLEnv(TVCEnvBase):
             self._update_contact_state(landing_force, unsafe_contact, downward_speed, rates_before)
         self._step_count += 1
         if self._navigation:
-            self._navigation.advance(navigation_before, self._body_iface.get_root_position(),
-                self._body_iface.get_root_linear_velocity_world(), self._config.physics_dt*self._config.decimation,
-                navigation_active)
+            self._navigation.advance(navigation_before,
+                estimated[0] if estimated else self._body_iface.get_root_position(),
+                estimated[1] if estimated else self._body_iface.get_root_linear_velocity_world(),
+                self._config.physics_dt*self._config.decimation, navigation_active)
         state_pre_reset = self._build_vehicle_state()
         terminated, time_out = self._get_dones(state_pre_reset)
         if self._navigation:
@@ -375,12 +390,26 @@ class TVCDirectRLEnv(TVCEnvBase):
         self._reset_imu(indices)
         return self._get_observations(), {}
 
+    def _estimated_state(self):
+        """(position, world velocity) the flight computer holds when one is estimated, else None."""
+        if self._fusion is not None:
+            return self._fusion.position, self._fusion.velocity_world
+        if self._imu is not None and self._imu.nav_enabled:
+            return self._imu.nav_position, self._imu.nav_velocity
+        return None
+
     def _reset_imu(self, env_ids: Tensor) -> None:
-        """Power-cycle the simulated IMU of freshly reset envs from their post-reset state."""
+        """Power-cycle the simulated IMU (and fusion filter) of freshly reset envs from their post-reset state."""
         if self._imu is not None:
             self._imu.reset(env_ids, self._body_iface.get_root_quaternion_wxyz(),
                             self._body_iface.get_root_linear_velocity_world(),
-                            self._body_iface.get_angular_velocity_body_frd())
+                            self._body_iface.get_angular_velocity_body_frd(),
+                            position_world=self._body_iface.get_root_position())
+            if self._fusion is not None:
+                self._fusion.reset(env_ids, self._body_iface.get_root_quaternion_wxyz(),
+                                   self._body_iface.get_root_linear_velocity_world(),
+                                   self._body_iface.get_root_position(),
+                                   marker_world=self._target_position)     # the pad marker sits at the landing target
 
     def _reset_previous_action(self, env_ids: Tensor) -> None:
         """Neutral vanes and the throttle matching the spawned rotor speed."""
@@ -640,13 +669,17 @@ class TVCDirectRLEnv(TVCEnvBase):
             state = self._build_vehicle_state()
         target = self._navigation.goal if self._navigation else self._target_position
         obs = assemble_observation(state, target, self._omega_max)
-        obs = apply_sensor_noise(obs, self._config.config, imu=self._imu)
+        obs = apply_sensor_noise(obs, self._config.config, imu=self._imu, true_position=state.position,
+                                 fusion=self._fusion)
         # What the controller measured (IMU/position noise included), for telemetry.
         self.sensor_measurement = measured_state(obs, target)
         if self._config.config.get('env', {}).get('observe_battery', False):
             obs = torch.cat([obs, self._battery_model.observation()], dim=-1)
         if self._navigation:
-            obs = torch.cat([obs,self._navigation.observation(state.quaternion_wxyz)],dim=-1)
+            # Body-frame waypoint vectors are resolved with the attitude the flight computer holds.
+            quaternion = (self._fusion.quaternion_wxyz if self._fusion is not None
+                          else self._imu.quaternion_wxyz if self._imu is not None else state.quaternion_wxyz)
+            obs = torch.cat([obs,self._navigation.observation(quaternion)],dim=-1)
 
         return {"policy": obs}
 

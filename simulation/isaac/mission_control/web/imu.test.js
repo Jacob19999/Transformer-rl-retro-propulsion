@@ -35,3 +35,20 @@ test('sensor note reports noise sigmas in display units', () => {
   assert.match(sensorNote({ disturbances: { sensor_noise: { enabled: true, position_std: .01, attitude_std: Math.PI / 180, velocity_std: .05, angular_velocity_std: Math.PI / 90 } } }),
                /position 0\.010 m · attitude 1\.00° · velocity 0\.050 m\/s · gyro 2\.00°\/s/);
 });
+
+test('sensor note describes the physical IMU chain when the simulator ran it', () => {
+  const noise = { enabled: true, position_std: .01, velocity_std: .05, attitude_std: 0, angular_velocity_std: 0,
+                  imu: { enabled: true, sample_rate_hz: 100, bandwidth_hz: 116, latency_s: .005, gyro: { range_dps: 2000 } } };
+  const note = sensorNote({ disturbances: { sensor_noise: noise } });
+  assert.match(note, /Physical IMU chain/);
+  assert.match(note, /100 Hz output · 116 Hz bandwidth · 5\.0 ms latency · gyro ±2000°\/s/);
+  assert.match(note, /position 0\.010 m \/ velocity 0\.050 m\/s external noise/);
+  assert.match(sensorNote({ disturbances: { sensor_noise: { ...noise, imu: { enabled: false } } } }), /White noise/);
+  const inertial = sensorNote({ disturbances: { sensor_noise: { ...noise, imu: { ...noise.imu, nav: { enabled: true } } } } });
+  assert.match(inertial, /inertial navigation \(position and velocity integrated/);
+  assert.doesNotMatch(inertial, /external noise/);
+  const fused = sensorNote({ disturbances: { sensor_noise: { ...noise, imu: { ...noise.imu, fusion: { enabled: true } } } } });
+  assert.match(fused, /sensor fusion \(EKF3-style filter: IMU \+ rangefinder \+ optical flow \+ barometer\)/);
+  const marked = sensorNote({ disturbances: { sensor_noise: { ...noise, imu: { ...noise.imu, fusion: { enabled: true, marker: { enabled: true } } } } } });
+  assert.match(marked, /optical flow \+ barometer \+ pad marker\)/);
+});

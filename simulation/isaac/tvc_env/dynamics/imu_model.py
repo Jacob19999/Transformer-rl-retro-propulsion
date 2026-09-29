@@ -16,6 +16,19 @@ This module simulates that chain per environment:
   noise (angle/velocity random walk), Gauss-Markov bias instability, random-walk
   bias, gyro g-sensitivity, saturation, quantization. Errors are redrawn per
   episode, so an episode is one power cycle of one randomly drawn unit.
+* Temperature drift: a per-axis temperature coefficient of offset (TCO) times a
+  warm-up profile (start-temperature offset from the calibration point plus a
+  first-order self-heating rise), drawn per episode.
+* Truth angular rate (``rate_truth``): "reported" feeds the physics engine's angular velocity to the
+  gyro; "pose" derives it from the change of the true attitude over each substep. They agree in free
+  flight, but PhysX changes the pose during ground contact (depenetration) without a matching
+  angular velocity, so a gyro integrating the reported rate never sees that rotation and the
+  attitude estimate carries a fixed error of a fraction of a degree from the first pad contact on.
+* Optional unaided strapdown navigation (``nav.enabled``): the flight computer integrates the
+  delayed accelerometer register, rotated by the delayed onboard attitude estimate, minus gravity,
+  into velocity and position. Sensor bias, attitude error (tilt leaks g*eps into horizontal
+  acceleration), noise and latency therefore drift the solution exactly as they would on the bench;
+  nothing aids it (no baro, optical flow or GNSS yet).
 * On-sensor digital low-pass (WTGAHRS1 manual 2.4.9: 20 Hz default), output
   rate (2.4.3: 10 Hz default, 200 Hz max) with hold-last-value, and a
   transport latency.
@@ -30,10 +43,11 @@ body local axes into the Z-up world; sensor vectors are body FRD. Frame
 conversion goes through tvc_env.common.frames only.
 
 Not modelled: lever-arm (centripetal/tangential) acceleration at the mount
-point, EDF vibration and temperature effects, magnetometer disturbance
-correlated with motor current. Parameters in configs/sensors/imu_wtgahrs1.yaml
-carry a provenance comment; values marked PLACEHOLDER must be replaced with a
-bench Allan-variance fit (tools/imu_allan_variance.py).
+point, EDF vibration, sensitivity-versus-temperature, magnetometer disturbance
+correlated with motor current. Parameters in configs/sensors/imu_<name>.yaml
+(wtgahrs1, bno085, vn110e) carry a provenance comment; values marked ESTIMATE
+or PLACEHOLDER must be replaced with a bench Allan-variance fit
+(tools/imu_allan_variance.py).
 """
 
 from __future__ import annotations
@@ -63,13 +77,16 @@ GM_PEAK_ALLAN_RATIO = 0.6174
 PROFILE_DIR = Path(__file__).resolve().parents[2] / "configs" / "sensors"
 _PROFILE_NAME = re.compile(r"^[a-z0-9_]+$")
 
-_IMU_KEYS = {"enabled", "profile", "sample_rate_hz", "bandwidth_hz", "latency_s", "gyro", "accel", "attitude"}
+_IMU_KEYS = {"enabled", "profile", "sample_rate_hz", "bandwidth_hz", "latency_s", "gyro", "accel", "attitude",
+             "thermal", "nav", "rate_truth", "fusion"}
+_NAV_KEYS = {"enabled", "initial_position_std_m", "initial_velocity_std_m_s"}
+_THERMAL_KEYS = {"start_spread_k", "self_heating_k", "warmup_tau_s"}
 _GYRO_KEYS = {"range_dps", "resolution_dps", "noise_density_dps_rthz", "bias_instability_dps",
               "bias_correlation_time_s", "rate_random_walk_dps_rt_s", "turn_on_bias_dps",
-              "scale_factor_pct", "misalignment_mrad", "g_sensitivity_dps_per_g"}
+              "scale_factor_pct", "misalignment_mrad", "g_sensitivity_dps_per_g", "tco_dps_per_k"}
 _ACCEL_KEYS = {"range_g", "resolution_g", "noise_density_ug_rthz", "bias_instability_mg",
                "bias_correlation_time_s", "random_walk_ug_rt_s", "turn_on_bias_mg",
-               "scale_factor_pct", "misalignment_mrad"}
+               "scale_factor_pct", "misalignment_mrad", "tco_mg_per_k"}
 _ATTITUDE_KEYS = {"kp", "ki", "integral_limit_dps", "accel_gate", "initial_tilt_error_deg", "yaw"}
 _YAW_KEYS = {"mode", "gain", "initial_error_deg", "mag_turn_on_deg", "mag_sigma_deg",
              "mag_correlation_time_s"}
@@ -133,6 +150,7 @@ class ChannelParams:
     scale: float           # uniform half-width of per-axis scale error (fraction)
     misalignment: float    # uniform half-width of cross-axis coupling (rad)
     g_sensitivity: float   # uniform half-width of unit per (m/s^2) of specific force
+    tco: float = 0.0       # uniform half-width of the offset temperature coefficient, unit per kelvin
 
 
 @dataclass(frozen=True)
@@ -151,6 +169,22 @@ class AttitudeParams:
 
 
 @dataclass(frozen=True)
+class ThermalParams:
+    """Temperature relative to the factory calibration point, per episode (one power cycle)."""
+    start_spread: float   # K, uniform half-width of the power-up offset from the calibration point
+    self_heating: float   # K, first-order rise after power-up
+    tau: float            # s, self-heating time constant
+
+
+@dataclass(frozen=True)
+class NavParams:
+    """Unaided strapdown navigation driven by the delayed accelerometer and attitude registers."""
+    enabled: bool
+    initial_position_std: float   # m, 1-sigma error of the position the solution starts from
+    initial_velocity_std: float   # m/s, 1-sigma error of the velocity it starts from
+
+
+@dataclass(frozen=True)
 class ImuParams:
     sample_rate_hz: float
     bandwidth_hz: float
@@ -158,6 +192,9 @@ class ImuParams:
     gyro: ChannelParams
     accel: ChannelParams
     attitude: AttitudeParams
+    thermal: ThermalParams = ThermalParams(0.0, 0.0, 300.0)
+    nav: NavParams = NavParams(False, 0.0, 0.0)
+    rate_truth: str = "reported"     # "reported" physics angular velocity or "pose" (from the attitude change)
 
     @classmethod
     def from_config(cls, cfg: dict) -> "ImuParams":
@@ -182,6 +219,7 @@ class ImuParams:
             scale=_num(g, "scale_factor_pct", 0.0, "gyro", 0.0, 50.0) / 100.0,
             misalignment=_num(g, "misalignment_mrad", 0.0, "gyro", 0.0, 500.0) * 1e-3,
             g_sensitivity=rad(_num(g, "g_sensitivity_dps_per_g", 0.0, "gyro")) / STANDARD_GRAVITY,
+            tco=rad(_num(g, "tco_dps_per_k", 0.0, "gyro")),
         )
         a = _section(cfg, "accel", _ACCEL_KEYS)
         mg = STANDARD_GRAVITY * 1e-3
@@ -197,6 +235,7 @@ class ImuParams:
             scale=_num(a, "scale_factor_pct", 0.0, "accel", 0.0, 50.0) / 100.0,
             misalignment=_num(a, "misalignment_mrad", 0.0, "accel", 0.0, 500.0) * 1e-3,
             g_sensitivity=0.0,
+            tco=_num(a, "tco_mg_per_k", 0.0, "accel") * mg,
         )
         t = _section(cfg, "attitude", _ATTITUDE_KEYS)
         y = _section(t, "yaw", _YAW_KEYS)
@@ -216,7 +255,25 @@ class ImuParams:
             mag_sigma=rad(_num(y, "mag_sigma_deg", 0.0, "attitude.yaw", 0.0, 180.0)),
             mag_tau=_num(y, "mag_correlation_time_s", 60.0, "attitude.yaw", 1e-3, 1e7),
         )
-        return cls(rate, bandwidth, latency, gyro, accel, attitude)
+        th = _section(cfg, "thermal", _THERMAL_KEYS)
+        thermal = ThermalParams(
+            start_spread=_num(th, "start_spread_k", 0.0, "thermal", 0.0, 100.0),
+            self_heating=_num(th, "self_heating_k", 0.0, "thermal", 0.0, 100.0),
+            tau=_num(th, "warmup_tau_s", 300.0, "thermal", 1e-3, 1e7),
+        )
+        nv = _section(cfg, "nav", _NAV_KEYS)
+        enabled = nv.get("enabled", False)
+        if not isinstance(enabled, bool):
+            raise ValueError(f"imu.nav.enabled must be true or false, got {enabled!r}")
+        nav = NavParams(
+            enabled=enabled,
+            initial_position_std=_num(nv, "initial_position_std_m", 0.0, "nav", 0.0, 1000.0),
+            initial_velocity_std=_num(nv, "initial_velocity_std_m_s", 0.0, "nav", 0.0, 100.0),
+        )
+        rate_truth = cfg.get("rate_truth", "reported")
+        if rate_truth not in ("reported", "pose"):
+            raise ValueError(f"imu.rate_truth must be 'reported' or 'pose', got {rate_truth!r}")
+        return cls(rate, bandwidth, latency, gyro, accel, attitude, thermal, nav, rate_truth)
 
 
 # --------------------------------------------------------------------------- sensor channel
@@ -230,6 +287,7 @@ class _Channel:
         self.turn_on = z(n, 3)
         self.matrix = torch.eye(3, device=device).repeat(n, 1, 1)
         self.g_sens = z(n, 3)
+        self.tco = z(n, 3)
         self.gm = z(n, 3)
         self.walk = z(n, 3)
         self.lp = z(n, 3)
@@ -251,12 +309,16 @@ class _Channel:
         matrix = matrix + torch.diag_embed(self._uniform(k, 3, half=p.scale))
         self.matrix[ids] = matrix
         self.g_sens[ids] = self._uniform(k, 3, half=p.g_sensitivity)
+        self.tco[ids] = self._uniform(k, 3, half=p.tco)
         self.gm[ids] = self._randn(k, 3) * p.gm_sigma   # stationary draw: an in-run bias already exists
         self.walk[ids] = 0.0
         self.lp_valid[ids] = False
 
-    def sample(self, truth: Tensor, specific_force: Tensor | None, ids: Tensor | None = None) -> Tensor:
-        """Corrupt ``truth`` (n,3) and advance the stochastic states; saturated, unfiltered."""
+    def sample(self, truth: Tensor, specific_force: Tensor | None, ids: Tensor | None = None,
+               temperature: Tensor | None = None) -> Tensor:
+        """Corrupt ``truth`` (n,3) and advance the stochastic states; saturated, unfiltered.
+
+        ``temperature`` (n,) is the offset from the calibration point in kelvin; it drives the TCO term."""
         p = self.p
         sel = slice(None) if ids is None else ids
         x = truth[sel]
@@ -264,6 +326,8 @@ class _Channel:
         y = torch.einsum("nij,nj->ni", self.matrix[sel], x) + self.turn_on[sel]
         if p.g_sensitivity > 0.0 and specific_force is not None:
             y = y + self.g_sens[sel] * specific_force[sel]
+        if p.tco > 0.0 and temperature is not None:
+            y = y + self.tco[sel] * temperature[sel].unsqueeze(-1)
         if p.gm_sigma > 0.0:
             innovation = math.sqrt(max(1.0 - self._phi ** 2, 0.0)) * p.gm_sigma
             self.gm[sel] = self._phi * self.gm[sel] + innovation * self._randn(count, 3)
@@ -325,20 +389,29 @@ class ImuModel:
         self._rate = min(params.sample_rate_hz, 1.0 / self.dt)
         self._alpha = 1.0 if params.bandwidth_hz <= 0.0 else 1.0 - math.exp(-2.0 * math.pi * params.bandwidth_hz * self.dt)
         self._delay = int(round(params.latency_s / self.dt))
+        self._thermal_active = params.gyro.tco > 0.0 or params.accel.tco > 0.0
+        self._temp = torch.zeros(num_envs, device=self.device)         # K above the calibration point
+        self._temp_target = torch.zeros(num_envs, device=self.device)
+        self._temp_alpha = 1.0 - math.exp(-self.dt / params.thermal.tau)
         self._phase = 0.0
         self._since_tick = 0.0
         self._up = torch.tensor([0.0, 0.0, 1.0], device=self.device)
         z = lambda *s: torch.zeros(*s, device=self.device)
         self._v_prev = z(num_envs, 3)
+        self._q_prev = torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device).repeat(num_envs, 1)
         self._gyro_reg = z(num_envs, 3)
         self._acc_reg = z(num_envs, 3)
         self._q_est = torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device).repeat(num_envs, 1)
         self._integral = z(num_envs, 3)
         self._mag_err = z(num_envs)
-        self._buffer = z(self._delay + 1, num_envs, 7)
+        self._buffer = z(self._delay + 1, num_envs, 10)     # gyro (3), attitude (4), accelerometer (3)
         self._ptr = 0
         self._out_gyro = z(num_envs, 3)
         self._out_q = self._q_est.clone()
+        self._out_acc = z(num_envs, 3)
+        self._true_rate = z(num_envs, 3)   # body rate the sensor actually experienced, FRD
+        self._nav_p = z(num_envs, 3)      # world XYZ, m
+        self._nav_v = z(num_envs, 3)      # world XYZ, m/s
         self._initialised = False
 
     # ---- public state -------------------------------------------------------
@@ -357,6 +430,35 @@ class ImuModel:
     def accel_frd(self) -> Tensor:
         """Latest accelerometer register (m/s^2, FRD, undelayed) that feeds the attitude filter."""
         return self._acc_reg
+
+    @property
+    def accel_out_frd(self) -> Tensor:
+        """Accelerometer register the flight computer holds (m/s^2, FRD): delayed, held, quantized."""
+        return self._out_acc
+
+    @property
+    def true_rate_frd(self) -> Tensor:
+        """Body rate the sensor physically experienced this substep (rad/s, FRD), before any sensor error."""
+        return self._true_rate
+
+    @property
+    def nav_enabled(self) -> bool:
+        return self.params.nav.enabled
+
+    @property
+    def nav_position(self) -> Tensor:
+        """Integrated position (world XYZ, m). Only meaningful when ``nav.enabled``."""
+        return self._nav_p
+
+    @property
+    def nav_velocity(self) -> Tensor:
+        """Integrated velocity (world XYZ, m/s). Only meaningful when ``nav.enabled``."""
+        return self._nav_v
+
+    @property
+    def temperature_k(self) -> Tensor:
+        """Sensor temperature offset from its calibration point (K); zero unless a TCO is configured."""
+        return self._temp
 
     @property
     def initialised(self) -> bool:
@@ -380,13 +482,25 @@ class ImuModel:
         f_world = accel_w + self._up * STANDARD_GRAVITY
         return isaac_to_frd(rotate_vector(inverse(q), f_world))
 
+    def _pose_rate_frd(self, q: Tensor) -> Tensor:
+        """Body rate (FRD) that reproduces this substep's change of the true attitude."""
+        dq = multiply(inverse(self._q_prev), q)                     # body-frame rotation over the substep
+        dq = torch.where(dq[:, :1] < 0.0, -dq, dq)
+        vec = dq[:, 1:]
+        s = vec.norm(dim=-1, keepdim=True)
+        scale = torch.where(s > 1e-9, 2.0 * torch.atan2(s, dq[:, :1]) / s.clamp(min=1e-9),
+                            2.0 / dq[:, :1].clamp(min=1e-9))
+        self._q_prev = q.clone()
+        return isaac_to_frd(vec * scale / self.dt)
+
     # ---- lifecycle ----------------------------------------------------------
 
     def reset(self, env_ids: Tensor, quaternion_wxyz: Tensor, linear_vel_world: Tensor,
-              angular_vel_frd: Tensor) -> None:
+              angular_vel_frd: Tensor, position_world: Tensor | None = None) -> None:
         """Power-cycle the sensors of ``env_ids``: redraw errors, restart the filter.
 
         The tensors are full-batch (num_envs, ...) state after the reset was applied.
+        ``position_world`` is required when ``nav.enabled``: the navigation solution starts from it.
         """
         ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.long).reshape(-1)
         if ids.numel() == 0:
@@ -395,11 +509,17 @@ class ImuModel:
         k = ids.numel()
         self._gyro.reset(ids)
         self._acc.reset(ids)
+        self._q_prev[ids] = quaternion_wxyz[ids]
+        self._true_rate[ids] = angular_vel_frd[ids]
+        th = self.params.thermal
+        start = (torch.rand(k, device=self.device, generator=self._gen) * 2.0 - 1.0) * th.start_spread
+        self._temp[ids] = start
+        self._temp_target[ids] = start + th.self_heating
         f_frd = self._specific_force_frd(quaternion_wxyz, linear_vel_world, ids)
         full_f = torch.zeros(self.n, 3, device=self.device)
         full_f[ids] = f_frd
-        gyro_y = self._gyro.sample(angular_vel_frd, full_f, ids)
-        acc_y = self._acc.sample(full_f, None, ids)
+        gyro_y = self._gyro.sample(angular_vel_frd, full_f, ids, self._temp)
+        acc_y = self._acc.sample(full_f, None, ids, self._temp)
         self._gyro_reg[ids] = self._gyro.quantize(self._gyro.lowpass(gyro_y, self._alpha, ids))
         self._acc_reg[ids] = self._acc.quantize(self._acc.lowpass(acc_y, self._alpha, ids))
         self._integral[ids] = 0.0
@@ -411,10 +531,17 @@ class ImuModel:
         rotvec = torch.cat((tilt, yaw_err.unsqueeze(-1)), dim=-1)
         self._q_est[ids] = normalize(multiply(quaternion_wxyz[ids], _rotvec_to_quat(rotvec)))
         # Fill the delay line so the previous episode's samples never leak in.
-        register = torch.cat((self._gyro_reg[ids], self._q_est[ids]), dim=-1)
+        register = torch.cat((self._gyro_reg[ids], self._q_est[ids], self._acc_reg[ids]), dim=-1)
         self._buffer[:, ids] = register.unsqueeze(0)
         self._out_gyro[ids] = self._gyro_reg[ids]
         self._out_q[ids] = self._q_est[ids]
+        self._out_acc[ids] = self._acc_reg[ids]
+        nav = self.params.nav
+        if nav.enabled:
+            if position_world is None:
+                raise ValueError("ImuModel.reset needs position_world when nav.enabled")
+            self._nav_p[ids] = position_world[ids] + self._randn(k, 3) * nav.initial_position_std
+            self._nav_v[ids] = linear_vel_world[ids] + self._randn(k, 3) * nav.initial_velocity_std
         self._initialised = True
 
     def step(self, quaternion_wxyz: Tensor, linear_vel_world: Tensor, angular_vel_frd: Tensor) -> None:
@@ -422,9 +549,14 @@ class ImuModel:
         if not self._initialised:
             self.reset(torch.arange(self.n, device=self.device), quaternion_wxyz, linear_vel_world,
                        angular_vel_frd)
+        if self.params.rate_truth == "pose":
+            angular_vel_frd = self._pose_rate_frd(quaternion_wxyz)
+        self._true_rate = angular_vel_frd
         f_frd = self._specific_force_frd(quaternion_wxyz, linear_vel_world)
-        gyro_lp = self._gyro.lowpass(self._gyro.sample(angular_vel_frd, f_frd), self._alpha)
-        acc_lp = self._acc.lowpass(self._acc.sample(f_frd, None), self._alpha)
+        if self._thermal_active:
+            self._temp = self._temp + self._temp_alpha * (self._temp_target - self._temp)
+        gyro_lp = self._gyro.lowpass(self._gyro.sample(angular_vel_frd, f_frd, None, self._temp), self._alpha)
+        acc_lp = self._acc.lowpass(self._acc.sample(f_frd, None, None, self._temp), self._alpha)
         self._since_tick += self.dt
         self._phase += self.dt * self._rate
         if self._phase >= 1.0 - 1e-9:
@@ -433,11 +565,30 @@ class ImuModel:
             self._acc_reg = self._acc.quantize(acc_lp)
             self._update_attitude(self._since_tick, quaternion_wxyz)
             self._since_tick = 0.0
-        self._buffer[self._ptr] = torch.cat((self._gyro_reg, self._q_est), dim=-1)
+        self._buffer[self._ptr] = torch.cat((self._gyro_reg, self._q_est, self._acc_reg), dim=-1)
         self._ptr = (self._ptr + 1) % (self._delay + 1)
         delayed = self._buffer[self._ptr]
         self._out_gyro = delayed[:, :3].clone()
-        self._out_q = delayed[:, 3:].clone()
+        self._out_q = delayed[:, 3:7].clone()
+        self._out_acc = delayed[:, 7:10].clone()
+        if self.params.nav.enabled:
+            self._integrate_navigation()
+
+    # ---- strapdown navigation -----------------------------------------------
+
+    def _integrate_navigation(self) -> None:
+        """One substep of the flight computer's dead reckoning.
+
+        The accelerometer and attitude registers arrive together (same latency), so the specific force
+        is resolved with the attitude estimate that travelled with it, gravity is removed with the
+        nominal constant, and the held values are integrated at the physics rate (zero-order hold, so
+        it equals integrating at the sensor rate). Velocity is trapezoidal into position.
+        """
+        f_world = rotate_vector(self._out_q, frd_to_isaac(self._out_acc))
+        accel = f_world - self._up * STANDARD_GRAVITY
+        v_next = self._nav_v + accel * self.dt
+        self._nav_p = self._nav_p + 0.5 * (self._nav_v + v_next) * self.dt
+        self._nav_v = v_next
 
     # ---- onboard attitude filter --------------------------------------------
 

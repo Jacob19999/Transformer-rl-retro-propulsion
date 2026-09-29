@@ -1,0 +1,92 @@
+# Sensor fusion stack for tvc_env/dynamics/nav_fusion.py: EKF3-style filter (ArduPilot AP_NavEKF3
+# structure and default tuning) fusing the IMU chain with a Benewake TFmini Plus rangefinder, a MicoAir
+# MTF-01P optical-flow sensor and the WTGAHRS1's barometer. Opt-in: mission control "Position & velocity
+# source -> Fused", or `imu: {fusion: {enabled: true, profile: tfmini_mtf01p}}`.
+#
+# Provenance tags:
+#   [TFMINI]    Benewake TFmini Plus datasheet SJ-PM-TFmini Plus-01 A07 (tools/Benewake_TFmini_Plus.pdf)
+#   [MTF01P]    MicoAir MTF-01P product page https://micoair.com/optical_range_sensor_mtf-01p/ (fetched
+#               2026-09-29; the page gives no chip, lens focal length or timing)
+#   [WIT]       WTGAHRS1 datasheet v20-0615 (tools/WITMotion IMU 2.pdf)
+#   [EKF3]      ArduPilot libraries/AP_NavEKF3/AP_NavEKF3.cpp defaults (Copter build), read 2026-09-29
+#   [ESTIMATE]  engineering estimate; replace from bench or flight data.
+fusion:
+  enabled: false
+  mount_down_m: 0.15             # [ESTIMATE] both downward sensors sit this far below the root along body z;
+                                 # the root is 0.31 m above the pad at rest, so the ranger reads 0.16 m on the pad
+
+  rangefinder:                   # Benewake TFmini Plus
+    rate_hz: 100.0               # [TFMINI] default frame rate 100 Hz (adjustable 1-1000 Hz)
+    latency_s: 0.01              # [ESTIMATE] one frame period
+    min_range_m: 0.1             # [TFMINI] operating range 0.1 m minimum
+    max_range_m: 8.0             # [TFMINI] 12 m at 90 % reflectivity, 4 m at 10 %; 8 m assumed for a mid-grey pad
+    noise_std_m: 0.03            # [TFMINI] repeatability 1-sigma < 3 cm at 100 Hz
+    accuracy_m: 0.05             # [TFMINI] +-5 cm at 0.1-5 m, drawn as a per-episode systematic error
+    accuracy_pct: 1.0            # [TFMINI] +-1 % at 5-12 m
+    resolution_m: 0.01           # [TFMINI] 1 cm
+    max_tilt_deg: 60.0           # [ESTIMATE] beam still lands on the ground; 3.6 deg FOV [TFMINI]
+    dropout_prob: 0.0
+
+  flow:                          # MicoAir MTF-01P
+    rate_hz: 100.0               # [MTF01P] 100 Hz
+    latency_s: 0.015             # [ESTIMATE] EKF3 assumes 10 ms (FLOW_MEAS_DELAY) [EKF3]; UART frame added
+    noise_std_rad_s: 0.05        # [ESTIMATE] not specified; 42 deg FOV [MTF01P] on a small-pixel-count sensor
+    scale_error_pct: 5.0         # [ESTIMATE] uncalibrated flow scaler, per axis
+    bias_rad_s: 0.01             # [ESTIMATE]
+    min_range_m: 0.08            # [MTF01P] working distance > 8 cm
+    max_height_m: 12.0           # [MTF01P] its ToF ranges 12 m at 90 % reflectance / 600 lux (8 m in 60 klux sunlight); the flow
+                                 # height limit itself is not published, texture and lighting set it
+    max_rate_rad_s: 7.0          # [MTF01P] 7 m/s at 1 m height
+    max_tilt_deg: 45.0           # [ESTIMATE]
+    dropout_prob: 0.0
+
+  baro:                          # WTGAHRS1 barometer
+    rate_hz: 20.0                # [ESTIMATE] flight-computer read rate
+    latency_s: 0.05              # [EKF3] EK3_HGT_DELAY 60 ms default; sensor delay assumed similar
+    noise_std_m: 0.15            # [ESTIMATE]
+    drift_sigma_m: 0.5           # [WIT] accuracy 1 m, read as 2-sigma of a slow bias
+    drift_tau_s: 300.0           # [ESTIMATE]
+    resolution_m: 0.01
+
+  marker:                        # downward camera on a fiducial (AprilTag-style) marker at the landing pad
+    # Opt-in: mission control "Fused + pad marker", or `marker: {enabled: true}` inline. No datasheet: this is a generic
+    # 640 px / 60 deg global-shutter camera with a 0.4 m tag, and a detector that reports the tag centre's angular
+    # offset as ArduPilot's LANDING_TARGET message does. Replace with the real camera and tag once chosen.
+    enabled: false
+    rate_hz: 30.0                # [ESTIMATE] camera and detector rate
+    latency_s: 0.06              # [ESTIMATE] capture + detection + transport
+    fov_deg: 60.0                # [ESTIMATE] per axis; the tag must be fully inside
+    resolution_px: 640.0         # [ESTIMATE]
+    marker_size_m: 0.4           # [ESTIMATE] tag edge length; with min_pixels this fixes the max detection range (9.2 m)
+    min_pixels: 24.0             # [ESTIMATE] smallest reliably detected tag width
+    min_range_m: 0.3             # [ESTIMATE] closer than this the tag fills the view and detection fails
+    noise_px: 0.5                # [ESTIMATE] tag-centre detection noise, 1-sigma
+    boresight_error_rad: 0.004   # [ESTIMATE] camera alignment error per axis and episode (0.23 deg)
+    dropout_prob: 0.02           # [ESTIMATE] missed detections
+    alt_max_m: 8.0               # [ARDUPILOT] PLND_ALT_MAX default 8 m: the flight computer ignores the tag above this height
+    alt_min_m: 0.3               # [ARDUPILOT] PLND_ALT_MIN is 0.2 m; raised to sit above the min detection range
+
+  ekf:
+    gyro_p_nse: 0.015            # [EKF3] EK3_GYRO_P_NSE rad/s
+    acc_p_nse: 0.35              # [EKF3] EK3_ACC_P_NSE m/s^2
+    gbias_p_nse: 0.001           # [EKF3] EK3_GBIAS_P_NSE
+    abias_p_nse: 0.02            # [EKF3] EK3_ABIAS_P_NSE
+    terr_grad: 0.1               # [EKF3] EK3_TERR_GRAD
+    alt_m_nse: 3.0               # [EKF3] EK3_ALT_M_NSE m (Copter)
+    hgt_i_gate: 500.0            # [EKF3] EK3_HGT_I_GATE
+    rng_m_nse: 0.5               # [EKF3] EK3_RNG_M_NSE m
+    rng_i_gate: 500.0            # [EKF3] EK3_RNG_I_GATE
+    flow_m_nse: 0.25             # [EKF3] EK3_FLOW_M_NSE rad/s (Copter)
+    flow_i_gate: 300.0           # [EKF3] EK3_FLOW_I_GATE (Copter)
+    marker_m_nse: 0.01           # [ESTIMATE] not an EKF3 parameter; angle noise the filter assumes for the tag, rad
+    marker_i_gate: 500.0
+    cov_interval_s: 0.01         # [EKF3] covariance predicted after ~10 ms of IMU data
+    init:
+      tilt_std_deg: 0.5          # [ESTIMATE] alignment from the accelerometer at rest
+      yaw_std_deg: 5.0           # [ESTIMATE] no compass
+      yaw_error_deg: 1.0         # [ESTIMATE] heading the filter starts from vs truth
+      vel_std: 0.1
+      pos_std: 0.5
+      gyro_bias_std_dps: 0.3
+      accel_bias_std_mg: 5.0
+      terrain_std: 0.3

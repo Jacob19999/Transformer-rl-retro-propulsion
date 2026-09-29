@@ -114,7 +114,12 @@ latency, onboard attitude filter) exists for evaluation; see
 | WITMOTION WTGAHRS1 | hobby | X/Y angle accuracy 0.05° (static only); gyro stability 0.05°/s; GPS 2.5 m (not modelled) | 0.05° (0.00087 rad) | 0.05°/s (0.00087 rad/s) |
 | VectorNav VN-110E | tactical | pitch/roll dynamic 1.0° RMS (static 0.05°); gyro noise density 5°/hr/√Hz; bias 0.6°/hr | 1.0° (0.0175 rad) | 0.0054°/s (9.4e-5 rad/s) |
 
-Sources: the WTGAHRS1 datasheet v20-0615, §3.1 (the WITMOTION PDF). CEVA's
+Physical (non-white-noise) profiles for the same three parts now exist in `configs/sensors/` and
+`configs/disturbances/sensor_imu_*.yaml`; the cards and `validate_settings` still use the white-noise mapping
+(see [imu_model.md](imu_model.md)). Note that the VN-110 datasheet in `tools/` gives only 0.05° RMS static
+pitch/roll; the 1.0° dynamic figure below is not in it.
+
+Sources: the WTGAHRS1 datasheet v20-0615, §3.1 (`tools/WITMotion IMU 2.pdf`). CEVA's
 BNO08X datasheet (rev 1.16/1.17). VectorNav's VN-110/VN-110E product brief and
 datasheet. The vendor pages for the last two were not reachable from the
 build environment, so their figures come from excerpts of those datasheets;
@@ -130,8 +135,9 @@ Caveats:
 - A datasheet error is mostly slow bias, while the simulator's noise is
   white. White noise at the spec magnitude shakes the controller harder but
   averages out, where a bias would not. The IMU chain in
-  [imu_model.md](imu_model.md) models the slow part; the mission-control UI
-  does not expose it yet.
+  [imu_model.md](imu_model.md) models the slow part. Each IMU card's
+  **Physical chain** button selects it (sets `sensor_noise.imu_profile`); **Noise σ**
+  keeps the white-noise mapping in the table above.
 
 Offline replica check (same replica as the sample table below, with
 `apply_sensor_noise` on the controller's observation; not Isaac):

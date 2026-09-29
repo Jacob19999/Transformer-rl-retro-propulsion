@@ -190,6 +190,7 @@
       },
       "hardware": {
         "part": "BNO085",
+        "imu_profile": "bno085",
         "maker": "CEVA (Hillcrest Labs)",
         "class": "hobby",
         "type": "9-axis IMU with on-chip fusion",
@@ -223,6 +224,7 @@
       },
       "hardware": {
         "part": "WTGAHRS1",
+        "imu_profile": "wtgahrs1",
         "maker": "WITMOTION",
         "class": "hobby",
         "type": "AHRS (WT901B) with GPS/BeiDou and barometer, Kalman filter, 0.2-200 Hz output",
@@ -259,6 +261,7 @@
       },
       "hardware": {
         "part": "VN-110E",
+        "imu_profile": "vn110e",
         "maker": "VectorNav",
         "class": "tactical",
         "type": "Embedded IMU/AHRS, no GNSS, 800 Hz IMU rate",

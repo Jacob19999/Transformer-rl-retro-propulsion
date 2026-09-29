@@ -469,6 +469,17 @@ body.planner-expanded { overflow: hidden; }
 .imu-card details li b { font: 10px var(--mono); color: #d1e6ff; font-weight: 400; }
 .imu-card details p { margin: 6px 0 0; font-size: 10px; line-height: 1.5; color: var(--plan-text-soft); }
 .imu-card .imu-source { color: var(--plan-text-muted); }
+.imu-chain { min-height: 2.9em; }
+.imu-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-top: auto; }
+.imu-actions button { padding: 6px 12px; border-color: #2c557e; color: #dcecff; background: #11243a; }
+.imu-actions button:disabled { color: #9ce7c3; border-color: #2e6b53; background: #0e241c; opacity: 1; }
+.imu-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 10px; }
+.imu-nav > span { font-size: 11px; color: #d9e7f4; }
+.imu-nav > div { display: inline-flex; border: 1px solid #2c557e; border-radius: 6px; overflow: hidden; }
+.imu-nav button { padding: 6px 12px; border: 0; border-radius: 0; color: #b9d6f2; background: #11243a; }
+.imu-nav button + button { border-left: 1px solid #2c557e; }
+.imu-nav button[aria-pressed="true"] { color: #9ce7c3; background: #0e241c; }
+.imu-physical-note { margin: 0 0 10px; padding: 8px 10px; border: 1px solid #2c557e; border-radius: 6px; background: #0f1d2c; color: #b9d6f2; }
 .imu-card > button { margin-top: auto; align-self: flex-end; padding: 6px 14px; border-color: #2c557e; color: #dcecff; background: #11243a; }
 .imu-card.is-active > button { color: #9ce7c3; border-color: #2e6b53; background: #0e241c; opacity: 1; }
 .noise-visual text { font: 8px var(--mono); fill: #8fa7bd; }

@@ -72,6 +72,10 @@ class BaseEnvConfig:
             from tvc_env.dynamics.imu_model import ImuParams, resolve_imu_config
             noise["imu"] = resolve_imu_config(noise["imu"])
             ImuParams.from_config(noise["imu"])
+            if noise["imu"].get("fusion"):
+                from tvc_env.dynamics.nav_fusion import FusionParams, resolve_fusion_config
+                noise["imu"]["fusion"] = resolve_fusion_config(noise["imu"]["fusion"])
+                FusionParams.from_config(noise["imu"]["fusion"])
 
         # Extract common settings
         env = self.config.get("env", {})
