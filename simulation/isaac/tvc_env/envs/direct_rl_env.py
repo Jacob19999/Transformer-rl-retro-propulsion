@@ -144,6 +144,12 @@ class TVCDirectRLEnv(TVCEnvBase):
         self._imu = imu_model_from_config(
             self._config.num_envs, device, self._config.physics_dt,
             self._config.config.get('disturbances', {}).get('sensor_noise'))
+        # Sensor fusion (IMU + rangefinder + optical flow + barometer through an EKF3-style filter) when
+        # sensor_noise.imu.fusion is enabled; it needs the IMU model's raw registers.
+        from tvc_env.dynamics.nav_fusion import nav_fusion_from_config
+        self._fusion = nav_fusion_from_config(
+            self._config.num_envs, device, self._config.physics_dt,
+            self._config.config.get('disturbances', {}).get('sensor_noise'), self._imu)
         if self._config.config.get('task',{}).get('navigation',{}).get('enabled'):
             from tvc_env.envs.waypoints import WaypointMission
             self._navigation = WaypointMission(self._config.num_envs,device,self._config.config,env_origins,self._target_position)
@@ -256,7 +262,11 @@ class TVCDirectRLEnv(TVCEnvBase):
         self._battery_energy_step_wh.zero_()
         self._propulsive_delta_v_step.zero_()
         self._rotation.begin_step()
-        navigation_before = self._body_iface.get_root_position().clone() if self._navigation else None
+        # With an estimated position source (strapdown or fused) the mission sequencer works from the
+        # position the flight computer holds, not from physics truth, exactly as the observation does.
+        estimated = self._estimated_state()
+        navigation_before = ((estimated[0] if estimated else self._body_iface.get_root_position()).clone()
+                             if self._navigation else None)
         normalized_action = torch.cat((self._pending_actions[:, :4] / self._servo_model.max_command_angle,
                                        self._pending_actions[:, 4:5] * 2.0 - 1.0), dim=-1)
         self._action_delta = normalized_action - self._previous_action
@@ -277,6 +287,10 @@ class TVCDirectRLEnv(TVCEnvBase):
             if self._imu is not None:
                 self._imu.step(self._body_iface.get_root_quaternion_wxyz(),
                                self._body_iface.get_root_linear_velocity_world(), rates_after)
+                if self._fusion is not None:
+                    self._fusion.step(self._body_iface.get_root_quaternion_wxyz(),
+                                      self._body_iface.get_root_linear_velocity_world(),
+                                      self._body_iface.get_root_position())
             self._rotation.update(rates_before, rates_after, self._config.physics_dt, rotation_active)
             landing_force, unsafe_contact = self._sensor_iface.read_contact_summary(
                 self._contact_sm.min_contact_force
@@ -292,9 +306,10 @@ class TVCDirectRLEnv(TVCEnvBase):
             self._update_contact_state(landing_force, unsafe_contact, downward_speed, rates_before)
         self._step_count += 1
         if self._navigation:
-            self._navigation.advance(navigation_before, self._body_iface.get_root_position(),
-                self._body_iface.get_root_linear_velocity_world(), self._config.physics_dt*self._config.decimation,
-                navigation_active)
+            self._navigation.advance(navigation_before,
+                estimated[0] if estimated else self._body_iface.get_root_position(),
+                estimated[1] if estimated else self._body_iface.get_root_linear_velocity_world(),
+                self._config.physics_dt*self._config.decimation, navigation_active)
         state_pre_reset = self._build_vehicle_state()
         terminated, time_out = self._get_dones(state_pre_reset)
         if self._navigation:
@@ -375,12 +390,26 @@ class TVCDirectRLEnv(TVCEnvBase):
         self._reset_imu(indices)
         return self._get_observations(), {}
 
+    def _estimated_state(self):
+        """(position, world velocity) the flight computer holds when one is estimated, else None."""
+        if self._fusion is not None:
+            return self._fusion.position, self._fusion.velocity_world
+        if self._imu is not None and self._imu.nav_enabled:
+            return self._imu.nav_position, self._imu.nav_velocity
+        return None
+
     def _reset_imu(self, env_ids: Tensor) -> None:
-        """Power-cycle the simulated IMU of freshly reset envs from their post-reset state."""
+        """Power-cycle the simulated IMU (and fusion filter) of freshly reset envs from their post-reset state."""
         if self._imu is not None:
             self._imu.reset(env_ids, self._body_iface.get_root_quaternion_wxyz(),
                             self._body_iface.get_root_linear_velocity_world(),
-                            self._body_iface.get_angular_velocity_body_frd())
+                            self._body_iface.get_angular_velocity_body_frd(),
+                            position_world=self._body_iface.get_root_position())
+            if self._fusion is not None:
+                self._fusion.reset(env_ids, self._body_iface.get_root_quaternion_wxyz(),
+                                   self._body_iface.get_root_linear_velocity_world(),
+                                   self._body_iface.get_root_position(),
+                                   marker_world=self._target_position)     # the pad marker sits at the landing target
 
     def _reset_previous_action(self, env_ids: Tensor) -> None:
         """Neutral vanes and the throttle matching the spawned rotor speed."""
@@ -528,6 +557,14 @@ class TVCDirectRLEnv(TVCEnvBase):
         q = self._body_iface.get_root_quaternion_wxyz()
         pos = self._body_iface.get_root_position()
 
+        # Intake momentum drag, read against the same wind sample as the body drag below.
+        inlet_force_body = torch.zeros_like(edf_force_body)
+        inlet_torque_body = torch.zeros_like(edf_force_body)
+        inlet_cfg = dynamics_cfg.get("inlet_momentum_drag") or {}
+        if inlet_cfg.get("enabled", False):
+            inlet_force_body, inlet_torque_body = self._inlet_momentum_drag(
+                inlet_cfg, raw_thrust, rotor_fraction, jet, q, pos, body_ang_frd)
+
         # Wind drag force in body-FRD frame
         wind_force_body = None
         if self._wind_model is not None and dynamics_cfg.get("enable_wind_force", True):
@@ -544,10 +581,10 @@ class TVCDirectRLEnv(TVCEnvBase):
             # this does not overwrite state or synthesize a control action.
             body_com_world = self._drone.data.body_com_pos_w[:, self._art_map.body_index]
             com_frd = isaac_position_to_frd(rotate_vector(inverse(q), body_com_world-pos))
-            all_force = edf_force_body + fin_dispatch.forces_body.sum(dim=1)
+            all_force = edf_force_body + inlet_force_body + fin_dispatch.forces_body.sum(dim=1)
             if wind_force_body is not None:
                 all_force = all_force + wind_force_body
-            external_torque = (static_torque + dynamic_torque + body_damping_torque
+            external_torque = (static_torque + dynamic_torque + body_damping_torque + inlet_torque_body
                                + fin_torque_body - torch.linalg.cross(com_frd, all_force))
             rotor_scale = (self._edf_model.gyro_torque_scale * float(dynamics_cfg.get('edf_gyro_torque_scale', 1.0))
                            if dynamics_cfg.get('enable_edf_gyro_torque', True) else 0.0)
@@ -573,6 +610,7 @@ class TVCDirectRLEnv(TVCEnvBase):
                 if wind_force_body is not None
                 else torch.zeros_like(edf_force_body).detach()
             ),
+            "inlet_momentum_drag_body_frd_N": inlet_force_body.detach(),
         }
         if jet is not None:
             self._last_dynamics_debug.update(
@@ -586,15 +624,44 @@ class TVCDirectRLEnv(TVCEnvBase):
         if self._battery_model is not None:
             self._battery_energy_step_wh += self._battery_model.power_w * dt / 3600
 
+        # The intake force acts at the inlet: apply it at the body origin with
+        # its moment about the origin (the dispatcher adds origin -> COM).
         self._wrench_dispatch.dispatch(
             fin_dispatch.forces_body,
             cops,
             q,
             pos,
-            edf_force_body,
-            edf_torque_body,
+            edf_force_body + inlet_force_body,
+            edf_torque_body + inlet_torque_body,
             wind_force_body,
         )
+
+    def _inlet_momentum_drag(self, config, raw_thrust, rotor_fraction, jet, q, pos, body_rate_frd):
+        """Intake momentum drag (body FRD) and its moment about the body origin.
+
+        Mass flow is the jet's own (the coupled jet shares shaft power with
+        swirl), else T / u with the exhaust speed scaling with rotor speed.
+        The inlet moves with the COM velocity plus w x (inlet - COM) and the
+        air with the wind, so gusts load the intake as well as the body.
+        """
+        from tvc_env.common.frames import isaac_position_to_frd
+        from tvc_env.common.quaternions import inverse, rotate_vector
+        from tvc_env.dynamics.propulsion_edf import inlet_momentum_drag
+        if jet is not None:
+            mass_flow = jet.mass_flow_per_fin.sum(-1)
+        else:
+            exhaust = self._aero_model.exhaust_speed * rotor_fraction
+            mass_flow = raw_thrust / exhaust.clamp(min=1e-6)
+        inlet = raw_thrust.new_tensor(config.get("inlet_position_frd", [0.0, 0.0, -0.11]))
+        air_velocity_w = self._body_iface.get_root_linear_velocity_world()
+        if self._wind_model is not None:
+            air_velocity_w = air_velocity_w - self._wind_model.get_effective_wind_world()
+        com_world = self._drone.data.body_com_pos_w[:, self._art_map.body_index]
+        com_frd = isaac_position_to_frd(rotate_vector(inverse(q), com_world - pos))
+        inlet_velocity = (self._body_iface.get_linear_velocity_body_frd(air_velocity_w, q)
+                          + torch.linalg.cross(body_rate_frd, inlet[None] - com_frd))
+        force = inlet_momentum_drag(mass_flow, inlet_velocity)
+        return force, torch.linalg.cross(inlet.expand_as(force), force)
 
     def _correct_freeflight_orientation(self):
         """Complete the coupled Lie-midpoint step outside external contacts.
@@ -640,13 +707,17 @@ class TVCDirectRLEnv(TVCEnvBase):
             state = self._build_vehicle_state()
         target = self._navigation.goal if self._navigation else self._target_position
         obs = assemble_observation(state, target, self._omega_max)
-        obs = apply_sensor_noise(obs, self._config.config, imu=self._imu)
+        obs = apply_sensor_noise(obs, self._config.config, imu=self._imu, true_position=state.position,
+                                 fusion=self._fusion)
         # What the controller measured (IMU/position noise included), for telemetry.
         self.sensor_measurement = measured_state(obs, target)
         if self._config.config.get('env', {}).get('observe_battery', False):
             obs = torch.cat([obs, self._battery_model.observation()], dim=-1)
         if self._navigation:
-            obs = torch.cat([obs,self._navigation.observation(state.quaternion_wxyz)],dim=-1)
+            # Body-frame waypoint vectors are resolved with the attitude the flight computer holds.
+            quaternion = (self._fusion.quaternion_wxyz if self._fusion is not None
+                          else self._imu.quaternion_wxyz if self._imu is not None else state.quaternion_wxyz)
+            obs = torch.cat([obs,self._navigation.observation(quaternion)],dim=-1)
 
         return {"policy": obs}
 

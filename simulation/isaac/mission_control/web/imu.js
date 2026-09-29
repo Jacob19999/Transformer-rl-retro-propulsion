@@ -31,5 +31,17 @@ export function sensorNote(metadata) {
   const noise = metadata?.disturbances?.sensor_noise;
   if (!noise?.enabled) return 'Sensor noise off: the IMU reports the PhysX state exactly.';
   const f = (v, d) => Number(v ?? 0).toFixed(d);
+  const chain = noise.imu?.enabled === false ? null : noise.imu;
+  if (chain) {
+    const timing = `${f(chain.sample_rate_hz, 0)} Hz output · ${f(chain.bandwidth_hz, 0)} Hz bandwidth · ${f((chain.latency_s ?? 0) * 1000, 1)} ms latency · gyro ±${f(chain.gyro?.range_dps, 0)}°/s`;
+    if (chain.fusion?.enabled) {
+      const marker = chain.fusion.marker?.enabled ? ' + pad marker' : '';
+      return `Physical IMU chain with sensor fusion (EKF3-style filter: IMU + rangefinder + optical flow + barometer${marker}) · ${timing}`;
+    }
+    if (chain.nav?.enabled) {
+      return `Physical IMU chain with inertial navigation (position and velocity integrated from its accelerometer and attitude, unaided, so they drift) · ${timing}`;
+    }
+    return `Physical IMU chain (bias, drift, temperature, filtering) · ${timing} · position ${f(noise.position_std, 3)} m / velocity ${f(noise.velocity_std, 3)} m/s external noise`;
+  }
   return `White noise per control step · σ position ${f(noise.position_std, 3)} m · attitude ${f((noise.attitude_std ?? 0) * deg, 2)}° · velocity ${f(noise.velocity_std, 3)} m/s · gyro ${f((noise.angular_velocity_std ?? 0) * deg, 2)}°/s`;
 }

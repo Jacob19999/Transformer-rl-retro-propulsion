@@ -42,3 +42,38 @@ def test_disabled_wind_preserves_drag_against_vehicle_motion():
     force = model.compute_drag_force(velocity, torch.tensor([[1., 0., 0., 0.]]))
     assert force[0, 0] < 0
     assert force[0, 1:].abs().max() == 0
+
+
+BODY = dict(length=0.35, diameter=0.12, cd_body=1.0, reference_area=0.011)
+
+
+def test_body_drag_uses_side_on_area_crosswise_and_end_on_area_axially():
+    model = WindModel(**WindModel.body_drag_from_vehicle(BODY))
+    level = torch.tensor([[1., 0., 0., 0.]])
+    side = model.compute_drag_force(torch.tensor([[3., 0., 0.]]), level)
+    down = model.compute_drag_force(torch.tensor([[0., 0., -3.]]), level)
+    q = 0.5 * 1.225 * 9.0
+    assert torch.allclose(side[0], torch.tensor([-q * 0.35 * 0.12, 0., 0.]), atol=1e-6)
+    # Falling (world -z) is body +z in FRD at level attitude; drag pushes back up (FRD -z).
+    assert torch.allclose(down[0], torch.tensor([0., 0., -q * 0.011]), atol=1e-6)
+
+
+def test_body_drag_is_dissipative_at_any_attitude():
+    torch.manual_seed(1)
+    from tvc_env.common.quaternions import normalize, rotate_vector
+    from tvc_env.common.frames import frd_to_isaac
+    model = WindModel(**WindModel.body_drag_from_vehicle(BODY), num_envs=128)
+    q = normalize(torch.randn(128, 4))
+    v = torch.randn(128, 3) * 5.0
+    force_world = rotate_vector(q, frd_to_isaac(model.compute_drag_force(v, q)))
+    assert torch.all((force_world * v).sum(-1) <= 1e-9)
+
+
+def test_wind_changes_the_air_not_the_airframe():
+    """Enabling wind used to swap the vehicle's 0.011 m2 for an isotropic 0.02 m2."""
+    calm = WindModel(**WindModel.body_drag_from_vehicle(BODY))
+    windy = WindModel.from_disturbance_config({'disturbances': {
+        'enabled': True, 'wind': {'enabled': True, 'steady_vector': [0., 0., 0.]},
+        'gust': {'enabled': False}, 'body_drag': {'cd': 1., 'reference_area': .02}}}, body=BODY)
+    velocity, level = torch.tensor([[2., -1., 0.5]]), torch.tensor([[1., 0., 0., 0.]])
+    assert torch.equal(calm.compute_drag_force(velocity, level), windy.compute_drag_force(velocity, level))

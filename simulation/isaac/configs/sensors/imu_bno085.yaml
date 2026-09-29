@@ -1,0 +1,80 @@
+# CEVA BNO085 (BMI085 accelerometer/gyroscope + BMM150 magnetometer + SH-2 sensor hub) measurement
+# model for tvc_env/dynamics/imu_model.py, game rotation vector output (no magnetometer: the EDF's
+# 120 A bus would disturb it).
+#
+# Provenance tags on every value:
+#   [BMI085]    Bosch BMI085 data sheet rev 1.6 (tools/bst-bmi085-ds001.pdf), tables 4 and 5. The BNO085
+#               senses with a BMI085-class part, so the raw sensor errors come from this sheet.
+#   [CEVA]      CEVA BNO08x fusion-performance figures as already recorded in
+#               mission_control/presets/disturbance_presets.json ("imu-bno085"). Taken from vendor
+#               excerpts; the CEVA datasheet itself is NOT in the repo.
+#   [GUIDE]     Adafruit BNO085 breakout guide (tools/adafruit-9-dof-...bno085.pdf): a tutorial with no
+#               accuracy numbers; it only confirms what the sensor hub reports.
+#   [ESTIMATE]  engineering estimate for this part class; replace with a bench Allan fit.
+#
+# The sensor hub runs its own fusion and continuous gyro / accelerometer calibration. That is not
+# simulated; it is represented by the turn-on residuals below, which are the post-calibration state.
+# Every error term is redrawn per episode = one power cycle of a randomly drawn unit.
+imu:
+  sample_rate_hz: 100.0        # [ESTIMATE] typical game-rotation-vector report rate (UART-RVC is 100 Hz; SPI allows 400 Hz)
+  bandwidth_hz: 116.0          # [ESTIMATE] BMI085 gyro filter option [BMI085 4.4]; the sensor hub's own filtering is undocumented
+  latency_s: 0.005             # [ESTIMATE] sensor-hub processing plus bus transfer
+  rate_truth: pose             # simulator: feed the gyro the rate implied by the true pose change; the engine's reported
+                               # angular velocity misses the pose corrections applied during pad contact (see imu_model.py)
+
+  gyro:
+    range_dps: 2000            # [BMI085] RFS2000, the sensor's maximum
+    resolution_dps: 0.112      # [ESTIMATE] SH-2 calibrated-gyro report is Q9 rad/s (recalled, not in the repo docs)
+    noise_density_dps_rthz: 0.014    # [BMI085] 0.014 dps/sqrt(Hz)
+    bias_instability_dps: 0.005      # [ESTIMATE] not specified by Bosch; ~18 dps/hr class
+    bias_correlation_time_s: 100.0   # [ESTIMATE]
+    rate_random_walk_dps_rt_s: 0.0
+    turn_on_bias_dps: 0.05     # [ESTIMATE] residual after the hub's still-calibration. The raw BMI085 zero-rate offset
+                               # is +-1 dps [BMI085]; CEVA's 0.5 deg/min game-vector heading drift [CEVA] implies ~0.008 dps.
+    scale_factor_pct: 1.0      # [BMI085] sensitivity tolerance +-1 %
+    misalignment_mrad: 10.0    # [BMI085] cross-axis sensitivity +-1 %
+    g_sensitivity_dps_per_g: 0.1     # [BMI085] 0.1 dps/g
+    tco_dps_per_k: 0.015       # [BMI085] zero-rate offset over temperature, +-0.015 dps/K
+
+  accel:
+    range_g: 8                 # [ESTIMATE] SH-2 default accelerometer range; the BMI085 itself supports up to 16 g
+    resolution_g: 0.000398     # [ESTIMATE] SH-2 accelerometer report is Q8 m/s^2 (recalled)
+    noise_density_ug_rthz: 135 # [BMI085] 135 ug/sqrt(Hz) on Z (105 on X/Y); the worse axis, which reads thrust
+    bias_instability_mg: 0.1   # [ESTIMATE] not specified by Bosch
+    bias_correlation_time_s: 100.0   # [ESTIMATE]
+    random_walk_ug_rt_s: 0.0
+    turn_on_bias_mg: 20.0      # [BMI085] zero-g offset +-20 mg (about 1.1 deg of tilt at the limit, 0.66 deg rms), consistent
+                               # with the 1.5 deg static game-rotation-vector error [CEVA]
+    scale_factor_pct: 1.0      # [ESTIMATE] accelerometer sensitivity tolerance is not in the tables read
+    misalignment_mrad: 9.0     # [BMI085] alignment error 0.5 deg to the package plus 0.5 % cross-axis
+    tco_mg_per_k: 0.2          # [BMI085] zero-g offset over temperature, <0.2 mg/K
+
+  thermal:
+    start_spread_k: 5.0        # [ESTIMATE] generic warm-up, same as the other profiles
+    self_heating_k: 5.0
+    warmup_tau_s: 300.0
+
+  nav:
+    # Unaided strapdown navigation, opt-in (mission control: "Inertial" position source). The solution
+    # starts from the true pad position and velocity; there is no aiding (baro, optical flow, GNSS).
+    enabled: false
+    initial_position_std_m: 0.0    # [ASSUMED] start position surveyed / known
+    initial_velocity_std_m_s: 0.0  # [ASSUMED] vehicle at rest on the pad
+
+  attitude:
+    # [ESTIMATE] The hub fuses gyro and accelerometer (game rotation vector) and gates the accelerometer
+    # on motion. Mahony gains are a stand-in, not the CEVA filter. Fit them so a scripted manoeuvre
+    # reproduces the 2.5 deg dynamic / 1.5 deg static figures [CEVA]. Like every accelerometer-aided
+    # filter it is level-seeking on a thrust-vectored vehicle (docs/imu_model.md).
+    kp: 0.1
+    ki: 0.002
+    integral_limit_dps: 5.0
+    accel_gate: 0.2
+    initial_tilt_error_deg: 0.7  # [CEVA] half of the 1.5 deg static figure, read as a 2-sigma bound
+    yaw:
+      mode: gyro               # game rotation vector: no magnetometer
+      gain: 0.5
+      initial_error_deg: 1.0   # [ESTIMATE] arbitrary heading frame at power-up
+      mag_turn_on_deg: 2.0     # unused in gyro mode
+      mag_sigma_deg: 3.0
+      mag_correlation_time_s: 30.0

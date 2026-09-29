@@ -1,0 +1,75 @@
+# VectorNav VN-110E (embedded tactical IMU/AHRS, no GNSS) measurement model for
+# tvc_env/dynamics/imu_model.py.
+#
+# Provenance tags on every value:
+#   [VN110]     VN-110 datasheet (tools/VN-110_DS.pdf), performance specifications table
+#   [PRESET]    figure recorded in mission_control/presets/disturbance_presets.json that is NOT in the
+#               provided datasheet (the 1.0 deg RMS dynamic pitch/roll figure)
+#   [DERIVED]   computed from a [VN110] figure; the derivation is on the line
+#   [ESTIMATE]  engineering estimate for this part class; replace with a bench Allan fit.
+#
+# The VN-110 is individually calibrated for bias, scale factor, misalignment and temperature over
+# -40..85 C [VN110], so its systematic terms are small next to the other two profiles. The datasheet
+# publishes no dynamic attitude figure; its VPE filter (adaptive tuning, acceleration-disturbance
+# rejection) is proprietary and is stood in for by low Mahony gains.
+# Every error term is redrawn per episode = one power cycle of a randomly drawn unit.
+imu:
+  sample_rate_hz: 400.0        # [VN110] attitude output up to 400 Hz (IMU data up to 800 Hz; physics runs at 480 Hz)
+  bandwidth_hz: 240.0          # [VN110] accelerometer and gyroscope bandwidth 240 Hz
+  latency_s: 0.002             # [ESTIMATE] serial TTL frame plus filter; rounds to one physics substep
+  rate_truth: pose             # simulator: feed the gyro the rate implied by the true pose change; the engine's reported
+                               # angular velocity misses the pose corrections applied during pad contact (see imu_model.py)
+
+  gyro:
+    range_dps: 490             # [VN110] +-490 deg/s; the standard part saturates here (extended range is an option)
+    resolution_dps: 0.0        # float output; quantization negligible
+    noise_density_dps_rthz: 0.00139  # [VN110] 5 deg/hr/sqrt(Hz)
+    bias_instability_dps: 0.000153   # [VN110] 0.4-0.7 deg/hr typical (<1 deg/hr max); midpoint 0.55 deg/hr
+    bias_correlation_time_s: 300.0   # [ESTIMATE]
+    rate_random_walk_dps_rt_s: 0.0
+    turn_on_bias_dps: 0.003    # [ESTIMATE] ~10 deg/hr bias repeatability after factory calibration and bias tracking
+    scale_factor_pct: 0.05     # [ESTIMATE] factory-calibrated
+    misalignment_mrad: 0.87    # [VN110] cross-axis sensitivity <0.05 deg
+    g_sensitivity_dps_per_g: 0.01    # [ESTIMATE] tactical MEMS; not in the datasheet
+    tco_dps_per_k: 0.0002      # [ESTIMATE] temperature-calibrated over the full range
+
+  accel:
+    range_g: 15                # [VN110] +-15 g
+    resolution_g: 0.0
+    noise_density_ug_rthz: 40  # [VN110] <0.04 mg/sqrt(Hz)
+    bias_instability_mg: 0.01  # [VN110] <10 ug in-run bias stability (a maximum, so conservative)
+    bias_correlation_time_s: 300.0   # [ESTIMATE]
+    random_walk_ug_rt_s: 0.0
+    turn_on_bias_mg: 1.5       # [DERIVED] half-width whose rms (1.5/sqrt(3) mg) reproduces the 0.05 deg RMS static pitch/roll [VN110]
+    scale_factor_pct: 0.05     # [ESTIMATE] factory-calibrated
+    misalignment_mrad: 0.87    # [VN110] cross-axis sensitivity <0.05 deg
+    tco_mg_per_k: 0.005        # [ESTIMATE] temperature-calibrated over the full range
+
+  thermal:
+    start_spread_k: 5.0        # [ESTIMATE] generic warm-up, same as the other profiles
+    self_heating_k: 5.0
+    warmup_tau_s: 300.0
+
+  nav:
+    # Unaided strapdown navigation, opt-in (mission control: "Inertial" position source). The solution
+    # starts from the true pad position and velocity; there is no aiding (baro, optical flow, GNSS).
+    enabled: false
+    initial_position_std_m: 0.0    # [ASSUMED] start position surveyed / known
+    initial_velocity_std_m_s: 0.0  # [ASSUMED] vehicle at rest on the pad
+
+  attitude:
+    # [ESTIMATE] Mahony stand-in for VPE. Low gains reject thrust acceleration well and can afford
+    # to because the gyro bias is tiny. Fit against the [PRESET] 1.0 deg RMS dynamic figure, which
+    # the provided datasheet does not contain.
+    kp: 0.05
+    ki: 0.001
+    integral_limit_dps: 5.0
+    accel_gate: 0.1
+    initial_tilt_error_deg: 0.05  # [VN110] pitch/roll static accuracy 0.05 deg RMS
+    yaw:
+      mode: gyro               # no magnetometer aiding: 2.0 deg RMS magnetic heading [VN110] needs a calibrated, clean field
+      gain: 0.5
+      initial_error_deg: 1.0   # [ESTIMATE] arbitrary heading frame at power-up
+      mag_turn_on_deg: 2.0     # [VN110] magnetic heading 2.0 deg RMS (unused in gyro mode)
+      mag_sigma_deg: 3.0
+      mag_correlation_time_s: 30.0

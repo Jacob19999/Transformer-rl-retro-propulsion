@@ -1,6 +1,7 @@
 # IMU measurement model
 
-Status: 2026-09-28. Opt-in; the default white-noise path is unchanged.
+Status: 2026-09-29. Opt-in; the default white-noise path is unchanged. Three hardware profiles
+(WTGAHRS1, BNO085, VN-110E) with best-estimate parameters; **static accuracy validation is deferred**.
 
 The environment used to corrupt attitude and body rate with independent white noise redrawn at every
 control step. A fused-attitude IMU such as the WITMOTION WTGAHRS1 instead delivers a *filtered, delayed,
@@ -12,8 +13,8 @@ chain per environment.
 ```
 true q, v, w_body ──► specific force f = R^T (dv/dt − g)          (velocity difference per physics substep)
                       │
-gyro  = M·w + turn-on bias + Gauss-Markov bias + random-walk bias + white noise + g-sensitivity·f
-accel = M·f + turn-on bias + Gauss-Markov bias + random-walk bias + white noise      (M = scale + cross-axis)
+gyro  = M·w + turn-on bias + TCO·ΔT + Gauss-Markov bias + random-walk bias + white noise + g-sensitivity·f
+accel = M·f + turn-on bias + TCO·ΔT + Gauss-Markov bias + random-walk bias + white noise      (M = scale + cross-axis)
                       │  saturate ─► first-order low-pass (bandwidth_hz) ─► quantize at sample ticks
                       ▼
 sample & hold at sample_rate_hz ─► Mahony complementary filter (gyro + accel [+ heading]) ─► attitude q_est
@@ -37,12 +38,119 @@ Position and velocity stay white noise: this IMU measures neither (assume motion
 
 ## Enabling it
 
-Any `BaseEnvConfig(..., disturbance_config_path=configs/disturbances/sensor_imu_wtgahrs1.yaml)` enables it. Nothing in `apps/` selects it yet. Wiring it into `run_mission.py` and the mission-control
-UI (`validate_settings` rejects an `imu` block today) is the open follow-up.
+Any `BaseEnvConfig(..., disturbance_config_path=configs/disturbances/sensor_imu_<name>.yaml)` enables it, with
+`<name>` one of `wtgahrs1`, `bno085`, `vn110e`.
 
-`sensor_noise.imu` takes `profile: wtgahrs1` (from `configs/sensors/imu_wtgahrs1.yaml`) and any inline keys
+**Mission control:** on the Environment → Sensor noise tab each IMU hardware card has **Noise σ** (the datasheet
+white-noise mapping) and **Physical chain**. Physical chain sets `disturbance_settings.sensor_noise.imu_profile`
+(`""`, or a profile name checked against `configs/sensors/imu_*.yaml`); `disturbance_config` turns it into
+`sensor_noise.imu = {enabled: true, profile: <name>}` and drops the request-only key, so `run_mission.py` needs no
+change. While it is active the attitude and body-rate noise sliders are inert. Position and velocity keep their
+white-noise settings: this IMU measures neither, and they stand for the external source (motion capture or RTK
+today; optical-flow and barometer fusion later). The Flight page's IMU-vs-ACTUAL overlay shows the chain's output.
+
+`sensor_noise.imu` takes `profile: wtgahrs1 | bno085 | vn110e` (from `configs/sensors/imu_<name>.yaml`) and any inline keys
 override it. The profile is expanded and validated when the env config is built, so a typo fails before Isaac
 starts and the recorded config carries the parameters actually used. Unknown keys are rejected.
+
+## Strapdown navigation (opt-in, unaided)
+
+`imu.nav.enabled: true` (mission control: **Position & velocity source → Inertial**) makes the flight computer dead-reckon
+from the sensor's own registers: each physics substep it rotates the delayed accelerometer register by the delayed onboard
+attitude estimate, subtracts nominal gravity, and integrates to velocity and position (trapezoidal). The solution starts from
+the true position and velocity (`nav.initial_*_std`, default 0) and is otherwise unaided: no baro, optical flow or GNSS.
+When on, the observation's position, height and body-frame velocity are that solution; `position_std` / `velocity_std` are
+ignored, and the mission sequencer (waypoint capture, hover dwell) and the controller both fly on the estimate. Truth
+(`pad_distance`, contact, landing outcome) stays physics truth, so a drifting run visibly misses the pad.
+
+Drift mechanisms, all visible in the model: accelerometer scale factor and bias (1 % scale = 0.1 m/s² vertical at hover),
+attitude error (tilt ε leaks g·ε into horizontal acceleration), noise, latency. Unaided, tilt and acceleration are not
+separable, and an accelerometer-aided filter settles where the vehicle believes it is level and stationary while it
+actually accelerates, so horizontal drift is largely set by the attitude filter, not the gyro or accelerometer grade.
+
+Isaac hop (Hover 10 m in gusts, seed 2026, dead-reckoning only, position error vs truth, single flights):
+
+| Sensor | 5 s | 10 s | 20 s | 40 s |
+|---|---|---|---|---|
+| error-free sensor (diagnostic) | 0.01 m | 0.01 m | 0.01 m | 0.01 m |
+| VN-110E profile | 0.4 m | 1.1 m | 3.5 m | 11.6 m |
+| WTGAHRS1 profile | 2.1 m | 7.3 m | 26 m | crashed at 29 s |
+
+## Sensor fusion (opt-in): IMU + TFmini Plus + MTF-01P + barometer through an EKF3-style filter
+
+`imu.fusion.enabled: true` with `profile: tfmini_mtf01p` (mission control: **Position & velocity source → Fused**) adds three
+aiding sensors and replaces the flight computer's onboard-filter attitude with its own estimate, as ArduPilot does. Code:
+`tvc_env/dynamics/nav_sensors.py` (sensors), `nav_ekf.py` (filter), `nav_fusion.py` (config, wiring), profile
+`configs/sensors/fusion_tfmini_mtf01p.yaml` (per-value provenance).
+
+| Sensor | Model | Source |
+|---|---|---|
+| Benewake TFmini Plus rangefinder | slant range to flat ground along body-down, 100 Hz, 10 ms latency, σ 3 cm, ±5 cm systematic (1 % beyond 5 m), 1 cm steps, valid 0.1–8 m and within 60° of nadir | datasheet A07; 8 m max is an estimate for a mid-grey pad (12 m at 90 %, 4 m at 10 % reflectivity) |
+| MicoAir MTF-01P optical flow | apparent ground angular rate `f = (v_y/r − ω_x, −v_x/r − ω_y)`, 100 Hz, 15 ms latency, σ 0.05 rad/s, 5 % scale and 0.01 rad/s bias per episode, valid 0.08–12 m and up to 7 rad/s | product page (rate, 7 m/s at 1 m, >8 cm, 12 m ToF); noise, scale, bias are estimates |
+| Barometer (WTGAHRS1) | height + Gauss-Markov drift σ 0.5 m (τ 300 s, zero at boot) + 15 cm noise, 20 Hz, 50 ms | datasheet "accuracy 1 m"; rest estimated |
+
+The filter is a 16-state error-state EKF (attitude, velocity, position, gyro bias, accelerometer bias, terrain height) fed by
+the IMU chain's raw gyro and accelerometer registers. It is **not** ArduPilot's code, but follows AP_NavEKF3: covariance
+predicted every ~10 ms, process noise and defaults `EK3_GYRO_P_NSE 0.015`, `ACC_P_NSE 0.35`, `GBIAS_P_NSE 1e-3`,
+`ABIAS_P_NSE 2e-2`, `TERR_GRAD 0.1`; flow line-of-sight model with `FLOW_M_NSE 0.25`, `FLOW_I_GATE 300`; rangefinder
+`RNG_M_NSE 0.5`, `RNG_I_GATE 500`; baro `ALT_M_NSE 3`, `HGT_I_GATE 500`; late measurements are compared with the state stored at
+their sample time. Accelerometer does not aid tilt directly, so the level-seeking trap of the onboard filter does not apply.
+Defaults were read from the ArduPilot source (`AP_NavEKF3.cpp`, Copter build) on 2026-09-29.
+
+Not modelled: compass/GNSS (heading is gyro-only and unobservable), flow-quality weighting, EKF3 lane switching, on-ground
+constant-position fusion, delayed fusion horizon (the correction is applied to the current state), sensor lever arms other than
+the shared down-axis mount offset (`mount_down_m 0.15`), rangefinder or flow on non-flat ground.
+
+Isaac hop (Hover 10 m in gusts, seed 2026, fused navigation, single flights). Hover altitude is above the assumed 8 m rangefinder
+limit, so height there is barometer-only and horizontal position comes from integrated flow velocity (no absolute horizontal
+reference exists):
+
+| IMU | Mission time | Position error 10 s / 20 s / 40 s | Touchdown | Pad distance |
+|---|---|---|---|---|
+| WTGAHRS1 | 45 s | 0.2 / 0.6 / 1.5 m | 0.23 m/s | 1.4 m |
+| BNO085 | 44 s | 0.3 / 0.9 / 1.7 m | 0.14 m/s | 1.6 m |
+| VN-110E | 43 s | 0.3 / 1.0 / 1.7 m | 0.14 m/s | 1.7 m |
+
+All three land softly but outside the 0.5 m pad criterion, so mission control reports POST_LANDING_FAILURE: flow-only navigation
+cannot hold absolute horizontal position. Unaided dead reckoning on the same hop reached 7–130 m. The three IMUs end up close
+together because the aiding sensors, not the IMU grade, set the error, and every run shares the seed's flow scale error.
+The filter adds roughly 30–40 % wall time in Isaac (real-time factor 0.75 → ~0.5 on CPU physics).
+
+### Pad marker during the descent (opt-in)
+
+Mission control **Position & velocity source → Fused + pad marker** (`imu_nav: fused_marker`, or `fusion.marker.enabled: true`)
+adds a downward camera on an AprilTag-style marker at the landing target. It reports the marker's angular offsets in the
+camera as ArduPilot's LANDING_TARGET message does, and the filter fuses them as a pad-relative position fix (tilt-compensated
+through the attitude estimate), which is the only absolute horizontal reference in the stack. Model: 30 Hz, 60 ms latency,
+60° field of view per axis, 640 px, 0.4 m tag needing ≥ 24 px (max range 9.2 m, min 0.3 m), centre noise 0.5 px, 0.23°
+per-episode boresight error, 2 % missed detections. The flight computer only uses it between 0.3 and 8 m of estimated height
+(`PLND_ALT_MIN/MAX`). No camera or tag is specified yet, so every number is an estimate; heading is not corrected from the tag.
+
+Isaac hop, fused + marker, same seed: WTGAHRS1 lands 0.07 m from the pad at 0.17 m/s, VN-110E 0.07 m at 0.14 m/s (both
+LANDED; without the marker 1.4–1.7 m and POST_LANDING_FAILURE). The marker is out of use through the 10 m hover (above 8 m)
+and corrects the accumulated flow drift on the way down.
+
+### CAM 05 · Down camera view
+
+When a run used fused navigation, the Flight page adds **CAM 05** (bottom-left of the camera array, click its header to
+collapse): the ground as the downward camera sees it, the optical-flow vectors (amber measured, white truth), the pad and
+marker with the detector's state (tracking, visible but outside the altitude window, not detected, rejected, out of view with
+an arrow), and a height ruler (truth, filter estimate, rangefinder) with the marker window shaded. Draw code:
+`mission_control/web/downcam.js`; data: `frame.fusion` (`NavFusion.record()` carries the sensors' truth as well as their
+readings). The ground texture is fixed to the world (1 m and 0.25 m cells) so altitude only changes how large it looks. It is
+not included in recorded videos, and replays recorded before this telemetry existed do not show it.
+
+## Truth angular rate (`rate_truth`)
+
+`pose` (all three profiles) derives the gyro's true input from the change of the true attitude over each substep instead of
+the engine's reported angular velocity. In free flight they agree. During pad contact PhysX corrects the pose without a
+matching angular velocity: a gyro integrating the reported rate carried a fixed 0.8° pitch error from the first landing on
+the pad, which the navigation turned into 6 m of horizontal drift at 10 s even for an error-free sensor. With `pose` the
+error-free sensor tracks the truth to 1 cm over a 44 s hop and the mission lands. `reported` remains the default for
+hand-built configs.
+
+`run_mission.py` also re-seeds the IMU after it overrides the initial velocity and rates, otherwise the first substep read
+the velocity jump as an acceleration spike.
 
 ## Conventions worth knowing
 
@@ -55,23 +163,66 @@ starts and the recorded config carries the parameters actually used. Unknown key
   that is a different parameterisation.
 - After the 20 Hz low-pass the white gyro noise is ≈ density·√(π/2 · 20 Hz) (checked in the unit tests).
 
-## Parameters and provenance
+## Hardware profiles
 
-`configs/sensors/imu_wtgahrs1.yaml` tags every value. Summary of what is known versus assumed:
+Source documents are in `tools/`: `WITMotion IMU 2.pdf` (WTGAHRS1 **datasheet** v20-0615), `WITMotion IMU.pdf`
+(WTGAHRS1 user manual v0707), `bst-bmi085-ds001.pdf`
+(Bosch BMI085 data sheet rev 1.6, the sensor inside the BNO085), `adafruit-...-bno085.pdf` (breakout tutorial,
+no accuracy figures) and `VN-110_DS.pdf`. Every value in `configs/sensors/imu_*.yaml` is tagged with where
+it came from; `ESTIMATE`/`PLACEHOLDER` values are engineering guesses.
 
-| Group | Source |
-|---|---|
-| 20 Hz bandwidth, 200 Hz max output rate, ±2000 dps / ±16 g ranges, gyro auto-calibration, 6-/9-axis algorithm | WTGAHRS1 manual v0707 §2.2.2, 2.3.3, 2.3.4, 2.4.3, 2.4.9 |
-| Accel turn-on bias 2 mg | manual p.16 screenshot after calibration (X −0.0020 g, Y 0.0024 g) |
-| Gyro stability 0.05 dps, accel stability 5 mg | existing preset ("datasheet v20-0615 §3.1") — **that datasheet is not in the repo and was not re-checked** |
-| 16-bit resolution (0.061 dps, 0.488 mg per count) | assumed from the WIT serial protocol; the manual has no register table |
-| Noise densities, correlation times, random walks, scale/misalignment, g-sensitivity, latency, filter gains, magnetometer errors | **placeholders** (typical MEMS magnitudes) |
+| | WTGAHRS1 | BNO085 (game rotation vector) | VN-110E |
+|---|---|---|---|
+| Class | hobby AHRS | hobby SiP with sensor hub | tactical |
+| Output rate / bandwidth / latency | 200 Hz / 20 Hz / 5 ms | 100 Hz / 116 Hz / 5 ms | 400 Hz / 240 Hz / 2 ms |
+| Gyro range | ±2000 dps | ±2000 dps | **±490 dps** |
+| Gyro noise density (dps/√Hz) | 0.01 (placeholder) | 0.014 | 0.00139 |
+| Gyro bias instability | 0.05 dps (preset) | 0.005 dps (estimate) | 0.55 °/hr |
+| Gyro TCO | 0.02 dps/K (estimate) | 0.015 dps/K | 0.0002 dps/K (estimate) |
+| Accel noise density (µg/√Hz) | 300 (placeholder) | 135 | 40 |
+| Accel turn-on bias | 2 mg (manual p.16) | 20 mg (BMI085 zero-g offset) | 1.5 mg (from 0.05° static) |
+| Accel TCO | 0.3 mg/K (estimate) | 0.2 mg/K | 0.005 mg/K (estimate) |
+| Yaw | gyro (6-axis) | gyro (no magnetometer) | gyro |
+| Filter stand-in (kp, ki, gate) | 0.1, 0.002, 0.3 g | 0.1, 0.002, 0.2 g | 0.05, 0.001, 0.1 g |
 
-Replace the placeholders from bench data (below). Do not describe results as WTGAHRS1-accurate until then.
+Points worth knowing:
+
+- WTGAHRS1: the datasheet v20-0615 gives ±16 g / ±2000 dps, 16-bit frames (0.488 mg, 0.061 dps per count), gyro
+  stability 0.05 dps, accelerometer stability 0.005 g and accuracy 0.01 g, and angle accuracy 0.05° (X/Y) / 1° (Z, after
+  magnetic calibration). These are marketing-style figures with no test conditions and no noise density, and they do
+  not agree with each other (0.01 g would be 0.6° of tilt against a 0.05° angle claim). The manual's post-calibration
+  accelerometer reading (about 2 mg) is used for turn-on bias. The AK8963 magnetometer implies an MPU-9250-class chip;
+  the WT901B sheet is not in the repo, so noise densities remain estimates. At the 9600 baud default 200 Hz output is
+  impossible: acc+gyro+angle+mag is 44 bytes per sample, ~88 kbit/s, so 115200 baud is needed (76 % loaded, 95 % with the
+  quaternion frame added).
+- BNO085: the raw errors are the BMI085's. The sensor hub's continuous calibration and fusion are not simulated;
+  the turn-on residuals stand in for the post-calibration state. CEVA's 0.5 °/min heading drift implies a residual
+  gyro bias near 0.008 dps; the profile uses 0.05 dps (raw BMI085 offset is ±1 dps). CEVA's figures (2.5° dynamic,
+  1.5° static, 3.1 dps gyro accuracy) are still the vendor excerpts recorded in the presets, not a datasheet in
+  the repo. The 1.5° static figure is consistent with the BMI085's ±20 mg zero-g offset.
+- VN-110E: the provided datasheet gives pitch/roll **0.05° RMS static** only. The **1.0° RMS dynamic** figure the
+  presets use is not in it. Its ±490 dps gyro range saturates on fast rotations, and 240 Hz bandwidth means the
+  chain adds almost no lag. The datasheet says it is individually calibrated for bias, scale, misalignment and
+  temperature, so its systematic terms are small.
+- Temperature: every profile draws a power-up offset within ±5 K of its calibration point and a +5 K
+  self-heating rise (300 s). With the BMI085's 0.015 dps/K that is up to 0.15 dps of warm-up drift on the BNO085;
+  for the other two the coefficients are estimates.
+- The physics step is 480 Hz, so the VN-110E's 800 Hz IMU data is not reproduced; its attitude is modelled at 400 Hz.
+- Mahony gains are stand-ins for three proprietary filters. Fit them to a scripted manoeuvre before
+  reading anything into attitude error.
+
+Status by group: manual/datasheet figures are cited per line; noise densities for the WTGAHRS1, bias
+instabilities (except VN-110E), correlation times, latencies, the BNO085 hub bandwidth, thermal
+warm-up shape, VN-110E g-sensitivity and scale factor, and all filter gains are **estimates**.
+Do not describe results as sensor-accurate until they are replaced from bench data.
 
 ## Validation
 
-Unit tests (`tests/unit/test_imu_model.py`, `test_imu_allan.py`, `test_imu_observation.py`): white-noise sigma,
+Not yet done: **static accuracy validation of the three profiles** (simulated static attitude and Allan curves
+against each datasheet headline, and a scripted-manoeuvre fit of the filter gains). `tests/unit/test_imu_profiles.py`
+checks only that each profile loads, carries its datasheet figures, runs stably and that the temperature term works.
+
+Unit tests (`tests/unit/test_imu_model.py`, `test_imu_profiles.py`, `test_imu_allan.py`, `test_imu_observation.py`): white-noise sigma,
 low-pass gain and −3 dB point, Gauss-Markov σ and correlation time, random-walk growth, per-episode bias and
 per-env reset, saturation/quantization, hold-last-value, latency and delay-line flush, output aliasing, specific
 force at rest / free fall / tilted, filter convergence and sign, gyro-only yaw hold, magnetometer pull, gyro bias →
@@ -130,7 +281,7 @@ a turntable.
 
 ## Not modelled
 
-Lever-arm (centripetal / tangential) acceleration at the mount point, EDF vibration and temperature drift,
+Lever-arm (centripetal / tangential) acceleration at the mount point, EDF vibration, sensitivity versus temperature,
 magnetometer error correlated with motor current, WIT's proprietary filter, serial-protocol packet timing beyond
 one fixed latency. Physics runs at 480 Hz; the sensor cannot report faster than that.
 

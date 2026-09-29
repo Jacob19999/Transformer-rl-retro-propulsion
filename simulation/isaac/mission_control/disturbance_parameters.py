@@ -6,11 +6,25 @@ from pathlib import Path
 import yaml
 
 FOLDER = Path(__file__).resolve().parents[1] / 'configs/disturbances'
+SENSORS = Path(__file__).resolve().parents[1] / 'configs/sensors'
 LIMITS = {
     'gust': {'magnitude': (0, 15), 'duration': (.05, 10)},
     'sensor_noise': {'position_std': (0, .5), 'velocity_std': (0, 2),
                      'attitude_std': (0, .1), 'angular_velocity_std': (0, 1)},
 }
+
+
+def imu_profiles():
+    """Names of the physical IMU chains in configs/sensors/imu_<name>.yaml."""
+    return sorted(path.stem[4:] for path in SENSORS.glob('imu_*.yaml'))
+
+
+def imu_profile_summary(name):
+    """Headline timing figures of one physical IMU chain, for the preset cards."""
+    imu = yaml.safe_load((SENSORS / f'imu_{name}.yaml').read_text(encoding='utf-8'))['imu']
+    return dict(sample_rate_hz=imu['sample_rate_hz'], bandwidth_hz=imu['bandwidth_hz'],
+                latency_ms=imu['latency_s'] * 1000, gyro_range_dps=imu['gyro']['range_dps'],
+                yaw=imu['attitude']['yaw']['mode'])
 
 
 def defaults():
@@ -28,7 +42,7 @@ def validate_settings(value):
     if value is None:
         return {}
     allowed = {'wind': {'steady_vector'}, 'gust': {'magnitude', 'duration', 'interval'},
-               'sensor_noise': set(LIMITS['sensor_noise']), 'com_offset': {'range'}}
+               'sensor_noise': set(LIMITS['sensor_noise']) | {'imu_profile', 'imu_nav'}, 'com_offset': {'range'}}
     if not isinstance(value, dict) or set(value) - set(allowed):
         raise ValueError('Unknown disturbance settings')
 
@@ -62,7 +76,21 @@ def validate_settings(value):
                 item = [vector(row, 3, -.05, .05) for row in item]
                 if any(low > high for low, high in zip(*item)):
                     raise ValueError('COM minimum may not exceed maximum on any axis')
+            elif key == 'imu_profile':
+                # '' keeps the white-noise attitude/rate model; a name selects a physical IMU chain.
+                if item != '' and item not in imu_profiles():
+                    raise ValueError(f'Unknown IMU profile; choose one of {imu_profiles()}')
+            elif key == 'imu_nav':
+                # 'external': position/velocity stay a white-noise reference. 'inertial': the physical
+                # IMU integrates its own accelerometer and attitude (unaided strapdown navigation).
+                # 'fused': EKF3-style filter over the IMU, TFmini Plus rangefinder, MTF-01P flow and baro.
+                # 'fused_marker': the same plus a downward camera on a pad marker during the descent.
+                if item not in ('external', 'inertial', 'fused', 'fused_marker'):
+                    raise ValueError("imu_nav must be 'external', 'inertial', 'fused' or 'fused_marker'")
             else:
                 item = number(item, *LIMITS[section][key])
             result[section][key] = item
+    noise = result.get('sensor_noise', {})
+    if noise.get('imu_nav') in ('inertial', 'fused', 'fused_marker') and not noise.get('imu_profile'):
+        raise ValueError("Inertial and fused navigation need a physical IMU chain (imu_profile)")
     return result

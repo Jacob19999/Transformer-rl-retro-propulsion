@@ -174,6 +174,9 @@ def main():
         world_rates = rotate_vector(initial_quat, frd_velocity_to_isaac(rates))
         env._body_iface.set_root_state(env._body_iface.get_root_position(), initial_quat,
                                       torch.tensor([request['velocity']], device=device), world_rates)
+        # The simulated IMU was power-cycled by reset() before this override; without re-seeding it its
+        # first substep sees the velocity jump as a huge acceleration and the navigation starts wrong.
+        env._reset_imu(torch.arange(config.num_envs, device=device))
         obs = env._get_observations()['policy']
         if convex:
             convex.reset()
@@ -264,6 +267,8 @@ def main():
                              # position sensor reported, sensor noise included.
                              # Equal to the PhysX state when noise is off.
                              imu=imu_record(env.sensor_measurement, vec),
+                             # Rangefinder / flow / baro readings and the fusion filter's health.
+                             fusion=env._fusion.record() if env._fusion is not None else None,
                              fin_angles=host['fin_angles'], fin_rates=host['fin_rates'],
                              fin_commands=host['fin_commands'], fin_command_rates=host['fin_command_rates'],
                              fin_positions=host['fin_positions'], fin_quaternions=host['fin_quaternions'],
@@ -384,7 +389,7 @@ def main():
     finally:
         watchdog.reset(30, label='Mission cleanup')
         if convex is not None:
-            convex.guidance.close()
+            convex.close()
         if env is not None:
             env.close()
         if app is not None:

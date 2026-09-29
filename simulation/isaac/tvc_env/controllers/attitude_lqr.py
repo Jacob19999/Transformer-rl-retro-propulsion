@@ -168,9 +168,18 @@ class GyroAttitudeLQR:
         return gain
 
     def _gain(self, table, fraction):
-        f = min(max(float(fraction), self.fractions[0]), self.fractions[-1])
-        return np.array([np.interp(f, self.fractions, table[:, i, j]) for i in range(table.shape[1])
-                         for j in range(table.shape[2])]).reshape(table.shape[1:])
+        """Gain table linearly interpolated in rotor fraction, clamped at its ends (as np.interp).
+
+        Called several times per control step: one lerp of the whole table
+        replaces an np.interp call per gain entry.
+        """
+        fractions = self.fractions
+        if len(fractions) == 1:
+            return table[0].copy()
+        f = min(max(float(fraction), fractions[0]), fractions[-1])
+        i = min(int(np.searchsorted(fractions, f, side='right')), len(fractions) - 1)
+        w = (f - fractions[i - 1]) / (fractions[i] - fractions[i - 1])
+        return table[i - 1] + w * (table[i] - table[i - 1])
 
     # ---- control ----
 

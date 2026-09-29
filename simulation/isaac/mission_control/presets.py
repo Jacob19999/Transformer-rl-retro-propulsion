@@ -40,7 +40,7 @@ def convex_presets() -> list[dict]:
 
 
 def disturbance_presets() -> list[dict]:
-    from .disturbance_parameters import validate_settings
+    from .disturbance_parameters import imu_profile_summary, imu_profiles, validate_settings
     result = []
     for item in _read('disturbance_presets.json')['presets']:
         if set(item['selected']) - {'wind', 'sensor_noise', 'com_shift'}:
@@ -53,6 +53,9 @@ def disturbance_presets() -> list[dict]:
                 raise ValueError(f"IMU preset {item['id']} must set all four sensor_noise channels only")
             if not {'part', 'source', 'datasheet', 'mapping'} <= set(item.get('hardware', {})):
                 raise ValueError(f"IMU preset {item['id']} needs its datasheet source and mapping")
+            if item['hardware'].get('imu_profile') not in imu_profiles():
+                raise ValueError(f"IMU preset {item['id']} needs an imu_profile from configs/sensors")
+            item = dict(item, physical=imu_profile_summary(item['hardware']['imu_profile']))
         result.append(dict(item, selected=sorted(item['selected']), settings=validate_settings(item['settings'])))
     return result
 

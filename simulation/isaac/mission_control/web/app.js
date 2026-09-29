@@ -14,6 +14,7 @@ import { createChecklist } from './checklist.js';
 import { createRotorAnimation } from './rotor.js';
 import { collectPlans, planAt, createGuidancePanel } from './guidance.js';
 import { hasImu, imuError, eulerDelta, sensorNote } from './imu.js';
+import { createDownCam } from './downcam.js';
 
 const $ = id => document.getElementById(id);
 const deg = 180 / Math.PI;
@@ -23,6 +24,7 @@ const contactNames = ['AIRBORNE', 'CONTACT DWELL', 'LANDED', 'CRASHED'];
 const state = { id: null, frames: [], metadata: null, time: 0, playing: false, live: true, busy: false, recording: false, result: null, requestError:null, milestones: [], mission: null, connected: false, hasImu: false, imuOverlay: false };
 // Per-viewer preference only; the page works the same when storage is blocked.
 try { state.imuOverlay = localStorage.getItem('missionControl.imuOverlay') === '1'; } catch {}
+const downCam = createDownCam($('downCam'));
 let config, previousPosition = new THREE.Vector3(), orbitInitialized = false;
 const fmt = (n, d = 1) => Number.isFinite(n) ? n.toFixed(d) : '—';
 const clock = t => `T+ ${String(Math.floor(t / 60)).padStart(2, '0')}:${(t % 60).toFixed(2).padStart(5, '0')}`;
@@ -427,7 +429,7 @@ function setBar(el,value,limit){
   el.style.left=`${50+Math.min(0,v)*50}%`;el.style.width=`${Math.abs(v)*50}%`;
 }
 function updateTelemetry() {
-  const sample=sampleAt(state.time),f=sample?.a;renderBoard();guidancePanel.update(f,state.time);if(!f)return;
+  const sample=sampleAt(state.time),f=sample?.a;renderBoard();guidancePanel.update(f,state.time);downCam.update(f,state.metadata);if(!f)return;
   const lerp=(a,b)=>THREE.MathUtils.lerp(a,b,sample.alpha);
   text('clock',clock(state.time));text('telemetryTime',clock(f.t));
   text('hudAlt',fmt(f.position[2],2));text('hudVz',fmt(f.velocity[2],2));text('hudVh',fmt(Math.hypot(f.velocity[0],f.velocity[1]),2));text('hudPad',fmt(f.pad_distance,2));

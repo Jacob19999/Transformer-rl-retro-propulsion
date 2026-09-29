@@ -114,7 +114,12 @@ latency, onboard attitude filter) exists for evaluation; see
 | WITMOTION WTGAHRS1 | hobby | X/Y angle accuracy 0.05° (static only); gyro stability 0.05°/s; GPS 2.5 m (not modelled) | 0.05° (0.00087 rad) | 0.05°/s (0.00087 rad/s) |
 | VectorNav VN-110E | tactical | pitch/roll dynamic 1.0° RMS (static 0.05°); gyro noise density 5°/hr/√Hz; bias 0.6°/hr | 1.0° (0.0175 rad) | 0.0054°/s (9.4e-5 rad/s) |
 
-Sources: the WTGAHRS1 datasheet v20-0615, §3.1 (the WITMOTION PDF). CEVA's
+Physical (non-white-noise) profiles for the same three parts now exist in `configs/sensors/` and
+`configs/disturbances/sensor_imu_*.yaml`; the cards and `validate_settings` still use the white-noise mapping
+(see [imu_model.md](imu_model.md)). Note that the VN-110 datasheet in `tools/` gives only 0.05° RMS static
+pitch/roll; the 1.0° dynamic figure below is not in it.
+
+Sources: the WTGAHRS1 datasheet v20-0615, §3.1 (`tools/WITMotion IMU 2.pdf`). CEVA's
 BNO08X datasheet (rev 1.16/1.17). VectorNav's VN-110/VN-110E product brief and
 datasheet. The vendor pages for the last two were not reachable from the
 build environment, so their figures come from excerpts of those datasheets;
@@ -130,8 +135,9 @@ Caveats:
 - A datasheet error is mostly slow bias, while the simulator's noise is
   white. White noise at the spec magnitude shakes the controller harder but
   averages out, where a bias would not. The IMU chain in
-  [imu_model.md](imu_model.md) models the slow part; the mission-control UI
-  does not expose it yet.
+  [imu_model.md](imu_model.md) models the slow part. Each IMU card's
+  **Physical chain** button selects it (sets `sensor_noise.imu_profile`); **Noise σ**
+  keeps the white-noise mapping in the table above.
 
 Offline replica check (same replica as the sample table below, with
 `apply_sensor_noise` on the controller's observation; not Isaac):
@@ -271,7 +277,7 @@ the recorded plan even while another draft is edited.
 | Step | Parameters and completion |
 | --- | --- |
 | Takeoff | First step, above the start. Vertical climb at the selected speed limit, finishing within the capture radius at low speed. |
-| Hover | Approach speed limit, capture radius and continuous hold duration. Leaving the radius or exceeding 0.4 m/s resets the hold. |
+| Hover | Approach speed limit, capture radius and hold duration. Leaving the radius resets the hold; exceeding 0.4 m/s inside it pauses the hold and resets it only after 1 s (`task.navigation.hover_max_speed_m_s`, `hover_hold_grace_s`). |
 | Fly-through | Leg speed limit and arrival speed along the route tangent; swept capture permits passing through without stopping. |
 | Descent | Vertical leg below the previous point, selected descent speed limit, low-speed capture at its endpoint. |
 | Landing | Last step, selected pad, approach speed limit and terminal touchdown speed; physical contact and settling required. |
@@ -413,7 +419,8 @@ velocity; use numeric velocity fields when the zero-length arrow overlaps the
 start marker. **Invert Start** toggles roll between 0° and 180°.
 
 **+ HOVER** creates a timed hold, default **2 seconds**. Hold time accrues only
-continuously within its radius at speed ≤0.4 m/s; leaving resets the timer.
+within its radius at speed ≤0.4 m/s; leaving the radius resets the timer, and a
+faster excursion inside it pauses the timer (resetting it only after 1 s).
 **+ FLY-THROUGH** advances on a forward swept pass within the acceptance
 radius. Edit position, radius, speed and hover duration in the waypoint rows;
 reorder with ↑ or remove with ×. Up to twelve points can be edited. Every route ends at the

@@ -1,0 +1,15 @@
+# Position/velocity white noise (external reference, e.g. motion capture or RTK; the
+# IMU measures neither) plus the BNO085 IMU chain from configs/sensors/imu_bno085.yaml.
+# attitude_std / angular_velocity_std are superseded by the IMU model: attitude and body
+# rates come from the simulated sensor and its onboard filter instead of white noise.
+disturbances:
+  enabled: true
+  sensor_noise:
+    enabled: true
+    position_std: 0.01
+    velocity_std: 0.05
+    attitude_std: 0.0
+    angular_velocity_std: 0.0
+    imu:
+      enabled: true
+      profile: bno085

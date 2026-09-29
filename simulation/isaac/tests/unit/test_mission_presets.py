@@ -105,6 +105,14 @@ def test_imu_hardware_presets_follow_their_documented_datasheet_mapping():
     assert close(noise('imu-wtgahrs1')['angular_velocity_std'], math.radians(sheet('imu-wtgahrs1')['gyro_stability_deg_s']))
 
 
+def test_imu_presets_name_a_physical_profile_with_a_timing_summary():
+    from mission_control.disturbance_parameters import imu_profiles
+    imus = {p['id']: p for p in disturbance_presets() if p.get('group') == 'imu'}
+    assert {p['hardware']['imu_profile'] for p in imus.values()} == {'wtgahrs1', 'bno085', 'vn110e'} <= set(imu_profiles())
+    vn = imus['imu-vn110e']['physical']
+    assert (vn['sample_rate_hz'], vn['bandwidth_hz'], vn['gyro_range_dps'], vn['yaw']) == (400.0, 240.0, 490, 'gyro')
+
+
 def test_imu_presets_reach_the_simulator_noise_model():
     from mission_control.models import disturbance_config
     preset = next(p for p in disturbance_presets() if p['id'] == 'imu-bno085')

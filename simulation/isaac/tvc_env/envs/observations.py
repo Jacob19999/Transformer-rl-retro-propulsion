@@ -98,7 +98,8 @@ def assemble_observation(
     return obs
 
 
-def apply_sensor_noise(obs: Tensor, config: dict, imu=None) -> Tensor:
+def apply_sensor_noise(obs: Tensor, config: dict, imu=None, true_position: Tensor | None = None,
+                       fusion=None) -> Tensor:
     """Apply configured measurement noise without contaminating true physics state.
 
     Position and height share one sampled position error so the observation
@@ -107,7 +108,15 @@ def apply_sensor_noise(obs: Tensor, config: dict, imu=None) -> Tensor:
 
     With ``imu`` (tvc_env.dynamics.imu_model.ImuModel) the attitude and body
     rate are the simulated sensor's held output instead of white noise, and
-    attitude_std / angular_velocity_std are ignored.
+    attitude_std / angular_velocity_std are ignored. If the IMU also runs
+    strapdown navigation (``imu.nav_enabled``) the position, height and body-frame
+    velocity are its integrated solution too, and position_std / velocity_std are
+    ignored; ``true_position`` (world XYZ, the physics state) is then required to
+    turn the target-relative position error into the estimate's.
+
+    With ``fusion`` (tvc_env.dynamics.nav_fusion.NavFusion) everything the flight computer holds is the
+    sensor-fusion filter's estimate instead: attitude, bias-corrected body rate, position, height and
+    velocity. ``true_position`` is required here too.
     """
     sensor_cfg = config.get("disturbances", {}).get("sensor_noise", {})
     if not sensor_cfg.get("enabled", False):
@@ -122,21 +131,39 @@ def apply_sensor_noise(obs: Tensor, config: dict, imu=None) -> Tensor:
     attitude_std = float(sensor_cfg.get("attitude_std", 0.0))
     angular_velocity_std = float(sensor_cfg.get("angular_velocity_std", 0.0))
 
-    if position_std > 0.0:
+    fused = fusion is not None
+    inertial = fused or (imu is not None and imu.nav_enabled)
+    if inertial:
+        if true_position is None:
+            raise ValueError("apply_sensor_noise needs true_position when the IMU runs strapdown navigation")
+        from tvc_env.common.frames import isaac_velocity_to_frd
+        from tvc_env.common.quaternions import inverse, rotate_vector
+        estimate = (fusion.position if fused else imu.nav_position).to(obs.dtype)
+        # obs[0:3] is target - position; swapping the position swaps only that term.
+        noisy[:, 0:3] = obs[:, 0:3] + (true_position.to(obs.dtype) - estimate)
+        noisy[:, 13] = obs[:, 13] + (estimate[:, 2] - true_position[:, 2].to(obs.dtype))
+        # The flight computer resolves its integrated world velocity with its own attitude estimate.
+        q_measured = normalize(fusion.quaternion_wxyz if fused else imu.quaternion_wxyz)
+        velocity = fusion.velocity_world if fused else imu.nav_velocity
+        noisy[:, 7:10] = isaac_velocity_to_frd(rotate_vector(inverse(q_measured), velocity.to(obs.dtype)))
+    elif position_std > 0.0:
         position_noise = torch.randn(n, 3, device=obs.device, dtype=obs.dtype) * position_std
         # obs[0:3] is target - measured_position; height is measured z.
         noisy[:, 0:3] -= position_noise
         noisy[:, 13] += position_noise[:, 2]
-    if imu is not None:
+    if fused:
+        noisy[:, 3:7] = fusion.quaternion_wxyz
+        noisy[:, 10:13] = fusion.gyro_frd
+    elif imu is not None:
         noisy[:, 3:7] = imu.quaternion_wxyz
         noisy[:, 10:13] = imu.gyro_frd
-    if imu is None and attitude_std > 0.0:
+    if imu is None and not fused and attitude_std > 0.0:
         euler_noise = torch.randn(n, 3, device=obs.device, dtype=obs.dtype) * attitude_std
         q_noise = from_euler(euler_noise[:, 0], euler_noise[:, 1], euler_noise[:, 2])
         noisy[:, 3:7] = normalize(multiply(noisy[:, 3:7], q_noise))
-    if velocity_std > 0.0:
+    if velocity_std > 0.0 and not inertial:
         noisy[:, 7:10] += torch.randn(n, 3, device=obs.device, dtype=obs.dtype) * velocity_std
-    if imu is None and angular_velocity_std > 0.0:
+    if imu is None and not fused and angular_velocity_std > 0.0:
         noisy[:, 10:13] += (
             torch.randn(n, 3, device=obs.device, dtype=obs.dtype) * angular_velocity_std
         )

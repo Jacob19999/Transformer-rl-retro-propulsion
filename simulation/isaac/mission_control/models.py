@@ -311,7 +311,8 @@ def disturbance_config(mission):
         selected = [] if selected == 'nominal' else [selected]
     folder = ROOT / 'configs/disturbances'
     result = yaml.safe_load((folder / 'nominal.yaml').read_text())
-    sections = {'wind': ('wind', 'gust', 'body_drag'),
+    # Body drag is the vehicle's own geometry (configs/vehicle), not a disturbance.
+    sections = {'wind': ('wind', 'gust'),
                 'sensor_noise': ('sensor_noise',), 'com_shift': ('com_offset',)}
     for name in sorted(selected):
         source = yaml.safe_load((folder / f'{name}.yaml').read_text())['disturbances']
@@ -325,6 +326,18 @@ def disturbance_config(mission):
     for name in ('wind', 'sensor_noise', 'com_offset'):
         settings.setdefault(name, {})['enabled'] = ('com_shift' if name == 'com_offset' else name) in selected
     settings['gust']['enabled'] = 'wind' in selected
+    # A named IMU profile swaps the white attitude/rate noise for the physical chain in
+    # tvc_env/dynamics/imu_model.py; the request-only key never reaches the environment config.
+    profile = settings['sensor_noise'].pop('imu_profile', '')
+    navigation = settings['sensor_noise'].pop('imu_nav', 'external')
+    if profile and 'sensor_noise' in selected:
+        settings['sensor_noise']['imu'] = {'enabled': True, 'profile': profile}
+        if navigation == 'inertial':
+            settings['sensor_noise']['imu']['nav'] = {'enabled': True}
+        elif navigation in ('fused', 'fused_marker'):
+            settings['sensor_noise']['imu']['fusion'] = {'enabled': True, 'profile': 'tfmini_mtf01p'}
+            if navigation == 'fused_marker':
+                settings['sensor_noise']['imu']['fusion']['marker'] = {'enabled': True}
     return result
 
 
