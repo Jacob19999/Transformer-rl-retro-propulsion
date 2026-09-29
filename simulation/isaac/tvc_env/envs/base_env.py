@@ -213,17 +213,18 @@ class TVCEnvBase:
 
         # Wind model (only if disturbance config enables it)
         dist_cfg = self._config.config.get("disturbances", {})
+        # Body drag always comes from the vehicle geometry (axial and side-on),
+        # so enabling wind changes the air, not the airframe.
+        body_config = vehicle_config.get("body", {})
         if dist_cfg.get("enabled") and dist_cfg.get("wind", {}).get("enabled"):
             wind_model = WindModel.from_disturbance_config(
-                self._config.config, num_envs=num_envs, device=device,
+                self._config.config, num_envs=num_envs, device=device, body=body_config,
             )
         else:
             # Still air is not a vacuum. Vehicle-relative airflow produces
             # translational drag even when external wind disturbances are off.
-            body_config = vehicle_config.get("body", {})
             wind_model = WindModel(
-                cd=body_config.get("cd_body", 1.0),
-                reference_area=body_config.get("reference_area", 0.011),
+                **WindModel.body_drag_from_vehicle(body_config),
                 num_envs=num_envs, device=device,
             )
 

@@ -557,6 +557,14 @@ class TVCDirectRLEnv(TVCEnvBase):
         q = self._body_iface.get_root_quaternion_wxyz()
         pos = self._body_iface.get_root_position()
 
+        # Intake momentum drag, read against the same wind sample as the body drag below.
+        inlet_force_body = torch.zeros_like(edf_force_body)
+        inlet_torque_body = torch.zeros_like(edf_force_body)
+        inlet_cfg = dynamics_cfg.get("inlet_momentum_drag") or {}
+        if inlet_cfg.get("enabled", False):
+            inlet_force_body, inlet_torque_body = self._inlet_momentum_drag(
+                inlet_cfg, raw_thrust, rotor_fraction, jet, q, pos, body_ang_frd)
+
         # Wind drag force in body-FRD frame
         wind_force_body = None
         if self._wind_model is not None and dynamics_cfg.get("enable_wind_force", True):
@@ -573,10 +581,10 @@ class TVCDirectRLEnv(TVCEnvBase):
             # this does not overwrite state or synthesize a control action.
             body_com_world = self._drone.data.body_com_pos_w[:, self._art_map.body_index]
             com_frd = isaac_position_to_frd(rotate_vector(inverse(q), body_com_world-pos))
-            all_force = edf_force_body + fin_dispatch.forces_body.sum(dim=1)
+            all_force = edf_force_body + inlet_force_body + fin_dispatch.forces_body.sum(dim=1)
             if wind_force_body is not None:
                 all_force = all_force + wind_force_body
-            external_torque = (static_torque + dynamic_torque + body_damping_torque
+            external_torque = (static_torque + dynamic_torque + body_damping_torque + inlet_torque_body
                                + fin_torque_body - torch.linalg.cross(com_frd, all_force))
             rotor_scale = (self._edf_model.gyro_torque_scale * float(dynamics_cfg.get('edf_gyro_torque_scale', 1.0))
                            if dynamics_cfg.get('enable_edf_gyro_torque', True) else 0.0)
@@ -602,6 +610,7 @@ class TVCDirectRLEnv(TVCEnvBase):
                 if wind_force_body is not None
                 else torch.zeros_like(edf_force_body).detach()
             ),
+            "inlet_momentum_drag_body_frd_N": inlet_force_body.detach(),
         }
         if jet is not None:
             self._last_dynamics_debug.update(
@@ -615,15 +624,44 @@ class TVCDirectRLEnv(TVCEnvBase):
         if self._battery_model is not None:
             self._battery_energy_step_wh += self._battery_model.power_w * dt / 3600
 
+        # The intake force acts at the inlet: apply it at the body origin with
+        # its moment about the origin (the dispatcher adds origin -> COM).
         self._wrench_dispatch.dispatch(
             fin_dispatch.forces_body,
             cops,
             q,
             pos,
-            edf_force_body,
-            edf_torque_body,
+            edf_force_body + inlet_force_body,
+            edf_torque_body + inlet_torque_body,
             wind_force_body,
         )
+
+    def _inlet_momentum_drag(self, config, raw_thrust, rotor_fraction, jet, q, pos, body_rate_frd):
+        """Intake momentum drag (body FRD) and its moment about the body origin.
+
+        Mass flow is the jet's own (the coupled jet shares shaft power with
+        swirl), else T / u with the exhaust speed scaling with rotor speed.
+        The inlet moves with the COM velocity plus w x (inlet - COM) and the
+        air with the wind, so gusts load the intake as well as the body.
+        """
+        from tvc_env.common.frames import isaac_position_to_frd
+        from tvc_env.common.quaternions import inverse, rotate_vector
+        from tvc_env.dynamics.propulsion_edf import inlet_momentum_drag
+        if jet is not None:
+            mass_flow = jet.mass_flow_per_fin.sum(-1)
+        else:
+            exhaust = self._aero_model.exhaust_speed * rotor_fraction
+            mass_flow = raw_thrust / exhaust.clamp(min=1e-6)
+        inlet = raw_thrust.new_tensor(config.get("inlet_position_frd", [0.0, 0.0, -0.11]))
+        air_velocity_w = self._body_iface.get_root_linear_velocity_world()
+        if self._wind_model is not None:
+            air_velocity_w = air_velocity_w - self._wind_model.get_effective_wind_world()
+        com_world = self._drone.data.body_com_pos_w[:, self._art_map.body_index]
+        com_frd = isaac_position_to_frd(rotate_vector(inverse(q), com_world - pos))
+        inlet_velocity = (self._body_iface.get_linear_velocity_body_frd(air_velocity_w, q)
+                          + torch.linalg.cross(body_rate_frd, inlet[None] - com_frd))
+        force = inlet_momentum_drag(mass_flow, inlet_velocity)
+        return force, torch.linalg.cross(inlet.expand_as(force), force)
 
     def _correct_freeflight_orientation(self):
         """Complete the coupled Lie-midpoint step outside external contacts.

@@ -12,10 +12,6 @@ disturbances:
     duration: 0.0
     interval: [5.0, 15.0]
 
-  body_drag:
-    cd: 1.0
-    reference_area: 0.02
-
   com_offset:
     enabled: false
 

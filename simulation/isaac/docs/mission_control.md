@@ -277,7 +277,7 @@ the recorded plan even while another draft is edited.
 | Step | Parameters and completion |
 | --- | --- |
 | Takeoff | First step, above the start. Vertical climb at the selected speed limit, finishing within the capture radius at low speed. |
-| Hover | Approach speed limit, capture radius and continuous hold duration. Leaving the radius or exceeding 0.4 m/s resets the hold. |
+| Hover | Approach speed limit, capture radius and hold duration. Leaving the radius resets the hold; exceeding 0.4 m/s inside it pauses the hold and resets it only after 1 s (`task.navigation.hover_max_speed_m_s`, `hover_hold_grace_s`). |
 | Fly-through | Leg speed limit and arrival speed along the route tangent; swept capture permits passing through without stopping. |
 | Descent | Vertical leg below the previous point, selected descent speed limit, low-speed capture at its endpoint. |
 | Landing | Last step, selected pad, approach speed limit and terminal touchdown speed; physical contact and settling required. |
@@ -419,7 +419,8 @@ velocity; use numeric velocity fields when the zero-length arrow overlaps the
 start marker. **Invert Start** toggles roll between 0° and 180°.
 
 **+ HOVER** creates a timed hold, default **2 seconds**. Hold time accrues only
-continuously within its radius at speed ≤0.4 m/s; leaving resets the timer.
+within its radius at speed ≤0.4 m/s; leaving the radius resets the timer, and a
+faster excursion inside it pauses the timer (resetting it only after 1 s).
 **+ FLY-THROUGH** advances on a forward swept pass within the acceptance
 radius. Edit position, radius, speed and hover duration in the waypoint rows;
 reorder with ↑ or remove with ×. Up to twelve points can be edited. Every route ends at the

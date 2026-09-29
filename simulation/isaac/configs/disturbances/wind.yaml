@@ -14,9 +14,7 @@ disturbances:
     duration: 0.5                # s
     interval: [5.0, 15.0]        # s, min/max between gusts
 
-  body_drag:
-    cd: 1.0                      # source: estimate
-    reference_area: 0.02         # m², source: estimate
+  # Body drag is the vehicle's axial/side-on geometry (configs/vehicle body).
 
   com_offset:
     enabled: false

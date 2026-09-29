@@ -116,6 +116,20 @@ def _clarabel():
     return clarabel
 
 
+def plan_in_process(guidance: "ConvexGuidance", args: tuple, kwargs: dict):
+    """ConvexGuidance.plan run by a planner process (its own interpreter and GIL)."""
+    try:
+        return guidance.plan(*args, **kwargs)
+    finally:
+        guidance.close()
+
+
+def warm_up_process() -> bool:
+    """Load the solver in a fresh planner process before the first re-plan needs it."""
+    _clarabel()
+    return True
+
+
 def _trapezoid_weights(dts: np.ndarray) -> np.ndarray:
     """Node weights of the trapezoid rule over intervals dts (N intervals, N+1 nodes)."""
     weights = np.zeros(len(dts) + 1)
@@ -353,16 +367,16 @@ class _Cones:
     def assemble(self, n):
         clarabel = _clarabel()
         ri, ci, vals, rhs, cones = [], [], [], [], []
-        row = 0
 
-        def put(terms, b):
-            nonlocal row
-            for col, coef in terms:
-                ri.append(row)
-                ci.append(col)
-                vals.append(coef)
+        # Runs once per SOCP with ~10^4 terms (a route plan solves ~24 SOCPs):
+        # per-row list extends instead of three appends per term.
+        def put(terms, b, sign=1.0):
+            if terms:
+                cols, coefs = zip(*terms)
+                ri.extend([len(rhs)] * len(cols))
+                ci.extend(cols)
+                vals.extend(coefs if sign > 0.0 else [-v for v in coefs])
             rhs.append(b)
-            row += 1
 
         for terms, b in self.blocks['zero']:
             put(terms, b)
@@ -374,13 +388,13 @@ class _Cones:
             cones.append(clarabel.NonnegativeConeT(len(self.blocks['nonneg'])))
         for rows in self.blocks['soc']:
             for terms, constant in rows:  # s = constant + a.x, so A = -a
-                put([(c, -v) for c, v in terms], constant)
+                put(terms, constant, -1.0)
             cones.append(clarabel.SecondOrderConeT(len(rows)))
         for rows, alpha in self.blocks['pow']:
             for terms, constant in rows:
-                put([(c, -v) for c, v in terms], constant)
+                put(terms, constant, -1.0)
             cones.append(clarabel.PowerConeT(alpha))
-        A = sparse.csc_matrix((vals, (ri, ci)), shape=(row, n))
+        A = sparse.csc_matrix((vals, (ri, ci)), shape=(len(rhs), n))
         return A, np.asarray(rhs, dtype=float), cones
 
 
@@ -439,6 +453,12 @@ class ConvexGuidance:
         if self._executor is not None:
             self._executor.shutdown(wait=True)
             self._executor = None
+
+    def __getstate__(self):
+        # A copy for a planner process: thread pools do not cross process boundaries.
+        state = self.__dict__.copy()
+        state['_executor'] = None
+        return state
 
     def _solve_many(self, problems, stats, **options) -> list:
         """_solve for each (r0, v0, thrust, gate, segments), in order; concurrently when workers > 1."""
@@ -987,8 +1007,9 @@ class ConvexGuidance:
                          -float(offset[i])) for i in range(3)]
             cones.soc([([(d, 1.0)], 0.0)] + rows)
             q[d] = self.weights.path * hover_cost * weights[k]
-        # Quadratic terms, 0.5 x'Px (upper triangle).
-        P = sparse.lil_matrix((n_var, n_var))
+        # Quadratic terms, 0.5 x'Px (upper triangle), accumulated as COO
+        # triplets (duplicates sum on conversion; lil item updates cost ~5 us each).
+        p_row, p_col, p_val = [], [], []
         if soft_weight is None and self.weights.smoothness > 0.0:
             # Thrust jerk j_k = (u_k+1 - u_k) / dt_k, priced (|j| / J_ref)^2 dt:
             # J_ref is the planned attitude-slew bound as a horizontal jerk
@@ -998,9 +1019,9 @@ class ConvexGuidance:
                 c = 2.0 * self.weights.smoothness * hover_cost / (dt * j_ref ** 2)
                 for i in range(3):
                     lo, hi = U(k, i), U(k + 1, i)
-                    P[lo, lo] += c
-                    P[hi, hi] += c
-                    P[lo, hi] -= c
+                    p_row += (lo, hi, lo)
+                    p_col += (lo, hi, hi)
+                    p_val += (c, c, -c)
         if soft_weight is None and self.weights.tilt > 0.0:
             # Horizontal thrust acceleration, priced (|u_xy| / a_max)^2 dt at
             # the planned tilt limit a_max = g tan(max_tilt).
@@ -1008,10 +1029,13 @@ class ConvexGuidance:
             for k in range(n_int + 1):
                 c = 2.0 * self.weights.tilt * hover_cost * weights[k] / a_max ** 2
                 for i in range(2):
-                    P[U(k, i), U(k, i)] += c
+                    p_row.append(U(k, i))
+                    p_col.append(U(k, i))
+                    p_val.append(c)
 
         A, b, cone_list = cones.assemble(n_var)
-        P = sparse.triu(P.tocsc(), format='csc')
+        P = sparse.triu(sparse.csc_matrix((np.asarray(p_val, dtype=float), (np.asarray(p_row, dtype=np.int64),
+                        np.asarray(p_col, dtype=np.int64))), shape=(n_var, n_var)), format='csc')
         settings = clarabel.DefaultSettings()
         settings.verbose = False
         settings.max_iter = 200

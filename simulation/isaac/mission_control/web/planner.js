@@ -7,7 +7,7 @@ import {createPlanner3D} from './planner-3d.js';
 
 const stepHelp={takeoff:'Vertical climb from the start. Always the first step.',hover:'Fly to a point, stop, and hold for a set time.',
   flypass:'Pass through a point without stopping.',descent:'Vertical descent below the previous point.',land:'Final step: touch down on a chosen pad.'};
-const completion={hover:'Arrival: stay inside the capture radius below 0.4 m/s for the full hold. The timer resets if either condition breaks.',
+const completion={hover:'Arrival: stay inside the capture radius below 0.4 m/s for the full hold. A speed excursion of up to 1 s (a gust) pauses the timer; leaving the radius or a longer excursion resets it.',
   flypass:'Arrival: pass through the capture radius in the forward direction.',land:'Arrival: contact the selected pad and settle. Position follows the pad.',
   takeoff:'Arrival: reach the target inside the capture radius below 0.4 m/s. X/Y follow the preceding point.',descent:'Arrival: reach the target inside the capture radius below 0.4 m/s. X/Y follow the preceding point.'};
 
@@ -29,7 +29,7 @@ export function createMissionPlanner(root,{readInitial,writeInitial,onChange,ove
       <label class="route-corridor"><span>Default corridor half-width <small>m · steps without their own width</small></span><input id="defaultCorridor" aria-label="Default CORRIDOR" title="Used by steps with a blank corridor" type="number" min=".2" max="25" step="any" required></label>
       <p class="hint">Capture radius decides when a step is complete; corridor width bounds the planned path around the drawn route.</p></aside></div>
     <details class="route-pads"><summary><span class="fold-title">Landing pads</span><span class="fold-note">Ground targets · up to 4 · at least 3 m apart</span></summary><div id="padEditor"></div><button type="button" id="addPad">+ Landing pad</button></details>
-    <details class="route-help"><summary><span class="fold-title">How steps complete & corridor rules</span></summary><div class="hint" id="plannerHint">Takeoff and descent finish inside the capture radius below 0.4 m/s. Hover requires the full hold continuously inside that radius below 0.4 m/s; leaving either condition resets the timer. Fly-through captures while moving forward through the radius. Landing requires physical contact and settling. Soft corridors penalize excess and permit emergency fallback; strict corridors reject infeasible plans. Actual tracking can deviate.</div></details>`;
+    <details class="route-help"><summary><span class="fold-title">How steps complete & corridor rules</span></summary><div class="hint" id="plannerHint">Takeoff and descent finish inside the capture radius below 0.4 m/s. Hover requires the full hold inside that radius below 0.4 m/s; a speed excursion of up to 1 s pauses the timer, leaving the radius or a longer excursion resets it. Fly-through captures while moving forward through the radius. Landing requires physical contact and settling. Soft corridors penalize excess and permit emergency fallback; strict corridors reject infeasible plans. Actual tracking can deviate.</div></details>`;
   const range=root.querySelector('#plannerRange'),list=root.querySelector('#waypointEditor'),planMessage=root.querySelector('#planMessage'),undoButton=root.querySelector('#undoPlan');
   const canvases=[root.querySelector('#planXY'),root.querySelector('#planXZ')];
   const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));

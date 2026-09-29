@@ -1,8 +1,9 @@
 """Explicit spline/waypoint task, without a controller or action overrides.
 
 The policy observes the active goal, path geometry and waypoint semantics.
-Hover requires a continuous timed position/speed hold; fly-through uses a
-swept segment arrival test. Final success still requires real soft contact.
+Hover requires a timed hold inside the capture radius at low speed; a brief
+speed excursion (a gust) pauses the timer, leaving the radius or a sustained
+excursion resets it. Fly-through uses a swept segment arrival test. Final success still requires real soft contact.
 """
 from __future__ import annotations
 
@@ -45,6 +46,7 @@ class WaypointMission:
         self.count = torch.zeros(num_envs, dtype=torch.long, device=device)
         self.index = torch.zeros_like(self.count)
         self.hold_elapsed = torch.zeros(num_envs, device=device)
+        self.hold_breach = torch.zeros(num_envs, device=device)   # continuous time over the hover speed gate
         self.start = torch.zeros(num_envs,3, device=device)
         self.curves = torch.zeros(num_envs,49,3, device=device)
         self.path_error = torch.zeros_like(self.start)
@@ -68,6 +70,7 @@ class WaypointMission:
         self.start[env_ids] = position[env_ids]
         self.index[env_ids] = 0
         self.hold_elapsed[env_ids] = 0
+        self.hold_breach[env_ids] = 0
         self.step_completed[env_ids] = self.step_path_cost[env_ids] = self.step_progress[env_ids] = 0
         self.positions[env_ids] = self.landing_target[env_ids,None,:]
         self.kinds[env_ids] = LAND
@@ -164,10 +167,24 @@ class WaypointMission:
         goal = self.positions[self.ids,self.index]
         kind = self.kinds[self.ids,self.index]
         radius = self.radii[self.ids,self.index]
-        # Reset the dwell timer whenever the position/speed condition breaks.
-        stable = ((after-goal).norm(dim=-1)<=radius) & (velocity.norm(dim=-1)<=.4)
-        self.hold_elapsed = torch.where(active & (kind==HOVER) & stable, self.hold_elapsed+dt,
-                                       torch.where(active,torch.zeros_like(self.hold_elapsed),self.hold_elapsed))
+        nav = self.config.get('task', {}).get('navigation', {})
+        max_speed = float(nav.get('hover_max_speed_m_s', .4))
+        grace = float(nav.get('hover_hold_grace_s', 1.))
+        inside = (after-goal).norm(dim=-1)<=radius
+        slow = velocity.norm(dim=-1)<=max_speed
+        stable = inside & slow
+        # Hover dwell: counts while inside the radius and slow. A speed
+        # excursion inside the radius pauses it and only resets it after
+        # `grace` s: with realistic intake drag every 3 m/s gust pushed the
+        # vehicle to ~0.5 m/s for a moment and restarted a 20 s hold, so the
+        # gust-hover mission never finished (physics review 2026-09-29).
+        # Leaving the radius still resets at once.
+        self.hold_breach = torch.where(active & inside & ~slow, self.hold_breach+dt, torch.zeros_like(self.hold_breach))
+        keep = inside & (self.hold_breach<=grace)
+        counted = torch.where(stable, self.hold_elapsed+dt,
+                              torch.where(keep, self.hold_elapsed, torch.zeros_like(self.hold_elapsed)))
+        self.hold_elapsed = torch.where(active & (kind==HOVER), counted,
+                                        torch.where(active, torch.zeros_like(self.hold_elapsed), self.hold_elapsed))
         hover_complete = (kind==HOVER) & (self.hold_elapsed>=self.holds[self.ids,self.index])
         stop_complete = ((kind==TAKEOFF) | (kind==DESCENT)) & stable
         swept_arrival = segment_distance(goal,before,after)<=radius
@@ -195,6 +212,7 @@ class WaypointMission:
         self.step_path_cost = .5*(cross_error/(1+cross_error)+velocity_error/(1+velocity_error))*dt*active*~self.ready_to_land
         self.index = self.index + complete.long()
         self.hold_elapsed[complete] = 0
+        self.hold_breach[complete] = 0
         ids = complete.nonzero(as_tuple=False).squeeze(-1)
         if len(ids):
             self._refresh_curves(ids)

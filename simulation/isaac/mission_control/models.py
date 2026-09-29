@@ -311,7 +311,8 @@ def disturbance_config(mission):
         selected = [] if selected == 'nominal' else [selected]
     folder = ROOT / 'configs/disturbances'
     result = yaml.safe_load((folder / 'nominal.yaml').read_text())
-    sections = {'wind': ('wind', 'gust', 'body_drag'),
+    # Body drag is the vehicle's own geometry (configs/vehicle), not a disturbance.
+    sections = {'wind': ('wind', 'gust'),
                 'sensor_noise': ('sensor_noise',), 'com_shift': ('com_offset',)}
     for name in sorted(selected):
         source = yaml.safe_load((folder / f'{name}.yaml').read_text())['disturbances']
