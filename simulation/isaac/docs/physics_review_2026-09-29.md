@@ -132,7 +132,7 @@ sensor noise, 4 m/s steady wind at 45 deg plus 3 m/s, 0.8 s gusts every 5-12 s):
 | Mission | Before (recorded) | Corrected plant |
 | --- | --- | --- |
 | Landing challenge - high-energy capture (`a93eb786cb50`) | LANDED 41.3 s, 0.129 m/s, 0.036 m from pad, 23.5 Wh | LANDED 44.5 s, 0.142 m/s, 0.204 m from pad, 25.1 Wh |
-| Hover 10 m - station keeping in gusts (`614281ca9910`) | LANDED 43.8 s | **TIMEOUT** at 120 s |
+| Hover 10 m - station keeping in gusts (`614281ca9910`) | LANDED 43.8 s, 0.154 m/s, 0.005 m | TIMEOUT at 120 s; with the relaxed hold rule below LANDED 44.6 s, 0.128 m/s, 0.116 m, 24.7 Wh |
 
 The hover mission shows what the old plant hid. During the 20 s hold the
 recorded vehicle stayed within 0.045 m and 0.064 m/s of the waypoint, with
@@ -143,15 +143,20 @@ corrected plant it leans 5.5 deg into the wind, holds within 0.40 m (p95
 0.4 m/s, which happened on 2.5% of hover frames, about once per gust, so the
 20 s hold never completed. The attitude and position loops stay stable; what
 fails is the task's stillness criterion against realistic gust loading.
-Either the tracking loop's gust rejection (a disturbance observer, or wind
-feedforward from the estimated air-relative velocity) or the hold criterion
-has to change. That is a controller/task decision and is left open here.
-`dynamics.inlet_momentum_drag.enabled: false` restores the previous plant for
-comparison.
+**Hold rule relaxed** (user decision): inside the capture radius, a speed
+excursion over `task.navigation.hover_max_speed_m_s` (0.4 m/s) now pauses
+the hover timer and resets it only if it lasts longer than
+`hover_hold_grace_s` (1.0 s, longer than a 0.8 s gust); leaving the radius
+still resets it at once, and takeoff/descent arrival is unchanged. Re-flown,
+the mission's 20 s hold paused on 19 frames, never reset, and the vehicle
+landed. Gust rejection in the tracking loop (a disturbance observer, or wind
+feedforward from the estimated air-relative velocity) remains the way to
+tighten station keeping itself. `dynamics.inlet_momentum_drag.enabled: false`
+restores the previous plant for comparison.
 
 ## Validation
 
-* Unit tests (Python 3.12): 369 passed, 7 skipped (Clarabel/pxr).
+* Unit tests (Python 3.12): 371 passed, 7 skipped (Clarabel/pxr).
 * Convex, flight-planning, mission-service and disturbance tests (`env_isaaclab`): 120 passed.
 * Mission-control JavaScript tests: 46 passed.
 * Planner and LQR speedups: plans and the offline closed-loop landing are

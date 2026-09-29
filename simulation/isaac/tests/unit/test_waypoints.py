@@ -19,17 +19,51 @@ def mission(kind='hover', hold=2.):
     return nav,start
 
 
-def test_hover_requires_continuous_slow_hold_then_switches_to_landing():
+def test_hover_requires_a_slow_hold_then_switches_to_landing():
     nav,start=mission()
     goal=torch.tensor([[1.,0,5]]*2); active=torch.tensor([True,True]); zero=torch.zeros(2,3)
     nav.advance(start,goal,zero,1.,active)
     assert not nav.ready_to_land.any()
     nav.advance(goal,goal,torch.tensor([[1.,0,0],[0,0,0]]),.5,active)
-    assert nav.hold_elapsed.tolist()==[0.,1.5]
+    assert nav.hold_elapsed.tolist()==[1.,1.5]           # a brief excursion pauses the dwell
     nav.advance(goal,goal,zero,.5,active)
     assert nav.ready_to_land.tolist()==[False,True]
     assert nav.step_completed.tolist()==[0.,1.]
     assert nav.observation(torch.tensor([[1.,0,0,0]]*2)).shape==(2,15)
+
+
+def test_gust_pauses_the_hover_dwell_but_a_sustained_excursion_or_leaving_the_radius_resets_it():
+    nav,start=mission(hold=20.)
+    goal=torch.tensor([[1.,0,5]]*2); active=torch.tensor([True,True]); zero=torch.zeros(2,3)
+    fast=torch.tensor([[.5,0,0]]*2)
+    for _ in range(50):                                   # 5 s of stable hold
+        nav.advance(goal,goal,zero,.1,active)
+    assert nav.hold_elapsed.tolist()==pytest.approx([5.,5.])
+    for _ in range(8):                                    # a 0.8 s gust at 0.5 m/s, inside the radius
+        nav.advance(goal,goal,fast,.1,active)
+    assert nav.hold_elapsed.tolist()==pytest.approx([5.,5.])
+    nav.advance(goal,goal,zero,.1,active)
+    assert nav.hold_elapsed.tolist()==pytest.approx([5.1,5.1])
+    for _ in range(11):                                   # 1.1 s over the gate: longer than the 1 s grace
+        nav.advance(goal,goal,fast,.1,active)
+    assert nav.hold_elapsed.tolist()==[0.,0.]
+    nav.advance(goal,goal,zero,1.,active)
+    outside=torch.tensor([[2.,0,5],[1.,0,5]])             # env 0 leaves the 0.5 m radius, however slowly
+    nav.advance(goal,outside,zero,.1,active)
+    assert nav.hold_elapsed.tolist()==pytest.approx([0.,1.1])
+
+
+def test_hover_speed_gate_and_grace_are_task_settings():
+    cfg={'task':{'navigation':{'enabled':True,'hover_max_speed_m_s':.6,'hover_hold_grace_s':0.,
+                               'waypoints':[dict(position=[1,0,5],type='hover',hold_s=5.,radius_m=.5)]}}}
+    nav=WaypointMission(1,'cpu',cfg,torch.zeros(1,3),torch.zeros(1,3))
+    goal=torch.tensor([[1.,0,5]]); active=torch.tensor([True])
+    nav.reset(torch.arange(1),goal)
+    nav.advance(goal,goal,torch.zeros(1,3),1.,active)
+    nav.advance(goal,goal,torch.tensor([[.5,0,0]]),.1,active)
+    assert nav.hold_elapsed.tolist()==pytest.approx([1.1])  # 0.5 m/s is under a 0.6 m/s gate
+    nav.advance(goal,goal,torch.tensor([[.7,0,0]]),.1,active)
+    assert nav.hold_elapsed.tolist()==[0.]                 # no grace: the old continuous rule
 
 
 def test_curriculum_can_isolate_waypoint_kind_and_hover_braking_reference():

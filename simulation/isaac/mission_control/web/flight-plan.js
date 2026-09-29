@@ -88,6 +88,6 @@ export function convexCaptureStatus(frame){
   if(!frame?.guidance||mission?.ready_to_land||!['hover','takeoff','descent'].includes(wp?.type))return '';
   if(!frame.position?.every(Number.isFinite)||!frame.velocity?.every(Number.isFinite))return '';
   const distance=Math.hypot(...frame.position.map((v,i)=>v-wp.position[i])),speed=Math.hypot(...frame.velocity);
-  const reason=distance>wp.radius_m?'Outside capture radius':speed>.4?'Slowing for capture':wp.type==='hover'?'Hold counting':'Capture conditions met';
+  const reason=distance>wp.radius_m?'Outside capture radius':speed>.4?(wp.type==='hover'&&mission.hold_elapsed_s>0?'Hold paused (speed)':'Slowing for capture'):wp.type==='hover'?'Hold counting':'Capture conditions met';
   return `${reason} · distance ${distance.toFixed(2)} / ${wp.radius_m.toFixed(2)} m · speed ${speed.toFixed(2)} / 0.40 m/s`;
 }
