@@ -3,7 +3,7 @@ import {escapeHtml} from './flight-plan.js';
 const noiseFields=[['position_std','Position','m',.5,.001],['velocity_std','Velocity','m/s',2,.01],['attitude_std','Attitude','rad',.1,.001],['angular_velocity_std','Body rate','rad/s',1,.01]];
 const sources=[['wind','Wind + gusts','Airflow in world XYZ'],['sensor_noise','Sensor noise','Measurement uncertainty'],['com_shift','Center of mass','Body-frame offset']];
 const sourceNames={wind:'Wind + gusts',sensor_noise:'Sensor noise',com_shift:'COM offset'};
-const presetIcons={calm:'◯',breeze:'≈',moderate:'≋','gusty-crosswind':'⇶','noisy-sensors':'∿','com-offset':'⊕',stress:'⚠'};
+const presetIcons={calm:'◯',breeze:'≈',moderate:'≋','gusty-crosswind':'⇶','com-offset':'⊕',stress:'⚠'};
 // Descriptive bands for steady wind speed (m/s), roughly the Beaufort scale.
 const windBand=speed=>speed<.5?'calm':speed<3.4?'light':speed<8?'moderate':speed<10.8?'fresh':'strong';
 
@@ -12,7 +12,7 @@ export function createDisturbanceEditor(root,{onChange,api}){
   const controls=(path,label,unit,min,max,step,factor=1)=>`<label class="disturbance-control"><span>${label}<small>${unit}</small></span><div><input type="range" data-path="${path}" data-factor="${factor}" min="${min}" max="${max}" step="${step}" aria-label="${label} slider"><input type="number" data-path="${path}" data-factor="${factor}" min="${min}" max="${max}" step="any" required aria-label="${label}"></div></label>`;
   const title=(key,name,detail)=>`<div class="disturbance-card-heading"><label class="switch"><input type="checkbox" name="disturbance" value="${key}"><span class="switch-track" aria-hidden="true"></span><span class="switch-label">Apply ${name.toLowerCase()} to this flight</span></label><span>${detail}</span></div><p class="source-off-note">Off · these values are kept but not flown. Switch on to apply them.</p>`;
   root.innerHTML=`<summary class="config-summary section-head"><span class="section-index">03</span><div class="section-title"><h2>Environment</h2><p>Wind and gusts, sensor noise and centre-of-mass offset for this flight.</p></div><span id="disturbanceSummary" class="summary-chips"></span><span class="fold-chevron" aria-hidden="true"></span></summary><div class="config-body">
-    <div class="block-head"><div><h3>Conditions</h3><p>Start from a preset, then fine-tune each source. Presets set the sources and their values together.</p></div><button type="button" class="reset-disturbances">Reset parameters</button></div>
+    <div class="block-head"><div><h3>Conditions</h3><p>Pick a wind preset, then fine-tune. Wind presets leave the centre of mass and the IMU alone.</p></div><button type="button" class="reset-disturbances">Reset parameters</button></div>
     <div class="env-presets" role="group" aria-label="Environment presets"></div>
     <div class="environment-tabs" role="tablist" aria-label="Disturbance source"></div><div class="disturbance-cards">
       <section class="disturbance-card" data-source="wind">${title('wind','Wind + gusts','WORLD XYZ · Z UP')}<div class="wind-design"><svg class="wind-compass" viewBox="0 0 240 240" role="img" aria-label="Wind vector editor; drag to set horizontal speed and direction"><circle cx="120" cy="120" r="88"/><circle cx="120" cy="120" r="44" class="compass-inner"/><path d="M25 120 H215 M120 25 V215"/><text x="195" y="112">+X</text><text x="129" y="32">+Y</text><text x="28" y="112">−X</text><text x="129" y="212">−Y</text><text x="168" y="164" class="compass-scale">7.5</text><text x="198" y="194" class="compass-scale">15 m/s</text><path class="wind-arrow"/><circle class="wind-tip" r="7"/><circle cx="120" cy="120" r="3" class="wind-origin"/></svg><div><div class="wind-readout"></div><div class="wind-band"></div><p>Drag the arrow tip, or use the sliders.<br>Direction is where the air travels, measured from +X toward +Y.</p><span class="wind-vector"></span></div></div>
@@ -49,18 +49,24 @@ export function createDisturbanceEditor(root,{onChange,api}){
     if(settings.gust.interval[0]>settings.gust.interval[1])input('gust.interval.0').setCustomValidity('Minimum wait must be at most the maximum wait.');
     for(let i=0;i<3;i++)if(settings.com_offset.range[0][i]>settings.com_offset.range[1][i])input(`com_offset.range.0.${i}`).setCustomValidity('Minimum offset must be at most the maximum offset.');
   }
-  // A preset matches when it selects the same sources with the same values.
+  // Wind presets own the airflow and nothing else: the centre of mass and the sensor model (IMU) are
+  // separate choices, so neither applying nor matching a wind preset looks at them.
+  const windSections=['wind','gust'];
   const near=(a,b)=>Array.isArray(a)?Array.isArray(b)&&a.length===b.length&&a.every((v,i)=>near(v,b[i])):typeof a==='number'?Math.abs(a-b)<1e-6:a===b;
   function matches(preset){
-    const selected=chosen();
-    if(!near(preset.selected,selected))return false;
-    if(!ready)return true;
-    const expected=structuredClone(base);for(const [section,entries] of Object.entries(preset.settings))Object.assign(expected[section],entries);
-    const sections={wind:['wind','gust'],sensor_noise:['sensor_noise'],com_shift:['com_offset']};
-    return selected.flatMap(s=>sections[s]).every(section=>Object.keys(expected[section]).every(key=>near(expected[section][key],settings[section][key])));
+    if(preset.selected.includes('wind')!==chosen().includes('wind'))return false;
+    if(!ready||!preset.selected.includes('wind'))return true;
+    const expected=structuredClone(base);for(const [section,entries] of Object.entries(preset.settings))if(windSections.includes(section))Object.assign(expected[section],entries);
+    return windSections.every(section=>Object.keys(expected[section]).every(key=>near(expected[section][key],settings[section][key])));
+  }
+  // Applies a wind preset to wind and gusts only; centre of mass, sensor noise and the IMU stay as chosen.
+  function applyWind(preset){
+    root.querySelector('input[name=disturbance][value=wind]').checked=preset.selected.includes('wind');
+    if(ready){for(const section of windSections)settings[section]=structuredClone(base[section]);for(const [section,entries] of Object.entries(preset.settings??{}))if(windSections.includes(section))Object.assign(settings[section],structuredClone(entries));sync();}
+    draw();
   }
   const chip=(v,k,cls='')=>`<span class="chip ${cls}"><b>${escapeHtml(v)}</b>${escapeHtml(k)}</span>`;
-  const environmentPresets=()=>presets.filter(p=>!p.group);
+  const windPresets=()=>presets.filter(p=>p.group==='wind');
   const imuPresets=()=>presets.filter(p=>p.group==='imu');
   // The sensor model matches a hardware preset when every noise channel does.
   const imuMatch=()=>ready&&chosen().includes('sensor_noise')?imuPresets().find(p=>Object.entries(p.settings.sensor_noise).every(([k,v])=>near(v,settings.sensor_noise[k]))):null;
@@ -71,7 +77,7 @@ export function createDisturbanceEditor(root,{onChange,api}){
   const navSource=()=>physicalProfile()?settings.sensor_noise.imu_nav||'external':'';
   const inertialNav=()=>['inertial','fused','fused_marker'].includes(navSource());
   function describe(){
-    const selected=chosen(),preset=environmentPresets().find(matches),imu=imuMatch(),physical=!!physicalProfile(),source=navSource();
+    const selected=chosen(),preset=windPresets().find(matches),imu=imuMatch(),physical=!!physicalProfile(),source=navSource();
     if(!selected.length)return {text:'Calm air',chips:[chip('Calm','air')],preset};
     const parts=[];
     if(selected.includes('wind')){const w=ready?wind():null;parts.push(w?chip(`${w.speed.toFixed(1)} m/s`,`wind → ${w.heading.toFixed(0)}°`):chip('Wind','on'));if(ready&&settings.gust.magnitude>0)parts.push(chip(`${settings.gust.magnitude} m/s`,'gusts'));}
@@ -81,8 +87,8 @@ export function createDisturbanceEditor(root,{onChange,api}){
   }
   function drawPresets(){
     const current=describe().preset;
-    root.querySelector('.env-presets').innerHTML=environmentPresets().map(p=>`<button type="button" data-env-preset="${escapeHtml(p.id)}" aria-pressed="${current?.id===p.id}" title="${escapeHtml(p.summary)}"><i aria-hidden="true">${presetIcons[p.id]??'•'}</i><b>${escapeHtml(p.name)}</b><small>${escapeHtml(p.summary)}</small></button>`).join('');
-    root.querySelectorAll('[data-env-preset]').forEach(el=>el.onclick=()=>{const p=presets.find(x=>x.id===el.dataset.envPreset);if(!p)return;set(p.selected,p.settings);if(p.selected.length)selectSource(p.selected.includes('wind')?'wind':p.selected[0]);onChange?.();});
+    root.querySelector('.env-presets').innerHTML=windPresets().map(p=>`<button type="button" data-env-preset="${escapeHtml(p.id)}" aria-pressed="${current?.id===p.id}" title="${escapeHtml(p.summary)}"><i aria-hidden="true">${presetIcons[p.id]??'•'}</i><b>${escapeHtml(p.name)}</b><small>${escapeHtml(p.summary)}</small></button>`).join('');
+    root.querySelectorAll('[data-env-preset]').forEach(el=>el.onclick=()=>{const p=presets.find(x=>x.id===el.dataset.envPreset);if(!p)return;applyWind(p);if(p.selected.length)selectSource('wind');onChange?.();});
     const imu=imuMatch(),physical=!!physicalProfile(),deg=v=>v*180/Math.PI,fmt=v=>v>=.1?v.toFixed(2):v>=.01?v.toFixed(3):v.toPrecision(2);
     const chain=c=>c?`${c.sample_rate_hz} Hz output · ${c.bandwidth_hz} Hz bandwidth · ${Number(c.latency_ms.toFixed(1))} ms latency · ±${c.gyro_range_dps} °/s · ${c.yaw==='gyro'?'gyro yaw':'magnetometer yaw'}`:'';
     root.querySelector('.imu-cards').innerHTML=imuPresets().map(p=>{const n=p.settings.sensor_noise,h=p.hardware,on=imu===p;

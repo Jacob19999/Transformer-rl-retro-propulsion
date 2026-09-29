@@ -44,8 +44,9 @@ so a folded section still tells you what it is set to.
   always visible: the full 38-parameter editor, one diagram per group. Saving
   and loading your own profiles sits under the profile cards.
   Section 02 applies to convex guidance, the only controller the service flies.
-- **Environment.** Presets: Calm, Light breeze, Moderate wind, Gusty
-  crosswind, Noisy sensors, COM offset 1 cm, Combined stress. Each source tab
+- **Environment.** Wind presets: No wind, Light breeze, Moderate wind, Gusty
+  crosswind. A wind preset sets only wind and gusts; the centre of mass (no
+  presets, set on its tab) and the IMU hardware choice are independent of it. Each source tab
   shows ON/OFF and has an *Apply … to this flight* switch. When a source is
   off, its values stay editable but are dimmed and marked as not flown. Gusts
   are drawn on an illustrative 60 s timeline.

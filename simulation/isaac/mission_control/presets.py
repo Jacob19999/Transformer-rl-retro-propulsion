@@ -45,6 +45,12 @@ def disturbance_presets() -> list[dict]:
     for item in _read('disturbance_presets.json')['presets']:
         if set(item['selected']) - {'wind', 'sensor_noise', 'com_shift'}:
             raise ValueError(f"Disturbance preset {item['id']}: unknown source")
+        if item.get('group') not in ('wind', 'imu'):
+            raise ValueError(f"Disturbance preset {item['id']}: group must be 'wind' or 'imu'")
+        if item['group'] == 'wind':
+            # A wind preset replaces the airflow and nothing else.
+            if set(item['selected']) - {'wind'} or set(item['settings']) - {'wind', 'gust'}:
+                raise ValueError(f"Wind preset {item['id']} may only set wind and gust")
         if item.get('group') == 'imu':
             # A hardware preset replaces the whole sensor model and nothing else.
             noise = item['settings'].get('sensor_noise', {})

@@ -1,18 +1,20 @@
 {
   "format": "edf-disturbance-presets",
   "version": 1,
-  "note": "Starting points for the Environment section. Each preset selects sources and bounded overrides validated by disturbance_parameters.validate_settings; sources a preset does not list keep the repository defaults. Wind vectors are world XYZ (Z up), noise is one standard deviation in observation units, COM bounds are metres in body FRD. Presets with group 'imu' model a specific IMU/AHRS: they set only the sensor_noise section, and the editor applies them without touching wind or COM. The simulator adds independent Gaussian noise per 30 Hz control step (tvc_env/envs/observations.apply_sensor_noise), with no bias or correlation model, so each datasheet figure is mapped to one white-noise sigma: attitude_std = the published pitch/roll error (dynamic when published, else static), angular_velocity_std = gyro noise density x sqrt(15 Hz) (the control loop's Nyquist band) when a noise density is published, else the published gyro accuracy/stability figure. None of these parts measures position or velocity to landing precision, so position_std and velocity_std stay at the repository defaults (0.01 m, 0.05 m/s), i.e. an external source such as motion capture or RTK.",
+  "note": "Starting points for the Environment section. Every preset belongs to one independent group and touches only that group's source: 'wind' (wind and gusts) or 'imu' (sensor model). The centre of mass has no presets; it is set on its own tab. Each preset selects sources and bounded overrides validated by disturbance_parameters.validate_settings; sources a preset does not list keep the repository defaults. Wind vectors are world XYZ (Z up), noise is one standard deviation in observation units, COM bounds are metres in body FRD. Presets with group 'imu' model a specific IMU/AHRS: they set only the sensor_noise section, and the editor applies them without touching wind or COM. The simulator adds independent Gaussian noise per 30 Hz control step (tvc_env/envs/observations.apply_sensor_noise), with no bias or correlation model, so each datasheet figure is mapped to one white-noise sigma: attitude_std = the published pitch/roll error (dynamic when published, else static), angular_velocity_std = gyro noise density x sqrt(15 Hz) (the control loop's Nyquist band) when a noise density is published, else the published gyro accuracy/stability figure. None of these parts measures position or velocity to landing precision, so position_std and velocity_std stay at the repository defaults (0.01 m, 0.05 m/s), i.e. an external source such as motion capture or RTK.",
   "presets": [
     {
       "id": "calm",
-      "name": "Calm",
-      "summary": "No wind, ideal sensors, nominal mass properties.",
+      "name": "No wind",
+      "group": "wind",
+      "summary": "No steady wind and no gusts.",
       "selected": [],
       "settings": {}
     },
     {
       "id": "breeze",
       "name": "Light breeze",
+      "group": "wind",
       "summary": "2 m/s steady wind with occasional 1.5 m/s gusts.",
       "selected": [
         "wind"
@@ -38,6 +40,7 @@
     {
       "id": "moderate",
       "name": "Moderate wind",
+      "group": "wind",
       "summary": "4 m/s diagonal wind, 3 m/s gusts every 5-12 s.",
       "selected": [
         "wind"
@@ -63,6 +66,7 @@
     {
       "id": "gusty-crosswind",
       "name": "Gusty crosswind",
+      "group": "wind",
       "summary": "6 m/s crosswind along -Y with frequent 5 m/s gusts.",
       "selected": [
         "wind"
@@ -81,93 +85,6 @@
           "interval": [
             3.0,
             8.0
-          ]
-        }
-      }
-    },
-    {
-      "id": "noisy-sensors",
-      "name": "Noisy sensors",
-      "summary": "Twice the repository observation noise on every channel.",
-      "selected": [
-        "sensor_noise"
-      ],
-      "settings": {
-        "sensor_noise": {
-          "position_std": 0.02,
-          "velocity_std": 0.1,
-          "attitude_std": 0.01,
-          "angular_velocity_std": 0.04
-        }
-      }
-    },
-    {
-      "id": "com-offset",
-      "name": "COM offset 1 cm",
-      "summary": "Centre of mass sampled within +/-10 mm on each body axis.",
-      "selected": [
-        "com_shift"
-      ],
-      "settings": {
-        "com_offset": {
-          "range": [
-            [
-              -0.01,
-              -0.01,
-              -0.01
-            ],
-            [
-              0.01,
-              0.01,
-              0.01
-            ]
-          ]
-        }
-      }
-    },
-    {
-      "id": "stress",
-      "name": "Combined stress",
-      "summary": "4 m/s wind with 4 m/s gusts, 2x sensor noise and a 1 cm COM box.",
-      "selected": [
-        "com_shift",
-        "sensor_noise",
-        "wind"
-      ],
-      "settings": {
-        "wind": {
-          "steady_vector": [
-            3.46,
-            2.0,
-            0.0
-          ]
-        },
-        "gust": {
-          "magnitude": 4.0,
-          "duration": 0.8,
-          "interval": [
-            4.0,
-            10.0
-          ]
-        },
-        "sensor_noise": {
-          "position_std": 0.02,
-          "velocity_std": 0.1,
-          "attitude_std": 0.01,
-          "angular_velocity_std": 0.04
-        },
-        "com_offset": {
-          "range": [
-            [
-              -0.01,
-              -0.01,
-              -0.01
-            ],
-            [
-              0.01,
-              0.01,
-              0.01
-            ]
           ]
         }
       }
