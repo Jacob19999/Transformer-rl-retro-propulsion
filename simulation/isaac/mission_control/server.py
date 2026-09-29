@@ -30,8 +30,8 @@ CONVEX_NOTE = ('Deterministic classical controller, no checkpoint. A second-orde
 RUNS = ROOT / 'runs/mission_control'
 RUNS.mkdir(parents=True, exist_ok=True)
 app = FastAPI(title='EDF Mission Control', docs_url=None, redoc_url=None)
-# Hosts the service answers to. --lan adds this machine's LAN names at startup
-# (the middleware reads the list when the app builds its stack, on first request).
+# Hosts the service answers to. LAN bind (default) adds this machine's names at
+# startup; the middleware reads the list when the app builds its stack on first request.
 ALLOWED_HOSTS = ['127.0.0.1', 'localhost', 'testserver']
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
 lock = threading.Lock()
@@ -571,16 +571,22 @@ if __name__ == '__main__':
     import uvicorn
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=8830)
+    parser.add_argument('--local', action='store_true',
+                        help='Restrict to this machine (127.0.0.1). Default listens on every interface '
+                             'so LAN devices can open the console; there is no login.')
     parser.add_argument('--lan', action='store_true',
-                        help='Listen on every interface so devices on the local network can open the console. '
-                             'There is no login: anyone on the network can launch and stop Isaac missions.')
+                        help=argparse.SUPPRESS)  # kept for old start.ps1 callers; LAN is already default
     args = parser.parse_args()
-    host = '127.0.0.1'
-    if args.lan:
+    host = '127.0.0.1' if args.local else '0.0.0.0'
+    if not args.local:
         import socket
-        host = '0.0.0.0'
         names = {socket.gethostname(), socket.getfqdn()}
         addresses = {info[4][0] for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)}
         ALLOWED_HOSTS.extend(sorted(names | addresses))
         print('Mission control on the LAN: ' + ', '.join(f'http://{a}:{args.port}' for a in sorted(addresses)))
+    if not convex_available():
+        # Controller dropdown omits convex when Clarabel is missing; Isaac missions
+        # also need this env. start.ps1 / env_isaaclab Python is the supported launcher.
+        print(f'WARNING: clarabel not found in {sys.executable}; convex controller hidden. '
+              'Use env_isaaclab/Scripts/python.exe (or start.ps1).', flush=True)
     uvicorn.run(app, host=host, port=args.port)
