@@ -27,7 +27,12 @@ vehicle:
     length: 0.35                      # m, source: measured
     diameter: 0.12                    # m, source: measured
     cd_body: 1.0                      # source: estimate (bluff body)
-    reference_area: 0.011             # m² (π * (0.06)²), source: derived
+    reference_area: 0.011             # m² (π * (0.06)²), end-on (axial) area, source: derived
+    # Side-on area for crossflow drag (length x diameter), source: derived.
+    # Wind and still air both use these; a disturbance file no longer swaps
+    # in an isotropic 0.02 m² (physics review 2026-09-29).
+    lateral_reference_area: 0.042     # m² (0.35 * 0.12), source: derived
+    cd_lateral: 1.0                   # crossflow cylinder, source: estimate
     # Linearized rotational aero/structural damping. This was previously a
     # hidden 0.27 default in direct_rl_env.py; keep the tuned nominal explicit.
     angular_damping: 0.27             # N·m·s/rad, source: simulation-tuned estimate (PID hover sweeps)

@@ -166,6 +166,12 @@ class ConvexGuidanceController(BaseController):
         self.throttle_rate = float(g['throttle_rate_per_s'])
         self._yaw_reserve = self._yaw_travel(self._duty_rate(vehicle.reference_voltage_v), vehicle.reference_voltage_v)
         self.lead_s = float(g.get('thrust_lead_s', 0.15))
+        # Deployment model of an asynchronous planner: a re-plan requested at t
+        # replaces the tracked plan only at t + plan_latency_s (its clock still
+        # starts at t, the state it was solved from). 0: the solve is instant.
+        self.plan_latency_s = float(g.get('plan_latency_s', 0.0))
+        if not math.isfinite(self.plan_latency_s) or self.plan_latency_s < 0.0:
+            raise ValueError('guidance.plan_latency_s must be finite and non-negative')
         self._limits = GuidanceLimits(
             mass_kg=vehicle.mass_kg, thrust_min_n=self.thrust_min_n,
             thrust_max_n=self._planning_ceiling(vehicle.full_thrust_n, strict=True),
@@ -330,6 +336,8 @@ class ConvexGuidanceController(BaseController):
         self._plan = None
         self._plan_t0 = 0.0
         self._previous_plan = None      # (plan, t0) replaced at the last re-plan: feedforward cross-fade
+        self._plan_installed_t = 0.0    # when the tracked plan took over (cross-fade clock)
+        self._pending = None            # (ready_t, plan, requested_t, origin, route_len) under plan_latency_s
         self._plan_id = 0
         self._plan_route_len = None
         self._new_plan = False
@@ -637,6 +645,15 @@ class ConvexGuidanceController(BaseController):
     def _maybe_replan(self, position, velocity, thrust_now, waypoints, volts, path=None):
         if self._phase == TERMINAL_DESCENT:
             return
+        if self._pending is not None:
+            # A solve is still running beside the control loop: keep flying
+            # the current plan until it lands, then take it over.
+            if self._t + 1e-9 < self._pending[0]:
+                return
+            _, new, requested, origin, route_len = self._pending
+            self._pending = None
+            self._install(new, requested, origin, route_len, position)
+            return
         plan, elapsed = self._plan, self._t - self._plan_t0
         period = float(self.g['replan_period_s'])
         if self._phase == HOLD and self._t - self._last_attempt_t < period:
@@ -679,17 +696,28 @@ class ConvexGuidanceController(BaseController):
         self._last_attempt_t = self._t
         new = self.guidance.plan(*start, self.gate, waypoints, landing_time_hint=hint, path=path,
                                  landing_corridor_m=self.landing_corridor_m, landing_speed_m_s=self.landing_speed_m_s)
+        if self.plan_latency_s > 0.0 and plan is not None and self._phase != HOLD:
+            # The first plan is solved on the pad and a HOLD hovers in place,
+            # so only a re-plan of a tracked plan is delayed.
+            self._pending = (self._t + self.plan_latency_s, new, self._t, origin, len(waypoints))
+            return
+        self._install(new, self._t, origin, len(waypoints), position)
+
+    def _install(self, new, requested_t, origin, route_len, position):
+        """Take over a solved plan (or handle a failed solve), its clock started at the request."""
+        plan = self._plan
         self._plan_origin = origin
         if new is None:
-            if plan is None or len(waypoints) != self._plan_route_len:
+            if plan is None or route_len != self._plan_route_len:
                 if self._phase != HOLD:
                     self._hold_position = position.copy()
                 self._phase = HOLD
             return
         self._previous_plan = None if plan is None or self._phase == HOLD else (plan, self._plan_t0)
-        self._plan, self._plan_t0 = new, self._t
+        self._plan, self._plan_t0 = new, requested_t
+        self._plan_installed_t = self._t
         self._plan_id += 1
-        self._plan_route_len = len(waypoints)
+        self._plan_route_len = route_len
         self._new_plan = True
         if self._phase == HOLD:
             self._phase = POWERED_DESCENT
@@ -726,10 +754,11 @@ class ConvexGuidanceController(BaseController):
                 # step otherwise, 21 re-plans on the route, offline replica),
                 # each a small attitude kick. Cross-fade from the replaced plan.
                 blend = float(self.g.get('replan_blend_s', 0.0))
-                if self._previous_plan is not None and elapsed < blend:
+                since = self._t - self._plan_installed_t
+                if self._previous_plan is not None and since < blend:
                     old, old_t0 = self._previous_plan
                     _, _, u_old = old.sample(self._t - old_t0 + self.lead_s)
-                    weight = elapsed / blend
+                    weight = since / blend
                     u_ff = (1.0 - weight) * u_old + weight * u_ff
                 return r_ref, v_ref, u_ff
         # Constant-rate vertical descent over the pad; pause while off center.

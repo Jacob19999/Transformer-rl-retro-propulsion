@@ -120,6 +120,14 @@ guidance:
   # but with its own slope, and the feedforward (sampled thrust_lead_s ahead)
   # stepped by up to 1.4 deg of tilt at the re-plans (offline replica, route).
   replan_blend_s: 0.3
+  # Deployment model: a re-plan replaces the tracked plan this long after it
+  # was requested (the solve runs beside the 30 Hz loop; its clock starts at
+  # the request). 0 = instant, as every validation so far flew. Ryzen 9 9900X:
+  # ~50 ms per landing plan, ~0.6 s per 4-waypoint route plan; a Raspberry Pi 5
+  # or Jetson Orin Nano CPU is an estimated 4-5x slower single-threaded
+  # (physics review 2026-09-29).
+  # Offline replica: landings stay soft up to 1 s.
+  plan_latency_s: 0.0
   # Powered descent ends at a gate above the pad, then a constant-rate
   # vertical descent to contact (success gate: impact <= 0.25 m/s).
   gate_height_m: 0.5            # above touchdown body height (0.3125 m)

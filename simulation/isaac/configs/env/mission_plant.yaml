@@ -29,3 +29,13 @@ dynamics:
     enabled: true
     max_torque_nm: 0.76
     zero_throttle_brake: false
+  # Intake momentum ("ram") drag, F = -mdot v_rel at the duct inlet (physics
+  # review 2026-09-29). Static thrust only counts the momentum the jet leaves
+  # with; the air the intake swallows arrives at the vehicle's air-relative
+  # velocity and is turned onto the duct axis. At hover (mdot ~0.3 kg/s) that
+  # is 0.3 N per m/s crosswise, ~10x the body's form drag at 1 m/s. The inlet
+  # lip is the top of the USD body mesh, 0.11 m above the Body origin (0.10 m
+  # above the COM), so a crosswind also pitches the vehicle away from it.
+  inlet_momentum_drag:
+    enabled: true
+    inlet_position_frd: [0.0, 0.0, -0.11]

@@ -86,7 +86,11 @@ class SceneConfig:
     contact_offset: float | None = None
     rest_offset: float | None = None
     enable_gyroscopic_forces: bool | None = None
-    max_angular_velocity_deg_s: float = 100.0
+    # PhysX clamps every link's angular speed at this value, silently removing
+    # energy above it. 100 deg/s (the old default) is below a warm-rotor spawn's
+    # yaw (~680 deg/s) and the rotor-reaction rates the tests excite; 3600
+    # deg/s is what the mission plant flies and far above any physical rate.
+    max_angular_velocity_deg_s: float = 3600.0
     # Half-width of the square ground plane, metres. None auto-sizes it to
     # ``grid_half_extent_m + DEFAULT_GROUND_MARGIN_M``. A fixed 100 m half-extent
     # (the old hard-coded 200x200 m cuboid) silently left
@@ -144,7 +148,7 @@ class SceneConfig:
             contact_offset=physics.get("contact_offset"),
             rest_offset=physics.get("rest_offset"),
             enable_gyroscopic_forces=physics.get('enable_gyroscopic_forces'),
-            max_angular_velocity_deg_s=physics.get('max_angular_velocity_deg_s', 100.0),
+            max_angular_velocity_deg_s=physics.get('max_angular_velocity_deg_s', 3600.0),
             ground_half_extent_m=env.get('ground_half_extent_m'),
         )
 

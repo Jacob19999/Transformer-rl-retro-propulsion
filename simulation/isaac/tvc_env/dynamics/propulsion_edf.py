@@ -236,3 +236,26 @@ class EDFModel:
             Tensor of shape (num_envs,) initialized to zero.
         """
         return torch.zeros(num_envs, device=device)
+
+
+def inlet_momentum_drag(mass_flow: Tensor, inlet_air_velocity: Tensor) -> Tensor:
+    """Momentum ("ram") drag of the air the duct swallows, F = -mdot * v_rel.
+
+    Seen from the vehicle, the intake takes in mdot kg/s of air arriving at
+    -v_rel (v_rel: inlet velocity relative to the air mass) and turns it onto
+    the duct axis. Static thrust k_T omega^2 only counts the momentum the jet
+    leaves with, so the intake adds this force at the inlet. Crosswise it is
+    the classic ducted-fan momentum drag: at hover on the planned 8S vehicle
+    (mdot ~0.3 kg/s) it is ~10x the body's form drag at 1 m/s, equal near
+    12 m/s. Along the axis it is the leading-order thrust lapse in a climb
+    (gain in a descent). Its power F . v_rel = -mdot |v_rel|^2 is never
+    positive: it only removes energy from the air-relative motion.
+
+    Args:
+        mass_flow: (num_envs,) duct mass flow (kg/s).
+        inlet_air_velocity: (num_envs, 3) inlet velocity relative to the air, any frame.
+
+    Returns:
+        (num_envs, 3) force on the vehicle, in the frame of the velocity.
+    """
+    return -mass_flow.unsqueeze(-1) * inlet_air_velocity

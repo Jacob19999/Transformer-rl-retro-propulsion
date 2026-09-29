@@ -91,6 +91,8 @@ PARAMETERS = [
      'No re-solve this close to the landing gate.'),
     ('guidance', 'replan_blend_s', 'Re-planning', 'Feedforward blend', 's', 0.0, 1.0, 0.05,
      'Cross-fade of the thrust feedforward after a re-plan.'),
+    ('guidance', 'plan_latency_s', 'Re-planning', 'Planning latency', 's', 0.0, 2.0, 0.05,
+     'Flight-computer model: a re-plan takes over this long after it was requested (asynchronous solve). 0 = instant.'),
     ('guidance', 'gate_height_m', 'Landing', 'Gate height', 'm', 0.2, 3.0, 0.05,
      'Powered descent ends this far above touchdown height.'),
     ('guidance', 'terminal_max_descent_m_s', 'Landing', 'Terminal max descent', 'm/s', 0.05, 0.5, 0.01,

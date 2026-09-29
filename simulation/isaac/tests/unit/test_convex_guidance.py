@@ -946,3 +946,84 @@ def test_braking_emergency_fires_only_when_the_yaw_safe_slew_cannot_stop():
     off = ConvexGuidanceController(s, _with_vanes(MOMENTUM_VANES), (0., 0., 0.), .3125, 1 / 30)
     off._phase = 'POWERED_DESCENT'
     assert not off._braking_emergency(np.array([0., 0., 2.6]), np.array([0., 0., -2.6]), .9 * WEIGHT, available, 29.6)
+
+
+# ---- flight-computer cost and planning latency (physics review 2026-09-29) ----
+
+def test_scheduled_lqr_gain_is_the_per_entry_interpolation():
+    lqr = ConvexGuidanceController(settings(), _with_vanes(MOMENTUM_VANES), (0., 0., 0.), .3125, 1 / 30)._lqr
+    for fraction in (0.0, 0.3, 0.3125, 0.47, 0.8, 0.99, 1.0, 1.4):
+        for table, gain in ((lqr._rp, lqr.roll_pitch_gain(fraction)), (lqr._yaw, lqr.yaw_gain(fraction))):
+            reference = np.array([[np.interp(fraction, lqr.fractions, table[:, i, j]) for j in range(table.shape[2])]
+                                  for i in range(table.shape[1])])
+            assert np.allclose(gain, reference, rtol=0, atol=1e-12)
+
+
+def test_constraint_assembly_matches_the_row_by_row_definition():
+    from scipy import sparse
+    from tvc_env.controllers.convex_guidance import _Cones
+    rng = np.random.default_rng(3)
+
+    def terms():
+        return [(int(c), float(v)) for c, v in zip(rng.choice(40, rng.integers(0, 5), replace=False), rng.normal(size=5))]
+
+    cones = _Cones()
+    for _ in range(7):
+        cones.eq(terms(), float(rng.normal()))
+    for _ in range(9):
+        cones.le(terms(), float(rng.normal()))
+    for _ in range(4):
+        cones.soc([(terms(), float(rng.normal())) for _ in range(4)])
+    cones.power([(terms(), 1.0), (terms(), 0.0), (terms(), 0.5)], 2 / 3)
+    A, b, cone_list = cones.assemble(40)
+    rows, rhs = [], []
+    for block, sign in (('zero', 1.0), ('nonneg', 1.0)):
+        for t, c in cones.blocks[block]:
+            rows.append([(col, sign * v) for col, v in t]); rhs.append(c)
+    for group in cones.blocks['soc'] + [rows_alpha[0] for rows_alpha in cones.blocks['pow']]:
+        for t, c in group:
+            rows.append([(col, -v) for col, v in t]); rhs.append(c)
+    dense = np.zeros((len(rows), 40))
+    for r, t in enumerate(rows):
+        for col, v in t:
+            dense[r, col] += v
+    assert sparse.issparse(A) and np.array_equal(A.toarray(), dense) and np.array_equal(b, rhs)
+    assert [type(c).__name__ for c in cone_list] == ['ZeroConeT', 'NonnegativeConeT'] + ['SecondOrderConeT'] * 4 + ['PowerConeT']
+
+
+def test_planning_latency_keeps_flying_the_old_plan_until_the_solve_lands():
+    s = settings()
+    s['guidance']['plan_latency_s'] = 0.3
+    controller = ConvexGuidanceController(s, _with_vanes(MOMENTUM_VANES), (0., 0., 0.), .3125, 1 / 30,
+                                          servo_deadband_rad=.017)
+    installed = []
+    original = controller._install
+
+    def spy(new, requested_t, *args):
+        installed.append((round(controller._t, 6), round(requested_t, 6)))
+        return original(new, requested_t, *args)
+    controller._install = spy
+    touchdown, worst = _land_on_vanes(controller, MOMENTUM_VANES, damping=0.)
+    first, later = installed[0], installed[1:]
+    assert first[0] == first[1] == 0.0                               # the pad plan is solved before launch
+    assert later and all(t - requested >= 0.3 - 1e-6 for t, requested in later)
+    assert all(t - requested < 0.3 + 1 / 30 + 1e-6 for t, requested in later)
+    # The plan's clock starts at the request, so tracking continues where it was solved from.
+    assert touchdown is not None and touchdown['impact'] <= .25 and touchdown['pad'] <= .2 and worst < 5.
+
+
+def test_zero_planning_latency_is_the_synchronous_controller():
+    def fly(latency):
+        s = settings()
+        if latency is None:
+            s['guidance'].pop('plan_latency_s', None)          # configs that predate the setting
+        else:
+            s['guidance']['plan_latency_s'] = latency
+        controller = ConvexGuidanceController(s, _with_vanes(MOMENTUM_VANES), (0., 0., 0.), .3125, 1 / 30,
+                                              servo_deadband_rad=.017)
+        return _land_on_vanes(controller, MOMENTUM_VANES, damping=0., duration=6.)
+    assert fly(None) == fly(0.0)
+    with pytest.raises(ValueError):
+        s = settings()
+        s['guidance']['plan_latency_s'] = -0.1
+        ConvexGuidanceController(s, _with_vanes(MOMENTUM_VANES), (0., 0., 0.), .3125, 1 / 30)

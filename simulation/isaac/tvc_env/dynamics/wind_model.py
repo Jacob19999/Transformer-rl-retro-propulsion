@@ -4,7 +4,12 @@ Wind and drag disturbance model.
 Implements:
   - Steady wind vector in world frame
   - Gust event generation (magnitude, duration, random interval)
-  - Body drag force: F_drag = 0.5 * ρ * cd * A * |v_rel|² * v_rel_hat
+  - Body drag force: F_drag = 0.5 * ρ * cd * A * |v_rel|² * v_rel_hat, or with
+    a lateral area the body-axis split (independence principle)
+      F_axial   = -0.5 ρ cd_axial A_axial |v_z| v_z
+      F_lateral = -0.5 ρ cd_lat A_lat |v_xy| v_xy
+    A slender body is ~4x larger side-on than end-on (0.35 x 0.12 m: 0.042
+    vs 0.011 m²); one isotropic area under- or over-states one of them.
   - Frame transformation: wind to body frame via frames.py boundary
 
 All computations vectorized for (num_envs,) environments.
@@ -34,9 +39,13 @@ class WindModel:
         gust_interval_max: float = 15.0,     # s
         num_envs: int = 1,
         device: torch.device = None,
+        lateral_area: float | None = None,   # m², side-on area; None: isotropic cd * reference_area
+        cd_lateral: float | None = None,     # crossflow drag coefficient (default: cd)
     ):
         self.cd = cd
         self.reference_area = reference_area
+        self.lateral_area = lateral_area
+        self.cd_lateral = cd if cd_lateral is None else cd_lateral
         self.air_density = air_density
         self.gust_enabled = gust_enabled
         self.gust_magnitude = gust_magnitude
@@ -60,20 +69,43 @@ class WindModel:
         )
         self._gust_direction = torch.zeros(self.num_envs, 3, device=device)
 
+    @staticmethod
+    def body_drag_from_vehicle(body: dict) -> dict:
+        """Axial and side-on drag of the vehicle body (configs/vehicle ``body`` section).
+
+        ``reference_area`` is the end-on (axial) area; the side-on area is
+        ``lateral_reference_area``, else length x diameter.
+        """
+        length, diameter = float(body.get("length", 0.35)), float(body.get("diameter", 0.12))
+        cd = float(body.get("cd_body", 1.0))
+        return dict(cd=cd, reference_area=float(body.get("reference_area", 0.011)),
+                    lateral_area=float(body.get("lateral_reference_area", length * diameter)),
+                    cd_lateral=float(body.get("cd_lateral", cd)))
+
     @classmethod
-    def from_disturbance_config(cls, config: dict, num_envs: int = 1, device=None) -> "WindModel":
-        """Create WindModel from disturbance config dict."""
+    def from_disturbance_config(cls, config: dict, num_envs: int = 1, device=None,
+                                body: dict | None = None) -> "WindModel":
+        """Create WindModel from disturbance config dict.
+
+        With the vehicle ``body`` geometry the body drag comes from it, the
+        same in calm air and in wind (a disturbance file used to swap the
+        vehicle's 0.011 m² for an isotropic 0.02 m²). Without it the legacy
+        isotropic ``body_drag`` section applies.
+        """
         dist = config.get("disturbances", config)
         wind = dist.get("wind", {})
         gust = dist.get("gust", {})
-        drag = dist.get("body_drag", {})
         enabled = dist.get("enabled", True)
+        if body is not None:
+            drag = cls.body_drag_from_vehicle(body)
+        else:
+            legacy = dist.get("body_drag", {})
+            drag = dict(cd=legacy.get("cd", 1.0), reference_area=legacy.get("reference_area", 0.02))
 
         return cls(
             steady_vector=wind.get("steady_vector", [0.0, 0.0, 0.0])
                 if enabled and wind.get("enabled", True) else [0.0, 0.0, 0.0],
-            cd=drag.get("cd", 1.0),
-            reference_area=drag.get("reference_area", 0.02),
+            **drag,
             gust_enabled=enabled and gust.get("enabled", False),
             gust_magnitude=gust.get("magnitude", 5.0),
             gust_duration=gust.get("duration", 0.5),
@@ -157,6 +189,8 @@ class WindModel:
                 f"({linear_vel_world.shape[0]})."
             )
         v_rel_world = linear_vel_world - wind_world  # (num_envs, 3)
+        if self.lateral_area is not None:
+            return self._body_axis_drag(v_rel_world, quaternion_wxyz)
 
         speed_sq = (v_rel_world ** 2).sum(dim=-1, keepdim=True)  # (num_envs, 1)
         speed = speed_sq.sqrt()  # (num_envs, 1)
@@ -176,3 +210,13 @@ class WindModel:
         drag_body_frd = isaac_velocity_to_frd(drag_body_isaac)
 
         return drag_body_frd
+
+    def _body_axis_drag(self, v_rel_world: Tensor, quaternion_wxyz: Tensor) -> Tensor:
+        """Axial and crossflow drag, each quadratic in its own body-frame component (body FRD)."""
+        v = isaac_velocity_to_frd(rotate_vector(quat_inv(normalize(quaternion_wxyz)), v_rel_world))
+        half_rho = 0.5 * self.air_density
+        force = torch.empty_like(v)
+        lateral = v[:, :2]
+        force[:, :2] = -half_rho * self.cd_lateral * self.lateral_area * lateral.norm(dim=-1, keepdim=True) * lateral
+        force[:, 2] = -half_rho * self.cd * self.reference_area * v[:, 2].abs() * v[:, 2]
+        return force
