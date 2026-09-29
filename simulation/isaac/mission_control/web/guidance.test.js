@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { collectPlans, planAt, guidanceStatus } from './guidance.js';
+import { collectPlans, planAt, guidanceStatus, costBreakdown } from './guidance.js';
 import { diagnosticSnapshot } from './guidance-diagnostics.js';
 
 test('replay selects only a plan already recorded, including backward seeks', () => {
@@ -62,4 +62,12 @@ test('missing telemetry stays missing; delta-v objectives never become energy po
   assert.equal(result.solves[0].energy, null);
   assert.equal(result.history.at(-1).energy, undefined);
   assert.deepEqual(diagnosticSnapshot(frames, -1).history, []);
+});
+
+test('cost breakdown lists priced terms largest first in the objective unit', () => {
+  const solver = { objective: 'energy', cost_terms: { energy: 19.1, path: 0.8, smoothness: 1.2, corridor: 0, time: NaN } };
+  assert.equal(costBreakdown(solver), 'energy 19.10 Wh, smoothness 1.20 Wh, path 0.80 Wh');
+  assert.equal(costBreakdown({ objective: 'delta_v', cost_terms: { delta_v: 400.123 } }), 'delta-v 400.12 m/s');
+  assert.equal(costBreakdown({ objective: 'energy' }), '');
+  assert.equal(costBreakdown(null), '');
 });

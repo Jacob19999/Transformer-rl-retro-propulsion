@@ -1,0 +1,175 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "scope": "route",
+  "mission": {
+    "name": "Hop challenge - hairpin switchbacks",
+    "duration_s": 240.0,
+    "position": [
+      0.0,
+      0.0,
+      0.34
+    ],
+    "velocity": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "attitude_deg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_motor_fraction": 0.0,
+    "pads": [
+      {
+        "name": "Home pad",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Switchback pad",
+        "position": [
+          0.0,
+          20.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          0.0,
+          0.0,
+          5.0
+        ],
+        "type": "takeoff",
+        "name": "Climb",
+        "hold_s": 2.0,
+        "radius_m": 0.4,
+        "speed_m_s": 1.5,
+        "corridor_m": 1.0
+      },
+      {
+        "position": [
+          12.0,
+          2.0,
+          5.0
+        ],
+        "type": "flypass",
+        "name": "East 1",
+        "hold_s": 2.0,
+        "radius_m": 0.75,
+        "speed_m_s": 3.0,
+        "corridor_m": 1.0
+      },
+      {
+        "position": [
+          12.0,
+          6.0,
+          5.0
+        ],
+        "type": "flypass",
+        "name": "Hairpin 1",
+        "hold_s": 2.0,
+        "radius_m": 0.75,
+        "speed_m_s": 2.0,
+        "corridor_m": 1.0
+      },
+      {
+        "position": [
+          0.0,
+          8.0,
+          5.0
+        ],
+        "type": "flypass",
+        "name": "West 1",
+        "hold_s": 2.0,
+        "radius_m": 0.75,
+        "speed_m_s": 3.0,
+        "corridor_m": 1.0
+      },
+      {
+        "position": [
+          0.0,
+          12.0,
+          5.0
+        ],
+        "type": "flypass",
+        "name": "Hairpin 2",
+        "hold_s": 2.0,
+        "radius_m": 0.75,
+        "speed_m_s": 2.0,
+        "corridor_m": 1.0
+      },
+      {
+        "position": [
+          12.0,
+          14.0,
+          5.0
+        ],
+        "type": "flypass",
+        "name": "East 2",
+        "hold_s": 2.0,
+        "radius_m": 0.75,
+        "speed_m_s": 3.0,
+        "corridor_m": 1.0
+      },
+      {
+        "position": [
+          12.0,
+          18.0,
+          5.0
+        ],
+        "type": "flypass",
+        "name": "Hairpin 3",
+        "hold_s": 2.0,
+        "radius_m": 0.75,
+        "speed_m_s": 2.0,
+        "corridor_m": 1.0
+      },
+      {
+        "position": [
+          0.0,
+          20.0,
+          4.0
+        ],
+        "type": "hover",
+        "name": "Over switchback pad",
+        "hold_s": 4.0,
+        "radius_m": 0.3,
+        "speed_m_s": 2.0,
+        "corridor_m": 1.0
+      },
+      {
+        "position": [
+          0.0,
+          20.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "Switchback pad touchdown",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 0.15,
+        "corridor_m": null,
+        "pad": 1,
+        "approach_speed_m_s": null
+      }
+    ]
+  },
+  "sample": {
+    "category": "hop",
+    "profile": "hop-soft",
+    "summary": "Challenge: three 180 deg hairpins 4 m apart on 12 m legs at 3 m/s; every hairpin reverses the lateral velocity inside a 1 m corridor.",
+    "profile_name": "Hop - soft corridor"
+  }
+}

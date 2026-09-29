@@ -1,0 +1,111 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "scope": "route",
+  "mission": {
+    "name": "Landing challenge - low-altitude lateral arrest",
+    "duration_s": 150.0,
+    "position": [
+      -28.0,
+      6.0,
+      4.5
+    ],
+    "velocity": [
+      5.0,
+      -1.0,
+      -0.8
+    ],
+    "attitude_deg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_motor_fraction": 0.84,
+    "pads": [
+      {
+        "name": "Home pad",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          -12.0,
+          2.0,
+          3.5
+        ],
+        "type": "flypass",
+        "name": "Arrest gate",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 3.0,
+        "corridor_m": 1.5
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          3.0
+        ],
+        "type": "hover",
+        "name": "Over pad",
+        "hold_s": 4.0,
+        "radius_m": 0.3,
+        "speed_m_s": 1.5,
+        "corridor_m": 1.0
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "Touchdown",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 0.15,
+        "corridor_m": null,
+        "pad": 0,
+        "approach_speed_m_s": null
+      }
+    ]
+  },
+  "sample": {
+    "category": "land",
+    "profile": "land-crosswind",
+    "environment": {
+      "selected": [
+        "wind"
+      ],
+      "settings": {
+        "wind": {
+          "steady_vector": [
+            2.0,
+            0.0,
+            0.0
+          ]
+        },
+        "gust": {
+          "magnitude": 1.5,
+          "duration": 0.5,
+          "interval": [
+            8.0,
+            20.0
+          ]
+        }
+      }
+    },
+    "summary": "Challenge: 4.5 m up, 5 m/s sideways and sinking 0.8 m/s: shed the lateral speed without the altitude the 0.8 m floor would need, in a light breeze.",
+    "profile_name": "Landing - crosswind soft"
+  }
+}

@@ -1,0 +1,193 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "scope": "route",
+  "mission": {
+    "name": "Hover challenge - 0.5 m micro-steps with IMU noise",
+    "duration_s": 240.0,
+    "position": [
+      0.0,
+      0.0,
+      0.34
+    ],
+    "velocity": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "attitude_deg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_motor_fraction": 0.0,
+    "pads": [
+      {
+        "name": "Home pad",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          0.0,
+          0.0,
+          5.0
+        ],
+        "type": "takeoff",
+        "name": "Climb to 5 m",
+        "hold_s": 2.0,
+        "radius_m": 0.15,
+        "speed_m_s": 1.5,
+        "corridor_m": 0.5
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          5.0
+        ],
+        "type": "hover",
+        "name": "Reference hold",
+        "hold_s": 8.0,
+        "radius_m": 0.15,
+        "speed_m_s": 0.5,
+        "corridor_m": 0.5
+      },
+      {
+        "position": [
+          0.5,
+          0.0,
+          5.0
+        ],
+        "type": "hover",
+        "name": "Step 1",
+        "hold_s": 6.0,
+        "radius_m": 0.15,
+        "speed_m_s": 0.5,
+        "corridor_m": 0.5
+      },
+      {
+        "position": [
+          0.5,
+          0.5,
+          5.0
+        ],
+        "type": "hover",
+        "name": "Step 2",
+        "hold_s": 6.0,
+        "radius_m": 0.15,
+        "speed_m_s": 0.5,
+        "corridor_m": 0.5
+      },
+      {
+        "position": [
+          0.0,
+          0.5,
+          5.0
+        ],
+        "type": "hover",
+        "name": "Step 3",
+        "hold_s": 6.0,
+        "radius_m": 0.15,
+        "speed_m_s": 0.5,
+        "corridor_m": 0.5
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          5.0
+        ],
+        "type": "hover",
+        "name": "Step 4",
+        "hold_s": 6.0,
+        "radius_m": 0.15,
+        "speed_m_s": 0.5,
+        "corridor_m": 0.5
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          5.5
+        ],
+        "type": "hover",
+        "name": "Step 5",
+        "hold_s": 6.0,
+        "radius_m": 0.15,
+        "speed_m_s": 0.5,
+        "corridor_m": 0.5
+      },
+      {
+        "position": [
+          0.5,
+          0.0,
+          5.5
+        ],
+        "type": "hover",
+        "name": "Step 6",
+        "hold_s": 6.0,
+        "radius_m": 0.15,
+        "speed_m_s": 0.5,
+        "corridor_m": 0.5
+      },
+      {
+        "position": [
+          0.5,
+          0.5,
+          5.0
+        ],
+        "type": "hover",
+        "name": "Step 7",
+        "hold_s": 6.0,
+        "radius_m": 0.15,
+        "speed_m_s": 0.5,
+        "corridor_m": 0.5
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "Soft touchdown",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 0.12,
+        "corridor_m": null,
+        "pad": 0,
+        "approach_speed_m_s": 0.8
+      }
+    ]
+  },
+  "sample": {
+    "category": "hover",
+    "profile": "hover-precision",
+    "environment": {
+      "selected": [
+        "sensor_noise"
+      ],
+      "settings": {
+        "sensor_noise": {
+          "position_std": 0.01,
+          "velocity_std": 0.05,
+          "attitude_std": 0.04363,
+          "angular_velocity_std": 0.05411
+        }
+      }
+    },
+    "summary": "Challenge: seven 0.5 m steps at 5-5.5 m, each held inside 0.15 m for 6 s, with BNO085-class attitude and gyro noise: settling and overshoot, not distance.",
+    "profile_name": "Hover - precision hold strict"
+  }
+}

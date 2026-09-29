@@ -39,8 +39,11 @@ export function optimizerVisual(group,get){
     metrics=[['Gate height',`${g('gate_height_m')} m`],['Capture radius',`${g('gate_capture_radius_m')} m`],['Descent clamp',`${g('terminal_max_descent_m_s')} m/s`]];
   }else if(group==='Objective'){
     drawing=`<path class="diagram-band" d="M30 115 Q110 5 290 50"/><path class="diagram-route" d="M30 115 Q110 5 290 50"/><circle cx="30" cy="115" r="5"/><circle cx="290" cy="50" r="5"/>${text(25,145,'START')}${text(251,80,'TARGET')}${text(95,105,g('objective')==='energy'?'∫ electrical power dt':'∫ |T| / m dt')}`;
-    caption='Cost integrated along the feasible trajectory · schematic';
-    metrics=[['Active cost',g('objective')==='energy'?'Electrical energy':'Delta-v'],['Energy model','Momentum theory'],['Delta-v model','Thrust / mass']];
+    // Secondary terms are priced in seconds of hover cost; list only the active ones.
+    const extra=[['path_weight','path'],['time_weight','time'],['smoothness_weight','smoothness'],['tilt_weight','tilt']]
+      .filter(([key])=>Number(g(key))>0).map(([key,name])=>`${name} ${g(key)}`);
+    caption=extra.length?'Primary cost plus priced secondary terms (s of hover cost) · schematic':'Cost integrated along the feasible trajectory · schematic';
+    metrics=[['Active cost',g('objective')==='energy'?'Electrical energy':'Delta-v'],['Secondary terms',extra.length?extra.join(' · '):'none'],['Fly-through',`≥ ${g('flypass_min_speed_fraction')} × speed, ±${g('flypass_heading_tolerance_deg')}°`]];
   }else if(group==='Discretization'){
     drawing=`${line(25,80,295,80,'diagram-route')}${Array.from({length:9},(_,i)=>`<circle cx="${25+i*33.75}" cy="80" r="4"/>`).join('')}${line(25,110,58.75,110,'diagram-dimension')}${text(25,140,`ROUTE INTERVAL ${g('route_dt_s')} s`)}${text(25,45,'DISCRETE PLAN NODES')}`;
     caption='Node spacing along each leg · schematic';

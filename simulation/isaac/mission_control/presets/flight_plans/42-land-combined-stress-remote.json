@@ -1,0 +1,167 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "scope": "route",
+  "mission": {
+    "name": "Landing challenge - combined stress to remote pad",
+    "duration_s": 240.0,
+    "position": [
+      20.0,
+      18.0,
+      38.0
+    ],
+    "velocity": [
+      -2.0,
+      -1.5,
+      -4.0
+    ],
+    "attitude_deg": [
+      15.0,
+      -10.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      20.0,
+      -15.0,
+      10.0
+    ],
+    "initial_motor_fraction": 0.84,
+    "pads": [
+      {
+        "name": "Home pad",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Remote pad",
+        "position": [
+          -18.0,
+          -14.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          12.0,
+          10.0,
+          28.0
+        ],
+        "type": "hover",
+        "name": "Arrest and stabilise",
+        "hold_s": 4.0,
+        "radius_m": 0.6,
+        "speed_m_s": 3.0,
+        "corridor_m": 3.0
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          20.0
+        ],
+        "type": "flypass",
+        "name": "Midfield gate",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 3.0,
+        "corridor_m": 1.5
+      },
+      {
+        "position": [
+          -12.0,
+          -9.0,
+          12.0
+        ],
+        "type": "flypass",
+        "name": "Approach gate",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 2.5,
+        "corridor_m": 1.5
+      },
+      {
+        "position": [
+          -18.0,
+          -14.0,
+          5.0
+        ],
+        "type": "hover",
+        "name": "Over remote pad",
+        "hold_s": 5.0,
+        "radius_m": 0.3,
+        "speed_m_s": 2.0,
+        "corridor_m": 1.0
+      },
+      {
+        "position": [
+          -18.0,
+          -14.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "Remote touchdown",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 0.15,
+        "corridor_m": null,
+        "pad": 1,
+        "approach_speed_m_s": null
+      }
+    ]
+  },
+  "sample": {
+    "category": "land",
+    "profile": "land-crosswind",
+    "environment": {
+      "selected": [
+        "com_shift",
+        "sensor_noise",
+        "wind"
+      ],
+      "settings": {
+        "wind": {
+          "steady_vector": [
+            3.46,
+            2.0,
+            0.0
+          ]
+        },
+        "gust": {
+          "magnitude": 4.0,
+          "duration": 0.8,
+          "interval": [
+            4.0,
+            10.0
+          ]
+        },
+        "sensor_noise": {
+          "position_std": 0.02,
+          "velocity_std": 0.1,
+          "attitude_std": 0.01,
+          "angular_velocity_std": 0.04
+        },
+        "com_offset": {
+          "range": [
+            [
+              -0.01,
+              -0.01,
+              -0.01
+            ],
+            [
+              0.01,
+              0.01,
+              0.01
+            ]
+          ]
+        }
+      }
+    },
+    "summary": "Challenge: tilted, spinning and sinking 4 m/s at 38 m, then a routed 40 m transfer to a remote pad under wind, gusts, sensor noise and a CoM offset at once.",
+    "profile_name": "Landing - crosswind soft"
+  }
+}

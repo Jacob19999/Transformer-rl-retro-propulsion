@@ -44,7 +44,8 @@ from tvc_env.common.quaternions import to_rotation_matrix
 from tvc_env.controllers.attitude_lqr import AttitudePlant, GyroAttitudeLQR, LQRWeights
 from tvc_env.controllers.base import BaseController
 from tvc_env.controllers.convex_guidance import (
-    HOVER, ConvexGuidance, EnergyModel, GuidanceLimits, LandingGate, RouteWaypoint, catmull_rom_leg,
+    HOVER, ConvexGuidance, EnergyModel, GuidanceLimits, LandingGate, ObjectiveWeights, RouteWaypoint, catmull_rom_leg,
+    curve_distance,
 )
 from tvc_env.controllers.pid_fin_mixer import PIDFinMixer
 
@@ -174,7 +175,9 @@ class ConvexGuidanceController(BaseController):
             glide_slope_rad=(None if g.get('glide_slope_deg') is None else math.radians(float(g['glide_slope_deg']))),
             glide_slope_final_s=float(g.get('glide_slope_final_s', 3.0)),
             tilt_rate_rad_s=self._tilt_rate_limit(),
-            route_floor_m=float(g['route_floor_m']), gravity=vehicle.gravity)
+            route_floor_m=float(g['route_floor_m']), gravity=vehicle.gravity,
+            landing_sink_brake_fraction=(None if g.get('landing_sink_brake_fraction') is None
+                                         else float(g['landing_sink_brake_fraction'])))
         self.guidance = ConvexGuidance(
             self._limits, vehicle.energy_model(), objective=str(g['objective']),
             landing_nodes=int(g['landing_nodes']), route_dt_s=float(g['route_dt_s']),
@@ -183,7 +186,12 @@ class ConvexGuidanceController(BaseController):
             corridor_m=None if g.get('route_corridor_m') is None else float(g['route_corridor_m']),
             corridor_weight=float(g.get('route_corridor_weight', 10.0)),
             corridor_mode=str(g.get('route_corridor_mode', 'soft')),
-            workers=int(g.get('solver_workers', 4)))
+            workers=int(g.get('solver_workers', 4)),
+            weights=ObjectiveWeights(path=float(g.get('path_weight', 0.0)), time=float(g.get('time_weight', 0.0)),
+                                     smoothness=float(g.get('smoothness_weight', 0.0)),
+                                     tilt=float(g.get('tilt_weight', 0.0))),
+            flypass_min_speed_fraction=float(g.get('flypass_min_speed_fraction', 1.0)),
+            flypass_heading_tolerance_rad=math.radians(float(g.get('flypass_heading_tolerance_deg', 0.0))))
         self.reset()
 
     def _planning_ceiling(self, available_n: float, strict: bool = False) -> float:
@@ -498,6 +506,8 @@ class ConvexGuidanceController(BaseController):
         # ballooned the vehicle to 2 m (mission 0a222db0855b).
         if self._phase != HOLD and self._plan is not None and self._plan.mode == 'soft_terminal':
             self._emergency = True
+        elif self._braking_emergency(position, velocity, thrust_now, available, volts):
+            self._emergency = True
         elif abs(duty - self._throttle) < 0.03:
             self._emergency = False
         self._slew_duty(duty, self.spool_rate if self._emergency else self._duty_rate(volts), volts)
@@ -517,6 +527,49 @@ class ConvexGuidanceController(BaseController):
                      self.vehicle.available_thrust_n(volts))
         self._t += self.dt
         return self.validate_action(torch.tensor([[*fins, self._throttle]], dtype=obs.dtype, device=obs.device))
+
+    def _braking_emergency(self, position, velocity, thrust_now, available, volts) -> bool:
+        """The yaw-safe duty slew can no longer stop the descent above the pad.
+
+        Integrates the fastest stop the tracking loop can fly at the yaw-safe
+        slew: thrust rising from the rotor's present thrust at the rate that
+        slew gives (dT/dt = 2 sqrt(T T_full) (V_bus / V_ref) d(duty)/dt) up to
+        the available thrust. If that stop from the measured sink rate to the
+        touchdown speed needs more than guidance.braking_emergency_height_fraction
+        of the height above touchdown, the duty slews at the spool-up rate
+        instead, trading a yaw transient for braking as the soft-terminal
+        fallback does. 0 / None disables it.
+
+        Evidence: in Isaac 751dd0214086 (touchdown 2.1 m/s) the tracking loop
+        commanded 36-41 N from 69.4 s while the slew-limited rotor gave
+        28-33 N; the fast slew only engaged at 70.04 s, 0.9 m up, when the
+        plan turned infeasible. Replayed on the last 120 recorded missions, a
+        0.85 fraction fires 1.3-1.7 s before that fallback in all four hard
+        touchdowns (751dd0214086, c41efd7ff96f, 60635e985edf, cc1459d200cf),
+        and in the soft ones only shortly before a fallback that came anyway.
+        """
+        fraction = self.g.get('braking_emergency_height_fraction')
+        if not fraction or self._phase not in (POWERED_DESCENT, TERMINAL_DESCENT) or self._touchdown:
+            return False
+        sink, target = -float(velocity[2]), self.touchdown_speed
+        height = float(position[2]) - self.touchdown_z
+        # The terminal descent's own rate band (and the last centimetres) is
+        # the land detector's business, not an emergency.
+        if sink <= float(self.g['terminal_max_descent_m_s']) + 0.05:
+            return False
+        if height <= 0.0:
+            return True
+        v, m, W = self.vehicle, self.vehicle.mass_kg, self.vehicle.weight_n
+        ratio = max(volts, 1e-3) / v.reference_voltage_v
+        duty_rate = self._duty_rate(volts)
+        thrust, travelled, dt = float(thrust_now), 0.0, 0.02
+        for _ in range(250):          # 5 s horizon
+            if sink <= target:
+                break
+            thrust = min(available, thrust + 2.0 * math.sqrt(max(thrust, 1e-6) * v.full_thrust_n) * ratio * duty_rate * dt)
+            sink -= (thrust - W) / m * dt
+            travelled += max(sink, 0.0) * dt
+        return travelled > float(fraction) * height
 
     def _slew_duty(self, duty, rate_per_s, volts):
         """Move the duty toward `duty`, slewing the rotor command (duty x V_bus / V_ref) at `rate_per_s` x V_bus / V_ref.
@@ -965,7 +1018,12 @@ class ConvexGuidanceController(BaseController):
                 solves=plan.solves, iterations=plan.iterations,
                 convexification_gap=round(plan.convexification_gap, 6),
                 terminal_miss_m=round(plan.terminal_miss_m, 4),
-                corridor_excess_m=round(plan.corridor_excess_m, 3))
+                corridor_excess_m=round(plan.corridor_excess_m, 3),
+                route_deviation_m=round(plan.route_deviation_m, 3), cost_terms=plan.cost_terms)
+        # Path following as flown: the vehicle's distance from the active
+        # leg of the drawn route (the planned deviation is above).
+        if self._path_curves and self._phase == ROUTE:
+            record['cross_track_m'] = round(float(curve_distance(self._path_curves[0], position)[0]), 4)
         if self._new_plan:
             record['plan'] = dict(
                 times=[round(float(t), 3) for t in plan.times],
