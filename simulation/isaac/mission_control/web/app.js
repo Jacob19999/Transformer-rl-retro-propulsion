@@ -2,10 +2,11 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { createMissionPlanner, samplePlannerSpline } from './planner.js';
+import { createMissionPlanner } from './planner.js';
 import {createOptimizerSettings} from './optimizer-settings.js';
 import {createDisturbanceEditor} from './disturbances.js';
-import {waypointColors,waypointLabel,waypointDetail,convexCaptureStatus,escapeHtml,pickRoute} from './flight-plan.js';
+import {waypointColors,waypointLabel,waypointDetail,convexCaptureStatus,escapeHtml,pickRoute,sampleRouteLegs} from './flight-plan.js';
+import {createRouteRibbon} from './route-line.js';
 import { checkRoute } from './braking.js';
 import { attitude, drawAdi, drawWebcast, fitCanvas, series } from './instruments.js';
 import { createCharts } from './charts.js';
@@ -165,7 +166,9 @@ const grid = new THREE.GridHelper(100,100,0x3a444c,0x1c2227); grid.rotation.x = 
 const padMarkers=new THREE.Group();scene.add(padMarkers);
 const groundObjects = [floor,grid,padMarkers];
 const trajectory = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({color:0xf4f6f7,transparent:true,opacity:.55})); scene.add(trajectory);
-const plannedRoute=new THREE.Line(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:0x3987e5,transparent:true,opacity:.75}));scene.add(plannedRoute);
+// Planned route: a dashed screen-space ribbon (a 1 px line vanished against the
+// grid in the wide shots), lighter toward each leg's end to show direction.
+const plannedRoute=createRouteRibbon({width:2.5,opacity:.85,dashed:true,chevrons:false});scene.add(plannedRoute.group);
 const routeLabels=new THREE.Group();scene.add(routeLabels);
 // Convex guidance: the optimized trajectory in force at the replay time (the
 // SOCP is re-solved every 0.5 s, so the drawn plan changes as the flight runs).
@@ -190,7 +193,8 @@ function updatePlannedRoute(){
   const request=state.frames.length?state.metadata?.request:null;
   const pads=request?.pads??(state.frames.length?[{name:'Home pad',position:[0,0,0]}]:planner.getPads());
   const target=pads[waypoints.at(-1)?.pad??0]?.position??[0,0,0];
-  setLinePoints(plannedRoute,samplePlannerSpline(initial,waypoints,target,{convex:(request?.controller??$('controller').value)==='convex'}));
+  const legs=sampleRouteLegs(initial,waypoints,target,{convex:(request?.controller??$('controller').value)==='convex'});
+  plannedRoute.set(legs,legs.map(()=>['#2f78d0','#8cc8ff']));sceneDirty=true;
   padMarkers.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});padMarkers.clear();
   pads.forEach(p=>{const marker=new THREE.Group();marker.position.set(...p.position);
     const disc=new THREE.Mesh(new THREE.CircleGeometry(1.25,64),new THREE.MeshStandardMaterial({color:0x1f2327,roughness:.95}));disc.position.z=.004;marker.add(disc);
@@ -316,7 +320,7 @@ function renderViews(width=$('views').clientWidth,height=$('views').clientHeight
   const split=Math.floor(width*.66),right=width-split,third=height/3;
   const rects=[[0,0,split-1,height],[split+1,2*third,right-1,third-1],[split+1,third,right-1,third-1],[split+1,0,right-1,third-1]];
   renderer.setScissorTest(true);
-  rects.forEach(([x,y,w,h],i)=>{renderer.setViewport(x,y,w,h);renderer.setScissor(x,y,w,h);cameras[i].aspect=w/h;if(i===3){cameras[i].left=-.1*w/h;cameras[i].right=.1*w/h;}cameras[i].updateProjectionMatrix();links.Body.visible=i!==3;trajectory.visible=i<3;plannedRoute.visible=i<3;routeLabels.visible=i===0;guidancePath.visible=i<3;guidanceMarkers.visible=i===0&&cameraMode==='plan'&&!!guidance;thrustVector.visible=i===0;imuObjects.forEach(object=>{object.visible=imuShown&&i<3;});imuAxis.visible=imuShown&&i===0;groundObjects.forEach(object=>{object.visible=i!==3;});renderer.render(scene,cameras[i]);});
+  rects.forEach(([x,y,w,h],i)=>{renderer.setViewport(x,y,w,h);renderer.setScissor(x,y,w,h);cameras[i].aspect=w/h;if(i===3){cameras[i].left=-.1*w/h;cameras[i].right=.1*w/h;}cameras[i].updateProjectionMatrix();links.Body.visible=i!==3;trajectory.visible=i<3;plannedRoute.group.visible=i<3;plannedRoute.setResolution(w,h);routeLabels.visible=i===0;guidancePath.visible=i<3;guidanceMarkers.visible=i===0&&cameraMode==='plan'&&!!guidance;thrustVector.visible=i===0;imuObjects.forEach(object=>{object.visible=imuShown&&i<3;});imuAxis.visible=imuShown&&i===0;groundObjects.forEach(object=>{object.visible=i!==3;});renderer.render(scene,cameras[i]);});
   links.Body.visible=true;groundObjects.forEach(object=>{object.visible=true;});renderer.setScissorTest(false);
   drawBottomLabels(fitCanvas(finLabels,width,height),width,height,sample);
 }

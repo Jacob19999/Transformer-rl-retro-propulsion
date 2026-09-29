@@ -280,13 +280,15 @@ export function createMissionPlanner(root,{readInitial,writeInitial,onChange,ove
   view3d=createPlanner3D(root.querySelector('#planner3D'),{
     read:()=>({initial:readInitial(),waypoints,pads,selected:selectedHandle,corridor:corridor(),convex:isConvex(),disturbances:readDisturbances()}),
     select:id=>{selectedHandle=id;selected=typeof id==='number'?id:-1;editList();drawProfile();},
+    add:(type,position)=>addWaypoint(type,position),
+    remove:i=>{closeContextEditor();waypoints.splice(i,1);selected=Math.min(i,waypoints.length-1);selectedHandle=selected<0?null:selected;editList();changed();},
     context:({id,position,menu,close})=>{
       contextEditor=null;
       if(typeof id==='number'){
         menu.innerHTML=`<div class="context-heading">STEP ${id+1} · ${escapeHtml(waypointTypes[waypoints[id].type].toUpperCase())}<button type="button" class="context-close" aria-label="Close waypoint menu">×</button></div><div class="hint context-note"></div><div class="context-fields"></div>`;
         contextEditor={id,menu,close};menu.hidden=false;refreshContextEditor();
       }else if(id==null){
-        menu.innerHTML=`<div class="context-heading">ADD STEP HERE<button type="button" class="context-close" aria-label="Close waypoint menu">×</button></div><div class="hint">X ${position[0].toFixed(1)} · Y ${position[1].toFixed(1)} · Z ${position[2].toFixed(1)} m<br>Placed at the selected step's height, or 3 m. Takeoff/descent keep the previous X/Y; landing uses its pad.</div><div class="context-add">${Object.entries(waypointTypes).map(([type,name])=>`<button type="button" data-context-add="${type}" style="--step-color:${waypointColors[type]}" ${waypoints.length>=12||['takeoff','land'].includes(type)&&waypoints.some(w=>w.type===type)?'disabled':''}><i></i>${name}</button>`).join('')}</div>`;
+        menu.innerHTML=`<div class="context-heading">ADD STEP HERE<button type="button" class="context-close" aria-label="Close waypoint menu">×</button></div><div class="hint">X ${position[0].toFixed(1)} · Y ${position[1].toFixed(1)} · Z ${position[2].toFixed(1)} m<br>Placed at the selected step's height, else the last step's (3 m on an empty route). Takeoff/descent keep the previous X/Y; landing uses its pad.</div><div class="context-add">${Object.entries(waypointTypes).map(([type,name])=>`<button type="button" data-context-add="${type}" style="--step-color:${waypointColors[type]}" ${waypoints.length>=12||['takeoff','land'].includes(type)&&waypoints.some(w=>w.type===type)?'disabled':''}><i></i>${name}</button>`).join('')}</div>`;
         menu.querySelectorAll('[data-context-add]').forEach(el=>el.onclick=()=>{close();addWaypoint(el.dataset.contextAdd,position);});
       }else{
         menu.innerHTML=`<div class="context-heading">${id==='start'?'START':'LANDING PAD'}<button type="button" class="context-close" aria-label="Close waypoint menu">×</button></div><div class="hint">Use the axis arrows to move this marker. ${id==='start'?'Velocity, attitude and rotor are under Vehicle & launch → Initial state.':'Rename or remove pads under Landing pads.'}</div>`;
