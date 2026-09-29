@@ -116,6 +116,20 @@ def _clarabel():
     return clarabel
 
 
+def plan_in_process(guidance: "ConvexGuidance", args: tuple, kwargs: dict):
+    """ConvexGuidance.plan run by a planner process (its own interpreter and GIL)."""
+    try:
+        return guidance.plan(*args, **kwargs)
+    finally:
+        guidance.close()
+
+
+def warm_up_process() -> bool:
+    """Load the solver in a fresh planner process before the first re-plan needs it."""
+    _clarabel()
+    return True
+
+
 def _trapezoid_weights(dts: np.ndarray) -> np.ndarray:
     """Node weights of the trapezoid rule over intervals dts (N intervals, N+1 nodes)."""
     weights = np.zeros(len(dts) + 1)
@@ -439,6 +453,12 @@ class ConvexGuidance:
         if self._executor is not None:
             self._executor.shutdown(wait=True)
             self._executor = None
+
+    def __getstate__(self):
+        # A copy for a planner process: thread pools do not cross process boundaries.
+        state = self.__dict__.copy()
+        state['_executor'] = None
+        return state
 
     def _solve_many(self, problems, stats, **options) -> list:
         """_solve for each (r0, v0, thrust, gate, segments), in order; concurrently when workers > 1."""

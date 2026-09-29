@@ -69,6 +69,28 @@ flight computer a route re-plan would stall the 30 Hz loop for seconds.
   | (8, 5, 18) m | 0.156 m/s, 0.014 m | 0.155, 0.017 | 0.155, 0.020 | 0.153, 0.036 |
 
   (impact speed, pad distance). Also a mission-control parameter (Re-planning).
+* `guidance.async_replan` (flight computer; default off, simulation keeps
+  the deterministic model above): re-plans are solved in the background and
+  taken over when done, no earlier than `plan_latency_s`. Control-step time
+  over five offline landings (Ryzen 9 9900X, replica paced near real time,
+  pad plan excluded):
+
+  | Mode | Worst step | p99 step | Landing |
+  | --- | --- | --- | --- |
+  | `thread` (GIL switch interval lowered to 1 ms) | 35-39 ms | 6 ms | identical |
+  | `process` (own interpreter and GIL) | 1.0-1.4 ms | 0.8-1.1 ms | identical |
+
+  A thread shares the GIL with the solve's Python problem building: at the
+  default 5 ms switch interval with 4 solver workers a step waited up to
+  34 ms, a whole 30 Hz period; lowering the interval fixes the typical case
+  but C-level work still holds the GIL for ~35 ms at times. Use `process` on
+  the Pi and call `planner_ready()` on the pad (the process takes ~1 s to
+  start). `close()` stops it.
+* `tools/bench_flight_computer.py`: run on the target to time the tracking
+  step, landing re-plans and a route plan, and to get a `plan_latency_s` to
+  validate in Isaac (route p95 x 1.25, rounded up to a control period).
+  Desktop: tracking 0.39 ms median, landing re-plans 37 ms median / 72 ms
+  p95, route plan 0.48 s, suggested 0.63 s.
 * Cost matrix accumulated as COO triplets instead of `lil_matrix` item
   updates; constraint rows assembled with list extends. Plans are
   bit-identical to before (cost, every node) for landing, route and
@@ -79,12 +101,10 @@ flight computer a route re-plan would stall the 30 Hz loop for seconds.
 
 ### Recommended pathways, in order
 
-1. **Run the planner beside the control loop.** A worker thread (Clarabel
-   releases the GIL) or, on the Pi, a separate process pinned to its own
-   cores, handing back a plan and the time it was requested from. The
-   adapter's `_install` is the hand-over point. Validate in Isaac with
-   `plan_latency_s` set to the measured 95th-percentile solve time on the
-   target, with margin.
+1. **Run the planner beside the control loop** (done: `async_replan:
+   process`). Measure on the target with `tools/bench_flight_computer.py`,
+   validate in Isaac with the suggested `plan_latency_s`, then fly with the
+   planner process pinned to its own cores.
 2. **Build each problem once, update values.** Durations change only the
    values of `A`, `b`, `q` and `P`, never the sparsity, across the ~20 solves
    of one line search. Building the sparsity once per segment structure and
@@ -132,7 +152,7 @@ comparison.
 ## Validation
 
 * Unit tests (Python 3.12): 369 passed, 7 skipped (Clarabel/pxr).
-* Convex, mission-service and disturbance tests (`env_isaaclab`): 90 passed.
+* Convex, flight-planning, mission-service and disturbance tests (`env_isaaclab`): 120 passed.
 * Mission-control JavaScript tests: 46 passed.
 * Planner and LQR speedups: plans and the offline closed-loop landing are
   bit-identical to the previous code at `plan_latency_s: 0`.

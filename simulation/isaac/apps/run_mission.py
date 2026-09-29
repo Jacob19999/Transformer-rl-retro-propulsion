@@ -389,7 +389,7 @@ def main():
     finally:
         watchdog.reset(30, label='Mission cleanup')
         if convex is not None:
-            convex.guidance.close()
+            convex.close()
         if env is not None:
             env.close()
         if app is not None:

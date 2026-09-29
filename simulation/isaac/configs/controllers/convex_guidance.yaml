@@ -128,6 +128,17 @@ guidance:
   # (physics review 2026-09-29).
   # Offline replica: landings stay soft up to 1 s.
   plan_latency_s: 0.0
+  # Flight computer only: solve re-plans in the background and take each plan
+  # over when it is done (and no earlier than plan_latency_s). Wall-time
+  # dependent, so simulation leaves it off and models the delay above.
+  #   thread:  a worker thread; lowers Python's GIL switch interval to
+  #            async_switch_interval_s (at the 5 ms default a solve delayed a
+  #            control step by up to 34 ms), but C-level work in the solve
+  #            still stalled the odd step ~35 ms.
+  #   process: a planner process with its own GIL (recommended on the Pi).
+  #            Call planner_ready() on the pad; it takes ~1 s to start.
+  async_replan: false
+  async_switch_interval_s: 0.001
   # Powered descent ends at a gate above the pad, then a constant-rate
   # vertical descent to contact (success gate: impact <= 0.25 m/s).
   gate_height_m: 0.5            # above touchdown body height (0.3125 m)

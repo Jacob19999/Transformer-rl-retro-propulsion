@@ -31,6 +31,7 @@ simulator ground truth and never alters the environment.
 
 from __future__ import annotations
 
+from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass, replace
 import math
 
@@ -45,7 +46,7 @@ from tvc_env.controllers.attitude_lqr import AttitudePlant, GyroAttitudeLQR, LQR
 from tvc_env.controllers.base import BaseController
 from tvc_env.controllers.convex_guidance import (
     HOVER, ConvexGuidance, EnergyModel, GuidanceLimits, LandingGate, ObjectiveWeights, RouteWaypoint, catmull_rom_leg,
-    curve_distance,
+    curve_distance, plan_in_process,
 )
 from tvc_env.controllers.pid_fin_mixer import PIDFinMixer
 
@@ -172,6 +173,29 @@ class ConvexGuidanceController(BaseController):
         self.plan_latency_s = float(g.get('plan_latency_s', 0.0))
         if not math.isfinite(self.plan_latency_s) or self.plan_latency_s < 0.0:
             raise ValueError('guidance.plan_latency_s must be finite and non-negative')
+        # Flight computer: solve re-plans on a background thread and take the
+        # plan over when it is done (and no earlier than plan_latency_s), so a
+        # slow solve never stalls the control loop. Not deterministic in wall
+        # time; simulation keeps the synchronous solve plus plan_latency_s.
+        mode = g.get('async_replan', False)
+        modes = {False: None, 'off': None, True: 'thread', 'thread': 'thread', 'process': 'process'}
+        if mode not in modes:
+            raise ValueError("guidance.async_replan must be false, 'thread' or 'process'")
+        self.async_replan = modes[mode]
+        self._planner = None
+        if self.async_replan == 'thread':
+            # The solve builds its problem in Python, holding the GIL: at the
+            # default 5 ms switch interval with 4 solver workers a control step
+            # waited up to 34 ms (a whole 30 Hz period); at 1 ms, typically
+            # <= 6 ms (Ryzen 9 9900X, offline replica). C-level work that holds
+            # the GIL still stalled the odd step ~35 ms; 'process' avoids that.
+            import sys
+            sys.setswitchinterval(min(sys.getswitchinterval(), float(g.get('async_switch_interval_s', 0.001))))
+        elif self.async_replan == 'process':
+            import multiprocessing
+            from tvc_env.controllers.convex_guidance import warm_up_process
+            self._planner = ProcessPoolExecutor(1, mp_context=multiprocessing.get_context('spawn'))
+            self._planner_warm = self._planner.submit(warm_up_process)
         self._limits = GuidanceLimits(
             mass_kg=vehicle.mass_kg, thrust_min_n=self.thrust_min_n,
             thrust_max_n=self._planning_ceiling(vehicle.full_thrust_n, strict=True),
@@ -337,7 +361,7 @@ class ConvexGuidanceController(BaseController):
         self._plan_t0 = 0.0
         self._previous_plan = None      # (plan, t0) replaced at the last re-plan: feedforward cross-fade
         self._plan_installed_t = 0.0    # when the tracked plan took over (cross-fade clock)
-        self._pending = None            # (ready_t, plan, requested_t, origin, route_len) under plan_latency_s
+        self._pending = None            # (ready_t, plan or Future, requested_t, origin, route_len)
         self._plan_id = 0
         self._plan_route_len = None
         self._new_plan = False
@@ -648,10 +672,12 @@ class ConvexGuidanceController(BaseController):
         if self._pending is not None:
             # A solve is still running beside the control loop: keep flying
             # the current plan until it lands, then take it over.
-            if self._t + 1e-9 < self._pending[0]:
+            ready_t, new, requested, origin, route_len = self._pending
+            if self._t + 1e-9 < ready_t or (isinstance(new, Future) and not new.done()):
                 return
-            _, new, requested, origin, route_len = self._pending
             self._pending = None
+            if isinstance(new, Future):
+                new = new.result()          # a solver error surfaces here, as it would synchronously
             self._install(new, requested, origin, route_len, position)
             return
         plan, elapsed = self._plan, self._t - self._plan_t0
@@ -694,11 +720,26 @@ class ConvexGuidanceController(BaseController):
             emergency_thrust_max_n=available,
             emergency_thrust_rate_n_s=self._thrust_rate(volts, self.spool_rate))
         self._last_attempt_t = self._t
-        new = self.guidance.plan(*start, self.gate, waypoints, landing_time_hint=hint, path=path,
-                                 landing_corridor_m=self.landing_corridor_m, landing_speed_m_s=self.landing_speed_m_s)
-        if self.plan_latency_s > 0.0 and plan is not None and self._phase != HOLD:
-            # The first plan is solved on the pad and a HOLD hovers in place,
-            # so only a re-plan of a tracked plan is delayed.
+        options = dict(landing_time_hint=hint, path=path, landing_corridor_m=self.landing_corridor_m,
+                       landing_speed_m_s=self.landing_speed_m_s)
+        # The first plan is solved on the pad and a HOLD hovers in place, so
+        # only a re-plan of a tracked plan runs late (or in the background).
+        deferred = plan is not None and self._phase != HOLD
+        if deferred and self.async_replan:
+            args = (*(np.array(x, dtype=float) for x in start), self.gate, waypoints)
+            if self.async_replan == 'process':
+                # A copy of the planner (with the limits set above) solves in its own process.
+                job = self._planner.submit(plan_in_process, self.guidance, args, options)
+            else:
+                if self._planner is None:
+                    self._planner = ThreadPoolExecutor(1, thread_name_prefix='replan')
+                # No new request is made while one is pending, so the guidance
+                # object (and its limits, set above) is only used by this job.
+                job = self._planner.submit(self.guidance.plan, *args, **options)
+            self._pending = (self._t + self.plan_latency_s, job, self._t, origin, len(waypoints))
+            return
+        new = self.guidance.plan(*start, self.gate, waypoints, **options)
+        if deferred and self.plan_latency_s > 0.0:
             self._pending = (self._t + self.plan_latency_s, new, self._t, origin, len(waypoints))
             return
         self._install(new, self._t, origin, len(waypoints), position)
@@ -1017,6 +1058,19 @@ class ConvexGuidanceController(BaseController):
         z = self._yaw_integral + rate * self.dt
         bound = max(self._yaw_reserve, 0.25 * self._vane_limit) / max(abs(gain), 1e-9)
         self._yaw_integral = min(max(z, -bound), bound)
+
+    def planner_ready(self, timeout: float | None = None) -> bool:
+        """Block until a planner process has started (call on the pad, before flight)."""
+        warm = getattr(self, '_planner_warm', None)
+        return True if warm is None else bool(warm.result(timeout))
+
+    def close(self) -> None:
+        """Stop the background planner (a running solve finishes first) and the solver pool."""
+        if self._planner is not None:
+            self._planner.shutdown(wait=True)
+            self._planner = None
+        self._pending = None
+        self.guidance.close()
 
     # ---- telemetry ----
 

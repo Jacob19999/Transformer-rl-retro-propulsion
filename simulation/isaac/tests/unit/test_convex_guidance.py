@@ -1027,3 +1027,44 @@ def test_zero_planning_latency_is_the_synchronous_controller():
         s = settings()
         s['guidance']['plan_latency_s'] = -0.1
         ConvexGuidanceController(s, _with_vanes(MOMENTUM_VANES), (0., 0., 0.), .3125, 1 / 30)
+
+
+@pytest.mark.parametrize('mode', ['thread', 'process'])
+def test_async_replanning_keeps_the_control_step_short_and_still_lands(mode):
+    import sys
+    import time
+    s = settings()
+    s['guidance']['async_replan'] = mode
+    switch = sys.getswitchinterval()
+    controller = ConvexGuidanceController(s, _with_vanes(MOMENTUM_VANES), (0., 0., 0.), .3125, 1 / 30,
+                                          servo_deadband_rad=.017)
+    steps, compute = [], controller.compute_action
+
+    def paced(*args, **kwargs):
+        started = time.perf_counter()
+        action = compute(*args, **kwargs)
+        steps.append(time.perf_counter() - started)
+        time.sleep(0.004)                 # let background solves land within a few control steps
+        return action
+    controller.compute_action = paced
+    try:
+        assert controller.planner_ready(60)
+        touchdown, worst = _land_on_vanes(controller, MOMENTUM_VANES, damping=0.)
+    finally:
+        controller.close()
+        sys.setswitchinterval(switch)
+    assert controller._plan_id >= 2                                   # background re-plans were taken over
+    flight = sorted(steps[1:])                                        # steps[0] solves the pad plan
+    # A thread shares the GIL with the solve: typically <= 6 ms, but C-level
+    # work stalls the odd step ~35 ms. A planner process never blocks the loop.
+    assert flight[int(0.95 * len(flight))] < 0.01
+    if mode == 'process':
+        assert flight[-2] < 0.02
+    assert touchdown is not None and touchdown['impact'] <= .25 and touchdown['pad'] <= .2 and worst < 5.
+
+
+def test_async_replan_mode_is_validated():
+    s = settings()
+    s['guidance']['async_replan'] = 'fibre'
+    with pytest.raises(ValueError):
+        ConvexGuidanceController(s, _with_vanes(MOMENTUM_VANES), (0., 0., 0.), .3125, 1 / 30)
