@@ -1,4 +1,4 @@
-# Explicit PID baseline, separate from the learned PPO policy.
+# Explicit PID baseline, separate from any learned policy.
 # Fresh radial mission 8b0000000001: 15 s timeout, ~38 deg/s sustained yaw
 # oscillation with inherited yaw gains kp=kd=0.2; new hinges now provide yaw
 # authority. Lower yaw bandwidth to account for servo lag and low yaw inertia.
@@ -20,5 +20,5 @@ guidance:
   flare_descent_rate: 0.18
 # The old nominal motor-fraction bias ignored full-charge voltage. Convert
 # equilibrium rotor fraction to bus-referenced duty using measured Vbus.
-# This is PID gravity feedforward, never a PPO action correction.
+# This is PID gravity feedforward, never a learned-action correction.
 voltage_feedforward: true

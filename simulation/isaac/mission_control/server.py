@@ -3,22 +3,19 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
-import math
 import os
 from pathlib import Path
 import re
 import subprocess
 import sys
 import threading
-import time
 import uuid
 from collections import OrderedDict
-import psutil
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from .models import ROOT, DEFAULTS, validate_mission, policy_paths, default_mission, convex_available, braking_envelopes
+from .models import ROOT, DEFAULTS, validate_mission, default_mission, convex_available, braking_envelopes
 
 HERE = Path(__file__).resolve().parent
 CONVEX_LABEL = 'CONVEX · SOCP powered-descent guidance'
@@ -39,15 +36,11 @@ process = None
 active_id = None
 
 
-# Trainers that own Isaac, with the output directory each uses by default.
-TRAINERS = {'run_train_ppo.py': 'runs', 'run_train_waypoints.py': 'runs/waypoint_flight'}
-MODEL_RUNS = ROOT / 'runs/waypoint_flight'
-
 
 class JsonlCache:
     """Complete JSONL records, re-reading only bytes appended since the last call.
 
-    Trainer and mission logs are append-only, so polling endpoints cost
+    Mission logs are append-only, so polling endpoints cost
     O(new lines) instead of re-parsing multi-MB files. A shrunk or replaced
     file is re-read from the start. raw=True keeps each validated line as
     bytes so large frame streams can be returned without a decode/encode trip.
@@ -89,191 +82,6 @@ class JsonlCache:
 
 log_records = JsonlCache()
 frame_lines = JsonlCache(raw=True)
-TRAINING_SCAN_TTL_S = 3.
-_training_scan = (0., None)
-
-
-def scan_training_command():
-    """Find this repository's active trainer without inspecting unrelated work."""
-    for candidate in psutil.process_iter(['name']):
-        if 'python' not in (candidate.info['name'] or '').lower():
-            continue
-        try:
-            command = candidate.cmdline()
-            if any(Path(arg).name in TRAINERS for arg in command):
-                if str(ROOT).lower() in ' '.join(command).lower() or Path(candidate.cwd()).resolve() == ROOT:
-                    return command
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
-    return None
-
-
-def active_training_command():
-    """Process scan (~30 ms on Windows) shared by the status polls for a few seconds."""
-    global _training_scan
-    stamp, command = _training_scan
-    if time.monotonic() - stamp > TRAINING_SCAN_TTL_S:
-        command = scan_training_command()
-        _training_scan = (time.monotonic(), command)
-    return command
-
-
-def external_training_running():
-    # Launch decisions always use a fresh scan, never the shared status cache.
-    return scan_training_command() is not None
-
-
-def latest_jsonl(path):
-    try:
-        with path.open('rb') as stream:
-            stream.seek(0, 2)
-            stream.seek(max(0, stream.tell() - 20000))
-            lines = stream.read().splitlines()
-        for line in reversed(lines):
-            try:
-                return json.loads(line)
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                continue
-    except FileNotFoundError:
-        pass
-    return {}
-
-
-def finite_values(value):
-    """JSON-safe copy: the trainers write NaN for metrics with no samples."""
-    if isinstance(value, float):
-        return value if math.isfinite(value) else None
-    if isinstance(value, dict):
-        return {key: finite_values(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [finite_values(item) for item in value]
-    return value
-
-
-def curriculum_stages(run):
-    task = (read_json(run / 'task_config.json', {}) or {}).get('task', {})
-    return task.get('waypoint_flight', {}).get('curriculum', {}).get('stages', [])
-
-
-def training_snapshot(command):
-    if not command:
-        return None
-    trainer = next(Path(arg).name for arg in command if Path(arg).name in TRAINERS)
-    base = ROOT / (command[command.index('--output-dir') + 1] if '--output-dir' in command else TRAINERS[trainer])
-    if not base.resolve().is_relative_to((ROOT / 'runs').resolve()):
-        return None
-    runs = list(base.glob('*/args.json'))
-    if not runs:
-        return None
-    run = max(runs, key=lambda path: path.stat().st_mtime).parent
-    update = latest_jsonl(run / 'train_log.jsonl')
-    evaluation = latest_jsonl(run / 'eval_log.jsonl')
-    if trainer == 'run_train_waypoints.py':
-        selected = dict(task='waypoint_flight', run=run.name, step=update.get('global_step'),
-                        stage=update.get('stage_index'), stages=len(curriculum_stages(run)) or None,
-                        stage_name=update.get('stage_name'),
-                        stage_success=update.get('stage_success_fraction'),
-                        peak_yaw=update.get('mean_peak_yaw_deg_s'), sps=update.get('sps'),
-                        full_eval_step=evaluation.get('global_step'),
-                        full_success=evaluation.get('success_fraction'),
-                        success_energy_wh=evaluation.get('success_mean_energy_wh'),
-                        success_delta_v=None)
-    else:
-        selected = dict(task='landing', run=run.name, step=update.get('global_step'),
-                        stage=update.get('spawn_stage_index'), stages=update.get('spawn_num_stages'),
-                        stage_success=update.get('stage_success_fraction'),
-                        full_eval_step=evaluation.get('global_step'),
-                        full_success=evaluation.get('success_fraction'),
-                        success_energy_wh=evaluation.get('success_mean_energy_wh'),
-                        success_delta_v=evaluation.get('success_mean_propulsive_delta_v_m_s'))
-    return finite_values(selected)
-
-
-def read_jsonl(path):
-    """Complete records only; a trainer may be appending the final line."""
-    return log_records.read(path)
-
-
-def train_updates(run):
-    return [r for r in read_jsonl(run / 'train_log.jsonl') if r.get('type', 'train_update') == 'train_update']
-
-
-def outcome_fractions(record):
-    outcomes = record.get('outcomes') or {}
-    total = sum(outcomes.values())
-    return {key: value / total for key, value in outcomes.items()} if total else None
-
-
-def model_summary(run):
-    """Summarise one waypoint_flight run from its logs; no checkpoint is loaded."""
-    updates = train_updates(run)
-    last = updates[-1] if updates else {}
-    checkpoints = []
-    for path in run.glob('*.pt'):
-        digits, info = path.stem.removeprefix('ppo_step_'), path.stat()
-        checkpoints.append(dict(file=path.name, step=int(digits) if digits.isdigit() else None,
-                                bytes=info.st_size, modified=info.st_mtime))
-    args = read_json(run / 'args.json', {}) or {}
-    return finite_values(dict(
-        run=run.name, task='waypoint_flight', modified=run.stat().st_mtime,
-        resume=args.get('resume'), num_envs=args.get('num_envs'), total_steps=args.get('total_steps'),
-        step=last.get('global_step'), update=last.get('update'), sps=last.get('sps'),
-        stage=last.get('stage_index'), stage_name=last.get('stage_name'),
-        stages=[stage.get('name') for stage in curriculum_stages(run)],
-        stage_success=last.get('stage_success_fraction'), outcomes=outcome_fractions(last),
-        peak_yaw=last.get('mean_peak_yaw_deg_s'), throttle=last.get('throttle_mean'),
-        explained_variance=last.get('explained_variance'),
-        evaluation=read_json(run / 'eval_latest.json'),
-        checkpoints=sorted(checkpoints, key=lambda c: c['modified'])))
-
-
-@app.get('/api/models')
-def list_models():
-    """Mission-flyable policies plus the latest waypoint_flight training runs.
-
-    The registered mission policy may be a waypoint_flight checkpoint
-    (run_mission.py flies it on its own training task); other runs listed
-    here are for inspection only.
-    """
-    flyable = []
-    for key, path in policy_paths().items():
-        registry = HERE / ('mission_policy_registry.json' if key == 'ppo_mission' else 'policy_registry.json')
-        record = read_json(registry, {}) or {}
-        flyable.append(dict(key=key, checkpoint=path, status=record.get('status'),
-                            validated=record.get('validated', False), note=record.get('note'),
-                            training_run=record.get('training_run')))
-    if convex_available():
-        flyable.append(dict(key='convex', checkpoint='configs/controllers/convex_guidance.yaml',
-                            status='deterministic', validated=False, label=CONVEX_LABEL, note=CONVEX_NOTE))
-    runs = sorted((p for p in MODEL_RUNS.glob('*') if (p / 'args.json').is_file()),
-                  key=lambda p: p.stat().st_mtime, reverse=True) if MODEL_RUNS.is_dir() else []
-    training = active_training_command()
-    active_run = (training_snapshot(training) or {}).get('run')
-    return dict(flyable=flyable, active_run=active_run,
-                runs=[dict(model_summary(run), active=run.name == active_run) for run in runs[:8]])
-
-
-@app.get('/api/models/{run}/history')
-def model_history(run: str, points: int = 240):
-    if not re.fullmatch(r'[A-Za-z0-9_.-]+', run) or not (MODEL_RUNS / run / 'args.json').is_file():
-        raise HTTPException(404, 'Training run not found')
-    updates = train_updates(MODEL_RUNS / run)
-    stride = max(1, math.ceil(len(updates) / max(10, min(points, 2000))))
-    kept = updates[::stride]
-    if updates and kept[-1] is not updates[-1]:
-        kept.append(updates[-1])
-    series = [dict(step=r.get('global_step'), stage=r.get('stage_index'),
-                   stage_success=r.get('stage_success_fraction'),
-                   rollout_success=r.get('rollout_success_fraction'),
-                   spin=(outcome_fractions(r) or {}).get('SPIN'),
-                   peak_yaw=r.get('mean_peak_yaw_deg_s'), reward=r.get('reward_mean'),
-                   explained_variance=r.get('explained_variance'), throttle=r.get('throttle_mean'))
-              for r in kept]
-    evaluations = [dict(step=r.get('global_step'), success=r.get('success_fraction'))
-                   for r in read_jsonl(MODEL_RUNS / run / 'eval_log.jsonl')]
-    return finite_values(dict(run=run, series=series, evaluations=evaluations))
-
-
 @app.middleware('http')
 async def local_write_guard(request: Request, call_next):
     if request.method not in ('GET', 'HEAD'):
@@ -335,19 +143,13 @@ def status(mid):
 def config():
     from .convex_parameters import schema
     from .disturbance_parameters import defaults as disturbance_defaults
-    paths = policy_paths()
     policies = {}
     if convex_available():
         policies['convex'] = CONVEX_LABEL
-    if 'ppo_radial' in paths:
-        policies = {'ppo_radial': 'PPO · radial 8S / battery aware', **policies}
-    if 'ppo_mission' in paths:
-        policies = {'ppo_mission': 'EXPERIMENTAL PPO · waypoint flight + landing', **policies}
-    training = active_training_command()
-    return dict(defaults=default_mission(paths), hardware=read_json(HERE / 'hardware.json'),
+    return dict(defaults=default_mission(), hardware=read_json(HERE / 'hardware.json'),
                 policies=policies, vehicles=braking_envelopes(), convex_parameters=schema(),
                 disturbance_defaults=disturbance_defaults(),
-                engine='NVIDIA Isaac Sim / PhysX', training=bool(training), training_metrics=training_snapshot(training),
+                engine='NVIDIA Isaac Sim / PhysX',
                 active=active_id if process and process.poll() is None else None)
 
 
@@ -459,8 +261,6 @@ async def start(request: Request):
     except (ValueError, TypeError) as exc:
         raise HTTPException(422, str(exc)) from exc
     with lock:
-        if external_training_running():
-            raise HTTPException(409, 'PPO training is using Isaac. Replay is available; start a new mission after training finishes.')
         if process and process.poll() is None:
             raise HTTPException(409, 'An Isaac mission is already running')
         mid = uuid.uuid4().hex[:12]

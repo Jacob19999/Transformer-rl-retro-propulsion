@@ -3,8 +3,7 @@
 Mission control can now fly the drone with **convex optimization**: a
 second-order cone program (SOCP) plans the thrust trajectory from the
 measured state through the mission route to the pad, and is re-solved in
-closed loop. It is an explicit classical controller, alongside PID and
-separate from PPO, and nothing in PPO training uses it.
+closed loop. It is an explicit classical controller, alongside PID.
 
 - Planner: `tvc_env/controllers/convex_guidance.py`
 - Flight controller (tracking, attitude, phases): `tvc_env/controllers/convex_adapter.py`
@@ -49,8 +48,7 @@ battery-powered, constant-mass vehicle.
 
   The thrust-vector rate bound is added because a rotor speed change yaws
   this vehicle (rotor/body angular momentum), and the bound keeps that
-  torque inside the vanes' yaw authority. It is the same 0.25 duty/s bound
-  as `task.waypoint_flight.throttle_command`. Bounding the vector rather
+  torque inside the vanes' yaw authority. Bounding the vector rather
   than the slack matters: with the slack form the lossless gap was 3.4%,
   and the executed thrust stepped faster than the rotor can follow.
 - **Objective.** Minimum electrical energy. The simulator's power model is
@@ -241,10 +239,10 @@ independent airfoil (q·S·C_Nα at the ideal 128 m/s jet speed), plus a
 0.27 N·m·s/rad artificial damper. The project's 2026-09-14 audit
 (`tvc_env/dynamics/coupled_jet.py`) found those forces exceed the jet's
 momentum. At hover they give 8.5× the torque per degree of the
-momentum-bounded coupled jet that the waypoint_flight PPO trains on:
+momentum-bounded coupled jet:
 10° of vane made 21 N sideways, 62% of the thrust. Classical-controller
 missions now fly the coupled jet by default (request field `vane_model`:
-`momentum` | `legacy`, with physics copied from `train_waypoint_flight.yaml`).
+`momentum` | `legacy`, with physics from `configs/env/mission_plant.yaml`).
 Missions recorded before the field report the plant they flew.
 
 **Probed authority** (`TVCDirectRLEnv.vane_authority()`, torque per rad at
@@ -340,8 +338,7 @@ bookkeeping are right, and 120 Hz is converged. Two defects:
   coasts on its drag (0.47 N·m at hover, a ~1.7 s time constant). The
   unbounded spin-down spun every landed momentum-vane vehicle at
   430–710°/s on the pad after disarm. The torque is now bounded
-  (`dynamics.motor_torque_limit` in `train_waypoint_flight.yaml`, which is
-  also the PPO training plant), and the pad spin fell to 2–4°/s.
+  (`dynamics.motor_torque_limit` in `mission_plant.yaml`), and the pad spin fell to 2–4°/s.
 - **Warm-rotor spawns** started the battery at its open-circuit voltage
   while the rotor already drew hover power. The first substep dropped the
   bus 3% (33.6 → 32.6 V), and a flight computer reading 33.6 V under-drove
@@ -494,7 +491,7 @@ waypoints and the pad, the same curve the launch planner draws.
 | Distance to a chord of the curve (an SOC per node, with a chord parameter) | A corridor measured across the curve's tangent left the along-route direction free: on the near-vertical first leg of `835c3de32185` the plan still sank 20 m below the waypoint. A chord ends at its waypoint, so running past it counts |
 | Two passes: the whole leg's chord, then ±10% chords around each planned node | The whole chord leaves the timing free but is 1–3 m from the curve on the routes tried; local chords are 0.2–0.6 m from it. A second refinement changed nothing |
 | Soft: the excess is priced at 10 s of hover energy per metre-second | A start the corridor cannot contain still gets a plan; the landing-time search ranks durations with the penalty included |
-| Legs never run below their lower end | Catmull-Rom undershoots after a steep arrival. The trial's hover-to-hover leg (6 m, 4.5 m) dips to 1.5 m, and following it took the plan to the 0.8 m floor at 2.3 m/s: touchdown 17 m from the pad (offline replica). The sequencer's curve is unchanged (PPO observation contract) |
+| Legs never run below their lower end | Catmull-Rom undershoots after a steep arrival. The trial's hover-to-hover leg (6 m, 4.5 m) dips to 1.5 m, and following it took the plan to the 0.8 m floor at 2.3 m/s: touchdown 17 m from the pad (offline replica). The sequencer's curve is unchanged (observation contract) |
 | On a corridor, an over-speed start may brake at full thrust until back under the speed bound | Without a corridor the energy optimum brakes no harder than the floor forces: offline, the same allowance turned `835c3de32185`'s maximum-braking fallback into a plan that skimmed the 0.8 m floor with no thrust left for tracking. With the corridor the plan from that mission's 3.5 s state bottoms at 18.5 m instead of 4.3 m |
 
 A rotor above the planning ceiling (a braking plan or tracking margin) now
@@ -577,7 +574,7 @@ height at its 60 s limit.
 - **Controller option.** **CONVEX · SOCP powered-descent guidance** is
   offered when Clarabel is importable. It flies landing and waypoint
   missions; waypoint missions need the LiPo model, because the mission
-  sequencer shares the PPO observation contract.
+  sequencer's observation contract needs the battery channels.
 - **Flight page.** Draws the optimized trajectory in force at the replay
   time as a green line in the camera views. It adds a guidance readout
   (phase, time to gate, tracking error, thrust command, solve time, lossless

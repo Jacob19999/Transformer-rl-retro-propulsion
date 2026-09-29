@@ -36,15 +36,15 @@ def test_ground_plane_covers_env_grid_and_lateral_spawn_reach():
     The ground was a hard-coded 200x200 m cuboid while the Isaac Lab env grid
     and the task spawn box both grew independently of it. At 4 m spacing the
     grid half-extent is 90 m for 2048 envs but 180 m for 8192, so a
-    ppo_waypoints_staged_v4 stage-0 evaluation landed only 25.7% of episodes
-    against 87.6% for the identical policy at 2048 envs, with max downward
-    speed 59.9 m/s -- environments off the plane, not a worse policy.
+    stage-0 evaluation landed only 25.7% of episodes against 87.6% for the
+    identical controller at 2048 envs, with max downward speed 59.9 m/s --
+    environments off the plane, not a worse controller.
     """
     import math
 
     from tvc_env.sim.scene_builder import DEFAULT_GROUND_MARGIN_M, SceneConfig
 
-    widest_spawn_reach_m = 100.0  # configs/env/train_2048_8s_waypoints.yaml
+    widest_spawn_reach_m = 100.0  # widest spawn box the planned missions use
     for num_envs in (128, 512, 2048, 4096, 8192, 16384):
         cfg = SceneConfig(num_envs=num_envs, env_spacing=4.0)
         columns = math.ceil(math.sqrt(num_envs))

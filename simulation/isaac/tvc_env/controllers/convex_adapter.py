@@ -236,8 +236,8 @@ class ConvexGuidanceController(BaseController):
         Slewing the duty at d changes rotor speed at omega_max (V_bus/V_ref) d,
         a reaction torque I_rotor omega_max (V_bus/V_ref) d about the thrust
         axis. Only the vanes' common mode can hold it: K_yaw f^2 delta_max at
-        hover. The configured throttle_rate_per_s (0.25 /s, set from the
-        waypoint_flight analysis) is kept whenever it is smaller. Legacy
+        hover. The configured throttle_rate_per_s (0.25 /s, set from a rotor
+        reaction-torque analysis) is kept whenever it is smaller. Legacy
         vanes: always. Momentum-bounded vanes: ~0.09 /s. There, 0.25 /s at the
         gate spun the body to 34 deg/s with every vane saturated in common
         mode, and roll/pitch fell into a 2.5 Hz nutation oscillation (Isaac

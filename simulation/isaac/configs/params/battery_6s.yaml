@@ -1,6 +1,6 @@
 # Optional 6S LiPo equivalent-circuit model, requested for mission control.
 # All electrical/thermal values are estimates, NOT bench-calibrated pack data.
-# Existing PPO checkpoints were trained without voltage coupling. Mission
+# Older simulations ran without voltage coupling. Mission
 # control enables this model explicitly and records the complete configuration.
 battery:
   enabled: true

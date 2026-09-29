@@ -1,7 +1,7 @@
 {
   "format": "edf-convex-presets",
   "version": 1,
-  "note": "Built-in convex guidance profiles, one per mission type and corridor behaviour. Each entry is a bounded override of configs/controllers/convex_guidance.yaml validated by convex_parameters.validate_settings. Tracking gains kp/kd/ki are never changed: the 1.0/1.2/0.3 horizontal set is the one the hover-loop damping analysis (zeta 0.37) and the Isaac sweeps chose, and kd 1.6 wobbled in terminal descent. tilt_rate_authority_fraction stays at 0.4 in every profile: planning the thrust-rate bound's ~30 deg/s slew saturated every vane offline (2026-09-25). Tracking max tilt always keeps >= 7 deg of margin over the planned tilt for feedback.",
+  "note": "Built-in convex guidance profiles, one per mission type and corridor behaviour. Each entry is a bounded override of configs/controllers/convex_guidance.yaml validated by convex_parameters.validate_settings. Tracking gains kp/kd/ki are never changed: the 1.0/1.2/0.3 horizontal set is the one the hover-loop damping analysis (zeta 0.37) and the Isaac sweeps chose, and kd 1.6 wobbled in terminal descent. tilt_rate_authority_fraction stays at 0.4 in every profile: planning the thrust-rate bound's ~30 deg/s slew saturated every vane offline (2026-09-25). Tracking max tilt always keeps >= 7 deg of margin over the planned tilt for feedback. Route-following profiles (2026-09-28) add secondary objective terms (path, smoothness, time and tilt weights, priced in seconds of hover cost) and the fly-through arrival cone. The evidence is the offline closed-loop matrix in docs/convex_multi_objective_2026-09-28.md (momentum-vane plant + the mission sequencer), not yet Isaac runs.",
   "profiles": [
     {
       "id": "hop-gentle",
@@ -35,7 +35,7 @@
       "mission": "hop",
       "corridor": "strict",
       "summary": "Hops that must stay inside the corridor (obstacles, test-range limits). Holds instead of leaving it.",
-      "rationale": "Strict corridors reject any plan with slack and hold if infeasible, so the profile keeps plans comfortably feasible: 2.5 m/s, 12 deg planned tilt and a 1 m half-width. Tighter re-plan triggers (0.6 m, 0.6 m/s) restart from the measured state before the tube is exhausted.",
+      "rationale": "Strict corridors reject any plan with slack and hold if infeasible, so the profile keeps plans comfortably feasible: 2.5 m/s, 12 deg planned tilt and a 1 m half-width. Tighter re-plan triggers (0.6 m, 0.6 m/s) restart from the measured state before the tube is exhausted. With exact gate velocities the eight-gate weaving corridor (sample 25) had no strict plan and held on the pad for its whole timeout offline; the arrival cone (50-100% of leg speed, within 20 deg of the route) flew it 11/11 at 0.14-0.16 m cross-track RMS. Path weight 10 and smoothness 1 keep the plan on the centreline and the vanes out of saturation.",
       "settings": {
         "guidance": {"route_corridor_mode": "strict", "route_corridor_m": 1.0, "max_speed_m_s": 2.5,
                      "max_tilt_deg": 12.0, "replan_error_m": 0.6, "replan_velocity_error_m_s": 0.6,
@@ -50,10 +50,25 @@
       "mission": "hop",
       "corridor": "soft",
       "summary": "Longer, faster transfers (10-20 m). Wider tilt cone and speed, looser corridor.",
-      "rationale": "20 deg planned tilt still leaves 1.2 W * cos 20 = 1.13 W of vertical thrust inside the planning ceiling (8S, T/W 1.41, half the excess reserved). Tracking tilt 28 deg keeps 8 deg of feedback margin and the correction bound rises to 3.5 m/s^2. The tilt-rate share is unchanged (0.4): the cone widens, the slew does not.",
+      "rationale": "20 deg planned tilt still leaves 1.2 W * cos 20 = 1.13 W of vertical thrust inside the planning ceiling (8S, T/W 1.41, half the excess reserved). Tracking tilt 28 deg keeps 8 deg of feedback margin and the correction bound rises to 3.5 m/s^2. The tilt-rate share is unchanged (0.4): the cone widens, the slew does not. Path weight 10 cut the agile transfer's cross-track RMS 0.22 -> 0.15 m offline. Gates keep the exact leg speed: the arrival cone let the figure eight slow at every gate (+20-30% time and energy), which defeats this profile's purpose.",
       "settings": {
         "guidance": {"route_corridor_mode": "soft", "route_corridor_m": 1.5, "route_corridor_weight": 10.0,
-                     "max_speed_m_s": 5.0, "max_tilt_deg": 20.0, "route_dt_s": 0.3},
+                     "max_speed_m_s": 5.0, "max_tilt_deg": 20.0, "route_dt_s": 0.3, "path_weight": 10.0},
+        "tracking": {"max_tilt_deg": 28.0, "max_correction_m_s2": 3.5}
+      }
+    },
+    {
+      "id": "hop-time-weighted",
+      "name": "Hop - time weighted agile",
+      "mission": "hop",
+      "corridor": "soft",
+      "summary": "Long, fast transfers where arrival time matters as well as energy. Agile limits, time priced.",
+      "rationale": "Agile limits (20 deg, 5 m/s) with time_weight 1.0: every second of plan costs one extra second of hover power, doubling the implicit time price energy already pays, and the planner also tries 0.8x waypoint-leg timings. Gates may slow only to 70% of the leg speed within 15 deg, so the cone keeps turns feasible without trading the speed away; path weight 5 and smoothness 1 keep the fast plan trackable.",
+      "settings": {
+        "guidance": {"route_corridor_mode": "soft", "route_corridor_m": 1.5, "route_corridor_weight": 10.0,
+                     "max_speed_m_s": 5.0, "max_tilt_deg": 20.0, "route_dt_s": 0.3, "time_weight": 1.0,
+                     "path_weight": 5.0, "smoothness_weight": 1.0,
+                     "flypass_min_speed_fraction": 0.7, "flypass_heading_tolerance_deg": 15.0},
         "tracking": {"max_tilt_deg": 28.0, "max_correction_m_s2": 3.5}
       }
     },
@@ -63,11 +78,13 @@
       "mission": "hover",
       "corridor": "strict",
       "summary": "Station keeping and slow survey points with tight capture. Strict tube between hold points.",
-      "rationale": "1.5 m/s and 10 deg planned tilt make every hold approach gentle so the 0.4 m/s capture gate is met on arrival. 0.75 m strict corridor between closely spaced hover points; re-plans every 0.4 s from a 0.5 m / 0.5 m/s error so the hold reference stays current. Fly-throughs aim inside 40% of their radius.",
+      "rationale": "1.5 m/s and 10 deg planned tilt make every hold approach gentle so the 0.4 m/s capture gate is met on arrival. 0.75 m strict corridor between closely spaced hover points; re-plans every 0.4 s from a 0.5 m / 0.5 m/s error so the hold reference stays current. Fly-throughs aim inside 40% of their radius and may cross at 50-100% of the leg speed within 20 deg (a strict tube with exact gate velocities can have no plan at all). Path weight 10 and smoothness 1 cut cross-track RMS 0.16 -> 0.03 m on the compass and 0.32 -> 0.04 m on the survey box offline.",
       "settings": {
         "guidance": {"route_corridor_mode": "strict", "route_corridor_m": 0.75, "max_speed_m_s": 1.5,
                      "max_tilt_deg": 10.0, "replan_period_s": 0.4, "replan_error_m": 0.5,
-                     "replan_velocity_error_m_s": 0.5, "flypass_capture_fraction": 0.4},
+                     "replan_velocity_error_m_s": 0.5, "flypass_capture_fraction": 0.4,
+                     "path_weight": 10.0, "smoothness_weight": 1.0,
+                     "flypass_min_speed_fraction": 0.5, "flypass_heading_tolerance_deg": 20.0},
         "tracking": {"max_tilt_deg": 18.0}
       }
     },
@@ -81,6 +98,20 @@
       "settings": {
         "guidance": {"route_corridor_mode": "soft", "route_corridor_m": 1.5, "route_corridor_weight": 10.0,
                      "max_speed_m_s": 3.0, "thrust_excess_reserve_fraction": 0.6},
+        "tracking": {"max_tilt_deg": 26.0, "max_correction_m_s2": 4.0}
+      }
+    },
+    {
+      "id": "hover-attitude-reserve",
+      "name": "Hover - attitude reserve",
+      "mission": "hover",
+      "corridor": "soft",
+      "summary": "Long holds and relocations in strong wind: the plan itself tilts and slews as little as possible.",
+      "rationale": "Hover-gust thrust reserve and feedback bounds, plus tilt weight 3 (one second at the 15 deg planned tilt costs 3 s of hover) and smoothness 2, so the plan leaves attitude and vane authority to the wind trim instead of spending it on its own manoeuvres. Path weight 5 keeps relocations on the drawn route. The tilt term's gust benefit is a planner-level argument: the offline plant has no wind model, so it needs Isaac confirmation.",
+      "settings": {
+        "guidance": {"route_corridor_mode": "soft", "route_corridor_m": 1.5, "route_corridor_weight": 10.0,
+                     "max_speed_m_s": 3.0, "thrust_excess_reserve_fraction": 0.6, "tilt_weight": 3.0,
+                     "smoothness_weight": 2.0, "path_weight": 5.0},
         "tracking": {"max_tilt_deg": 26.0, "max_correction_m_s2": 4.0}
       }
     },
@@ -104,13 +135,28 @@
       "mission": "land",
       "corridor": "strict",
       "summary": "Pad-centred landings with a narrow approach cone. Strict corridor on any routed approach.",
-      "rationale": "40 deg glide slope finishes lateral motion higher than the 45 deg default (45 landed 0.29 m from centre where 55 missed by 0.68 m and 70 by 0.58 m; missions c2090264e9af, f546162f3741). The gate is raised to 0.6 m and hands over only within 0.25 m, then full descent rate only within 0.15 m of centre. 30 landing nodes resolve the narrower cone.",
+      "rationale": "40 deg glide slope finishes lateral motion higher than the 45 deg default (45 landed 0.29 m from centre where 55 missed by 0.68 m and 70 by 0.58 m; missions c2090264e9af, f546162f3741). The gate is raised to 0.6 m and hands over only within 0.25 m, then full descent rate only within 0.15 m of centre. 30 landing nodes resolve the narrower cone. With exact gate velocities the strict descending dogleg (sample 27) had no plan and held until timeout offline; the arrival cone (50-100%, 20 deg) landed it 6/6 on the pad at 0.12 m/s with 0.10-0.14 m cross-track RMS. Path weight 10 and smoothness 1 hold the routed approach on the centreline.",
       "settings": {
         "guidance": {"route_corridor_mode": "strict", "route_corridor_m": 0.75, "max_speed_m_s": 3.0,
                      "max_tilt_deg": 12.0, "glide_slope_deg": 40.0, "glide_slope_final_s": 4.0,
                      "gate_height_m": 0.6, "gate_capture_radius_m": 0.25, "terminal_center_radius_m": 0.15,
-                     "landing_nodes": 30},
+                     "landing_nodes": 30, "path_weight": 10.0, "smoothness_weight": 1.0,
+                     "flypass_min_speed_fraction": 0.5, "flypass_heading_tolerance_deg": 20.0},
         "tracking": {"max_tilt_deg": 20.0}
+      }
+    },
+    {
+      "id": "land-routed-tracking",
+      "name": "Landing - routed approach tracking",
+      "mission": "land",
+      "corridor": "soft",
+      "summary": "Landings after a drawn approach (circuits, go-arounds, spirals). Follows the route hard but always gets a plan.",
+      "rationale": "Soft 1.5 m corridor priced at 25 s per m*s plus path weight 15, so the approach stays on the drawn curve without the strict tube's hold-if-infeasible failure mode. Gates may cross at 50-100% of the leg speed within 25 deg, which keeps turning descents feasible under the 10 deg/s slew bound; smoothness 1 limits planned jerk. The glide slope and its 4 s narrowing match land-precision.",
+      "settings": {
+        "guidance": {"route_corridor_mode": "soft", "route_corridor_m": 1.5, "route_corridor_weight": 25.0,
+                     "glide_slope_deg": 40.0, "glide_slope_final_s": 4.0, "path_weight": 15.0,
+                     "smoothness_weight": 1.0, "flypass_min_speed_fraction": 0.5,
+                     "flypass_heading_tolerance_deg": 25.0}
       }
     },
     {

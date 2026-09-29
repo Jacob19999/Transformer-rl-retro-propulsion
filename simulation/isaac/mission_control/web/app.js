@@ -10,7 +10,6 @@ import {createRouteRibbon} from './route-line.js';
 import { checkRoute } from './braking.js';
 import { attitude, drawAdi, drawWebcast, fitCanvas, series } from './instruments.js';
 import { createCharts } from './charts.js';
-import { createModels } from './models.js';
 import { createChecklist } from './checklist.js';
 import { createRotorAnimation } from './rotor.js';
 import { collectPlans, planAt, createGuidancePanel } from './guidance.js';
@@ -21,7 +20,7 @@ const deg = 180 / Math.PI;
 const finNames = ['FWD', 'RIGHT', 'AFT', 'LEFT'];
 const linkNames = ['FwdFin', 'RightFin', 'AftFin', 'LeftFin'];
 const contactNames = ['AIRBORNE', 'CONTACT DWELL', 'LANDED', 'CRASHED'];
-const state = { id: null, frames: [], metadata: null, time: 0, playing: false, live: true, busy: false, recording: false, result: null, training:false, requestError:null, milestones: [], mission: null, connected: false, hasImu: false, imuOverlay: false };
+const state = { id: null, frames: [], metadata: null, time: 0, playing: false, live: true, busy: false, recording: false, result: null, requestError:null, milestones: [], mission: null, connected: false, hasImu: false, imuOverlay: false };
 // Per-viewer preference only; the page works the same when storage is blocked.
 try { state.imuOverlay = localStorage.getItem('missionControl.imuOverlay') === '1'; } catch {}
 let config, previousPosition = new THREE.Vector3(), orbitInitialized = false;
@@ -31,7 +30,7 @@ const text = (id, value) => { const el = $(id); if (el.textContent !== value) el
 function message(value, error = false) { for (const id of ['runMessage', 'launchMessage']) { text(id, value); $(id).style.color = error ? '#ff8f8f' : ''; } }
 // Pages share one state and one render loop; only the visible page is drawn,
 // and only when something it shows has changed (see animate()).
-const pages = ['flight', 'plan', 'telemetry', 'models', 'checklists'];
+const pages = ['flight', 'plan', 'telemetry', 'checklists'];
 const pageShown = {};
 let page = 'flight', sceneDirty = true, uiVersion = 0;
 const invalidate = () => { sceneDirty = true; uiVersion++; };
@@ -46,24 +45,16 @@ document.querySelectorAll('[data-page]').forEach(tab => tab.onclick = () => show
 document.querySelectorAll('.plan-jumps a').forEach(link=>link.onclick=e=>{e.preventDefault();const target=document.querySelector(link.getAttribute('href'));if(target?.tagName==='DETAILS')target.open=true;target?.scrollIntoView();});
 window.addEventListener('hashchange', () => showPage(location.hash.slice(1)));
 showPage(location.hash.slice(1));
-function trainingSummary(m){
-  if(m?.step==null)return 'PPO TRAINING · Starting simulator and restoring checkpoint';
-  const stage=`Stage ${m.stage+1}/${m.stages??'—'}${m.stage_name?' '+m.stage_name.replaceAll('_',' '):''}`;
-  const evaluation=m.full_success==null?'Full-task evaluation pending':`Full-task evaluation ${fmt(m.full_success*100,1)}% at ${fmt(m.full_eval_step/1e6,2)}M`;
-  if(m.task==='waypoint_flight')return `WAYPOINT FLIGHT PPO · ${fmt(m.step/1e6,2)}M transitions · ${stage} · Stage success ${fmt(m.stage_success*100,1)}% · Mean peak yaw ${fmt(m.peak_yaw,0)}°/s · ${fmt(m.sps,0)} steps/s · ${evaluation}`;
-  return `PPO TRAINING · ${fmt(m.step/1e6,2)}M transitions · ${stage} · Recent stage success ${fmt(m.stage_success*100,1)}% · ${evaluation}${m.success_energy_wh==null?'':' · Successful full-task landings: '+fmt(m.success_energy_wh,2)+' Wh / '+fmt(m.success_delta_v,1)+' m/s Δv'}`;
-}
-function updateTraining(c){
+function updateConfig(c){
   const choice=$('controller').value;
   const choices=Object.entries(c.policies);
   if(JSON.stringify([...$('controller').options].map(o=>[o.value,o.text]))!==JSON.stringify(choices)){
     $('controller').replaceChildren(...choices.map(([key,name])=>new Option(name,key)));
     $('controller').value=choice in c.policies?choice:c.defaults.controller;
   }
-  state.connected=true;state.training=!!c.training;state.trainingMetrics=c.training_metrics;
-  text('connection',state.training?'TRAINER ACTIVE / REPLAY READY':'ISAAC SERVICE ONLINE');
-  $('trainingStatus').hidden=!state.training;text('trainingStatus',trainingSummary(c.training_metrics));
-  $('run').disabled=state.busy||state.recording||state.training;
+  state.connected=true;
+  text('connection','ISAAC SERVICE ONLINE');
+  $('run').disabled=state.busy||state.recording;
   renderBoard();uiVersion++;
 }
 async function api(path, body) {
@@ -135,7 +126,6 @@ const seekTo=t=>{state.live=false;state.playing=false;state.time=THREE.MathUtils
 const guidancePanel=createGuidancePanel($('optimizationPanel'),{onSeek:seekTo});
 const charts=createCharts($('charts'),{onSeek:seekTo});
 const flightCharts=createCharts($('flightCharts'),{onSeek:seekTo,titles:['ALTITUDE','VELOCITY','THRUST','BODY RATES · FRD']});
-const models=createModels($('models'),api);
 // Live details follow the next-run form; mass and fin travel come from the loaded replay's physics.
 const checklist=createChecklist($('checklist'),{onChange:renderBoard,context:()=>{
   const physics=state.metadata?.physics_parameters,controller=$('controller').value;
@@ -143,8 +133,6 @@ const checklist=createChecklist($('checklist'),{onChange:renderBoard,context:()=
     mass:physics?.vehicle?.total_mass??3.104,finLimit:(physics?.vehicle?.fins?.max_deflection??.262)*deg};
 }});
 $('missionForm').addEventListener('input',()=>checklist.update());$('missionForm').addEventListener('change',()=>checklist.update());
-// The models panel polls training logs, so it only refreshes while shown.
-pageShown.models=()=>models.refresh().catch(()=>{});
 
 // No preserveDrawingBuffer: captureFrame() copies the canvas in the same task
 // as its render, while the buffer is still valid, so frames skip the extra copy.
@@ -413,11 +401,9 @@ const glyphs={good:'✓',warning:'!',critical:'✕',idle:'–'};
 let boardHtml='';
 function renderBoard(){
   const f=sampleAt(state.time)?.a,items=[];
-  items.push(['ISAAC SIM',!state.connected?['critical','OFFLINE']:state.training?['warning','TRAINER OWNS GPU']:state.busy?['good','MISSION RUNNING']:['good','READY']]);
-  const m=state.trainingMetrics;
-  items.push(['PPO TRAINER',state.training?['good',m?.step!=null?`${m.task==='waypoint_flight'?'WAYPOINT':'LANDING'} · ${fmt(m.step/1e6,1)}M · S${m.stage+1}/${m.stages??'—'}`:'STARTING']:['idle','IDLE']]);
+  items.push(['ISAAC SIM',!state.connected?['critical','OFFLINE']:state.busy?['good','MISSION RUNNING']:['good','READY']]);
   const controller=$('controller').value,policy=config?.policies?.[controller]??controller;
-  items.push(['NEXT CONTROLLER',controller==='convex'?['good','CONVEX SOCP']:[/EXPERIMENTAL/i.test(policy)?'warning':'good',controller==='ppo_mission'?'PPO · EXPERIMENTAL':policy.toUpperCase()]]);
+  items.push(['NEXT CONTROLLER',controller==='convex'?['good','CONVEX SOCP']:['good',policy.toUpperCase()]]);
   // A rotor spun up in flight takes its angular momentum (~0.78 N m s at hover)
   // from the body; momentum-bounded vanes hold ~0.3 N m, so the body spins.
   // Spool up on the pad, or start in the air with the rotor already turning.
@@ -465,7 +451,7 @@ function updateTelemetry() {
   rotationFields.forEach(([key,,precision])=>[0,1,2].forEach(i=>text(`rotation_${key}_${i}`,fmt(f.rotation?.[key]?.[i],precision))));
   text('rotationNote',`Soft limits: ${rotationLimits.map(v=>fmt(v,0)).join(' / ')} °/s; gyro bars span ±2× each limit. ${f.rotation?'Travel counts turns and reversals; excess counts rotation above each limit.':'Cumulative rotation was not recorded in this older replay.'}`);
   const recordedController=state.metadata?.policy.controller;
-  const rateNote=recordedController==='pid'?'PID uses attitude feedback and fin mixing; its internal mix commands are not calibrated body-rate setpoints.':recordedController==='convex'?'Convex guidance plans a thrust-vector trajectory (SOCP); a geometric attitude loop turns the thrust direction into fin efforts. No body-rate setpoint is generated.':'PPO commands fin angles and throttle directly; no body-rate setpoint is generated.';
+  const rateNote=recordedController==='pid'?'PID uses attitude feedback and fin mixing; its internal mix commands are not calibrated body-rate setpoints.':recordedController==='convex'?'Convex guidance plans a thrust-vector trajectory (SOCP); a geometric attitude loop turns the thrust direction into fin efforts. No body-rate setpoint is generated.':'No body-rate setpoint is generated.';
   const sensedGyro=f.imu?.gyro??f.observed_gyro;
   text('rateNote',`${rateNote}${sensedGyro?' Sensor P/Q/R: '+sensedGyro.map(v=>fmt(v*deg,1)).join(' / ')+' °/s.':''}`);
   if(state.imuOverlay&&f.imu){
@@ -548,10 +534,9 @@ async function poll(){
   const failed=m.state==='failed'||(m.summary&&!m.summary.success);
   text('flightStatus',m.summary?.success?'✓ LANDED / PASS':m.summary?.outcome==='LANDED'?'✕ LANDED / FAIL':m.summary?.outcome?(failed?'✕ ':'')+m.summary.outcome:m.state.toUpperCase());
   $('flightStatus').className=`status${failed?' fail':m.summary?.success?' pass':''}`;
-  $('run').disabled=state.busy||state.recording||state.training;$('stop').disabled=!state.busy;$('export').disabled=state.busy||state.frames.length<2||state.recording;
+  $('run').disabled=state.busy||state.recording;$('stop').disabled=!state.busy;$('export').disabled=state.busy||state.frames.length<2||state.recording;
   const profile=m.request.hardware_profile==='planned_8s'?'8S PLANNED':'6S LEGACY';const vanes=m.request.vane_model==='legacy'?'LEGACY VANES':'MOMENTUM VANES';text('footerProfile',`${profile} · ${vanes} · 3.104 kg${m.metadata?.physics_dt?' · '+fmt(1/m.metadata.physics_dt,0)+' Hz PHYSICS':''}`);
-  const recordedPolicy=m.metadata?.policy;
-  text('notice',`${profile} · ${m.request.battery.enabled?'LiPo coupled to EDF':'Ideal voltage, battery disabled'}${m.metadata?.hinge_layout==='radial_span_v1'?' · Radial hinges':' · ARCHIVE: OLD HINGE AXES'}${recordedPolicy?.step?' · Recorded PPO '+fmt(recordedPolicy.step/1e6,2)+'M / '+recordedPolicy.action_mode:''}${recordedPolicy?.diagnostic_checkpoint_override||m.metadata?.experimental_policy?' · Experimental replay; full-task qualification pending':''} · Hardware calibration pending${m.metadata?.initial_conditions_outside_training?' · Outside checkpoint training bounds':''}`);
+  text('notice',`${profile} · ${m.request.battery.enabled?'LiPo coupled to EDF':'Ideal voltage, battery disabled'}${m.metadata?.hinge_layout==='radial_span_v1'?' · Radial hinges':' · ARCHIVE: OLD HINGE AXES'} · Hardware calibration pending`);
   message(state.requestError??m.error??(state.busy?`${m.phase} · ${m.frames??0} samples received`:m.summary?`${m.summary.outcome} · impact ${fmt(m.summary.impact_speed,3)} m/s · pad error ${fmt(m.summary.pad_distance,3)} m`:'Mission loaded'),!!(state.requestError||m.error));
   $('jsonDownload').hidden=!state.frames.length;$('jsonDownload').href=`/api/missions/${id}/download`;
   $('videoDownload').hidden=!m.video;$('videoDownload').href=`/api/missions/${id}/video`;
@@ -592,7 +577,7 @@ function missionRequest(){
   result.battery={enabled:$('battery_enabled').checked};for(const key of ['capacity_ah','c_rating','max_current_a'])result.battery[key]=Number($(key).value);
   result.battery.initial_soc=Number($('initial_soc').value)/100;result.battery.cell_resistance_ohm=Number($('cell_resistance_ohm').value)/1000;return result;
 }
-$('missionForm').addEventListener('submit',async e=>{e.preventDefault();state.requestError=null;$('run').disabled=true;message('Launching Isaac Sim…');try{const m=await api('/api/missions',missionRequest());showPage('flight');await refreshHistory();await selectMission(m.id);}catch(error){state.requestError=error.message;message(error.message,true);$('run').disabled=state.training||state.busy;}});
+$('missionForm').addEventListener('submit',async e=>{e.preventDefault();state.requestError=null;$('run').disabled=true;message('Launching Isaac Sim…');try{const m=await api('/api/missions',missionRequest());showPage('flight');await refreshHistory();await selectMission(m.id);}catch(error){state.requestError=error.message;message(error.message,true);$('run').disabled=state.busy;}});
 $('stop').onclick=async()=>{try{await api(`/api/missions/${state.id}/stop`,{});message('Stop requested; Isaac will finish the current control interval.');$('stop').disabled=true;}catch(e){message(e.message,true);}};
 $('history').onchange=()=>{if($('history').value)selectMission($('history').value).catch(e=>message(e.message,true));};
 $('play').onclick=()=>{if(!state.frames.length)return;state.live=false;if(state.time>=state.frames.at(-1).t)state.time=0;state.playing=!state.playing;};
@@ -603,7 +588,7 @@ $('hardware_profile').onchange=()=>text('packLabel',$('hardware_profile').value=
 $('hardwareButton').onclick=()=>$('hardwareDialog').showModal();$('closeHardware').onclick=()=>$('hardwareDialog').close();
 document.addEventListener('keydown',e=>{
   if(e.target.closest('input,select,textarea,dialog')||e.ctrlKey||e.metaKey||e.altKey)return;
-  if(/^[1-5]$/.test(e.key)){showPage(pages[Number(e.key)-1]);return;}
+  if(/^[1-4]$/.test(e.key)){showPage(pages[Number(e.key)-1]);return;}
   if(!state.frames.length)return;
   if(e.code==='Space'){e.preventDefault();$('play').click();}
   else if((e.key==='i'||e.key==='I')&&state.hasImu)setImuOverlay(!state.imuOverlay);
@@ -655,7 +640,7 @@ async function recordVideo(){
     await new Promise(resolve=>{function frame(now){state.time=Math.min(duration,Math.max(0,(now-start)/1000-.5));captureFrame();updateTelemetry();message(`Recording cameras + telemetry · ${fmt(state.time,1)} / ${fmt(duration,1)} s`);if((now-start)/1000<duration+1.2)requestAnimationFrame(frame);else resolve();}requestAnimationFrame(frame);});
     recorder.stop();await ended;const blob=new Blob(chunks,{type:'video/webm'});const response=await fetch(`/api/missions/${mid}/video`,{method:'POST',headers:{'X-Mission-Control':'local','Content-Type':'video/webm'},body:blob});if(!response.ok)throw new Error('Video save failed');
     $('videoDownload').href=`/api/missions/${mid}/video`;$('videoDownload').hidden=false;message('Video saved with synchronized cameras and telemetry.');return await response.json();
-  }finally{if(recorder.state==='recording')recorder.stop();stream.getTracks().forEach(t=>t.stop());state.recording=false;invalidate();$('export').disabled=false;$('run').disabled=state.busy||state.training;$('history').disabled=false;}
+  }finally{if(recorder.state==='recording')recorder.stop();stream.getTracks().forEach(t=>t.stop());state.recording=false;invalidate();$('export').disabled=false;$('run').disabled=state.busy;$('history').disabled=false;}
 }
 $('export').onclick=()=>recordVideo().catch(e=>message(e.message,true));
 window.missionControl={state,seek(t){seekTo(t);renderViews();updateTelemetry();drawPlots();},recordVideo,captureFrame,selectMission,geometry,rotor};
@@ -679,19 +664,17 @@ function animate(now){
 }
 requestAnimationFrame(animate);
 try{
-  config=await api('/api/config');updateTraining(config);text('hardwareStatus',config.hardware.status);
+  config=await api('/api/config');updateConfig(config);text('hardwareStatus',config.hardware.status);
   optimizer.configure(config.convex_parameters??[]);
   disturbances.configure(config.disturbance_defaults??{});
   $('controller').replaceChildren(...Object.entries(config.policies).map(([key,name])=>new Option(name,key)));$('controller').value=config.defaults.controller;syncGuidance();planner.draw();checklist.update();updateLaunchSummary();
   for(const part of config.hardware.parts){const el=document.createElement('div');el.className='hardware-part';const heading=document.createElement('h3');heading.textContent=part.part;const body=document.createElement('div');const name=document.createElement('strong');name.textContent=part.name;const spec=document.createElement('p');spec.textContent=part.spec;const basis=document.createElement('p');basis.textContent=part.basis;body.append(name,spec,basis);if(part.source){const a=document.createElement('a');a.href=part.source;a.target='_blank';a.rel='noreferrer';a.textContent='MANUFACTURER SOURCE ↗';body.append(a);}el.append(heading,body);$('hardwareParts').append(el);}
-  if(page==='models')pageShown.models();
   const missions=await refreshHistory(),requested=new URLSearchParams(location.search).get('mission');const selected=requested??config.active??missions.find(m=>m.hinge_layout==='radial_span_v1'&&m.summary?.success)?.id??missions.find(m=>m.hinge_layout==='radial_span_v1'&&m.state==='complete')?.id??missions.find(m=>m.state==='complete')?.id;
   if(selected){await selectMission(selected);state.live=false;state.time=0;}
 }catch(e){state.connected=false;text('connection','SERVICE ERROR');message(e.message,true);renderBoard();}finally{$('missionForm').inert=false;$('missionForm').setAttribute('aria-busy','false');}
 // Background tabs poll nothing; returning to the tab catches up at once.
 const pollMission=()=>{if(!state.recording&&!state.settled)poll().catch(e=>message(e.message,true));};
-const pollConfig=async()=>{try{updateTraining(await api('/api/config'));}catch{state.connected=false;renderBoard();}};
+const pollConfig=async()=>{try{updateConfig(await api('/api/config'));}catch{state.connected=false;renderBoard();}};
 setInterval(()=>{if(!document.hidden)pollMission();},1200);
 setInterval(()=>{if(!document.hidden)pollConfig();},5000);
-setInterval(()=>{if(!document.hidden&&page==='models')pageShown.models();},15000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){pollMission();pollConfig();if(page==='models')pageShown.models();}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){pollMission();pollConfig();}});

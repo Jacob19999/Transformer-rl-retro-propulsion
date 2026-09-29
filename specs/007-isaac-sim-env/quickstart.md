@@ -107,17 +107,6 @@ python apps/run_smoke_128.py \
   --steps 1000
 ```
 
-### PPO training
-
-```bash
-python apps/run_train_ppo.py \
-  --task landing \
-  --env-config configs/env/train_128.yaml \
-  --disturbance configs/disturbances/wind.yaml \
-  --seed 42 \
-  --total-steps 10000000
-```
-
 ## Configuration Override Examples
 
 ```bash

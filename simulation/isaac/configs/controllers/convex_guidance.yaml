@@ -1,5 +1,4 @@
-# Convex (SOCP) powered-descent guidance: an explicit classical controller,
-# separate from the learned PPO policy and not used in PPO training.
+# Convex (SOCP) powered-descent guidance: an explicit classical controller.
 # Planner: tvc_env/controllers/convex_guidance.py (Acikmese & Ploen 2007,
 # lossless convexification). Tracking: tvc_env/controllers/convex_adapter.py.
 # Every bound below is a planning constraint, i.e. part of the task
@@ -47,8 +46,8 @@ guidance:
   # 3.9 m/s^2 against 0.7 m/s^2 of braking hit the pad at 2.1 m/s after its
   # current-limited spool-up lagged the plan (mission 201f2c58bb9e).
   descent_brake_ratio: 1.0
-  # Thrust-rate bound, converted at the lowest planned throttle. Same
-  # flight-computer duty-rate bound as task.waypoint_flight.throttle_command:
+  # Thrust-rate bound, converted at the lowest planned throttle. A
+  # flight-computer duty-rate bound chosen so the
   # rotor reaction torque I_rotor * omega_max * (V_bus/V_ref) * rate stays
   # inside the vanes' +/-0.30 N m yaw authority (0.25 /s uses 83% of it).
   throttle_rate_per_s: 0.25
@@ -286,7 +285,7 @@ attitude:
   # only. Gain from system identification of Isaac mission 21d5d94993a4
   # (landing plant, 2026-09-25): I_zz r' = -0.265 r + 15.0 f^2 d_cm
   # (R^2 0.996, f = rotor fraction), vanes tau ~0.08 s / ~2.5 rad/s slew.
-  # The waypoint_flight damper gain 0.15 limit-cycled there at ~19 rad/s
+  # A yaw-rate damper gain of 0.15 limit-cycled there at ~19 rad/s
   # (+/-100 deg/s yaw, vanes saturated), a loop gain of ~2.1 at that
   # frequency; 0.03 leaves a gain margin of ~2.4 (~1.9 at full rotor speed)
   # and holds the 0.25 /s spool torque to ~25 deg/s.

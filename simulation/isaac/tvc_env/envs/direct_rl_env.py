@@ -147,42 +147,10 @@ class TVCDirectRLEnv(TVCEnvBase):
         if self._config.config.get('task',{}).get('navigation',{}).get('enabled'):
             from tvc_env.envs.waypoints import WaypointMission
             self._navigation = WaypointMission(self._config.num_envs,device,self._config.config,env_origins,self._target_position)
-        # Goal-conditioned waypoint flight (configs/tasks/waypoint_flight.yaml).
-        # Exclusive with the legacy navigation+landing mission above.
-        self._flight = None
         self._previous_action = torch.zeros(self._config.num_envs, 5, device=device)
         self._action_delta = torch.zeros_like(self._previous_action)
-        if self._config.config.get('task', {}).get('waypoint_flight', {}).get('enabled'):
-            if self._navigation is not None:
-                raise ValueError('waypoint_flight and legacy navigation are mutually exclusive')
-            if self._battery_model is None:
-                raise ValueError('waypoint_flight observes the coupled battery; enable battery')
-            from tvc_env.envs.waypoint_flight import WaypointFlightTask
-            self._flight = WaypointFlightTask(self._config.num_envs, device, self._config.config, env_origins,
-                                              self._config.physics_dt * self._config.decimation)
-        # Throttle-rate action contract (task.waypoint_flight.throttle_command):
-        # action channel 4 is a normalized duty rate that is integrated here,
-        # as the flight computer does, instead of a duty.
-        self._throttle_rate = None
-        self._throttle_state = torch.zeros(self._config.num_envs, device=device)
-        command = self._config.config.get('task', {}).get('waypoint_flight', {}).get('throttle_command') or {}
-        if self._flight is not None and command.get('mode', 'duty') == 'rate':
-            self._throttle_rate = float(command['max_rate_per_s'])
-            if not 0.0 < self._throttle_rate <= 10.0:
-                raise ValueError('throttle_command.max_rate_per_s must be within (0, 10]')
-        elif command.get('mode', 'duty') != 'duty':
-            raise ValueError(f"Unknown throttle_command.mode {command.get('mode')!r}")
-        # Fixed flight-computer yaw-rate damper (task.waypoint_flight.yaw_damper).
-        self._yaw_damper_gain = None
-        self._yaw_owns_common_mode = False
-        damper = self._config.config.get('task', {}).get('waypoint_flight', {}).get('yaw_damper') or {}
-        if self._flight is not None and damper:
-            self._yaw_damper_gain = float(damper['gain_rad_per_rad_s'])
-            self._yaw_owns_common_mode = bool(damper.get('remove_policy_common_mode', False))
-            if not 0.0 <= self._yaw_damper_gain <= 1.0:
-                raise ValueError('yaw_damper.gain_rad_per_rad_s must be within [0, 1]')
         spawn_rotor = self._config.config.get('task', {}).get('spawn', {}).get('initial_motor_omega_fraction')
-        if self._flight is not None or spawn_rotor == 'hover':
+        if spawn_rotor == 'hover':
             self._reset_manager.hover_omega_fraction = self.nominal_hover_throttle()
 
     # ---- Gymnasium interface ----
@@ -280,18 +248,6 @@ class TVCDirectRLEnv(TVCEnvBase):
             (obs_dict, reward, terminated, truncated, info)
         """
         action = action.to(self.device)
-        if self._throttle_rate is not None:
-            from tvc_env.envs.waypoint_flight import integrate_throttle
-            self._throttle_state = integrate_throttle(self._throttle_state, action[:, 4], self._throttle_rate,
-                                                      self._config.physics_dt * self._config.decimation)
-            action = torch.cat((action[:, :4], self._throttle_state[:, None]), dim=-1)
-        if self._yaw_damper_gain is not None:
-            from tvc_env.envs.waypoint_flight import apply_yaw_damper
-            yaw_rate = (self._imu.gyro_frd[:, 2] if self._imu is not None
-                        else self._body_iface.get_angular_velocity_body_frd()[:, 2])
-            fins = apply_yaw_damper(action[:, :4], yaw_rate, self._yaw_damper_gain,
-                                    float(self._servo_model.max_command_angle), self._yaw_owns_common_mode)
-            action = torch.cat((fins, action[:, 4:]), dim=-1)
         self._pre_physics_step(action)
         self._max_downward_speed_step.zero_()
         self._landing_contact_force_step.zero_()
@@ -300,8 +256,7 @@ class TVCDirectRLEnv(TVCEnvBase):
         self._battery_energy_step_wh.zero_()
         self._propulsive_delta_v_step.zero_()
         self._rotation.begin_step()
-        navigation_before = (self._body_iface.get_root_position().clone()
-                             if self._navigation or self._flight else None)
+        navigation_before = self._body_iface.get_root_position().clone() if self._navigation else None
         normalized_action = torch.cat((self._pending_actions[:, :4] / self._servo_model.max_command_angle,
                                        self._pending_actions[:, 4:5] * 2.0 - 1.0), dim=-1)
         self._action_delta = normalized_action - self._previous_action
@@ -341,16 +296,11 @@ class TVCDirectRLEnv(TVCEnvBase):
                 self._body_iface.get_root_linear_velocity_world(), self._config.physics_dt*self._config.decimation,
                 navigation_active)
         state_pre_reset = self._build_vehicle_state()
-        if self._flight is not None:
-            terminated, time_out = self._flight_dones(state_pre_reset, navigation_before)
-            reward = self._flight.reward(state_pre_reset.position, state_pre_reset.angular_vel_frd,
-                                         terminated, self._action_delta, self._battery_energy_step_wh)
-        else:
-            terminated, time_out = self._get_dones(state_pre_reset)
-            if self._navigation:
-                self._navigation.finish_reward(state_pre_reset.position,terminated)
-                state_pre_reset.mission_progress_step = self._navigation.step_progress
-            reward = self._get_rewards(state_pre_reset)
+        terminated, time_out = self._get_dones(state_pre_reset)
+        if self._navigation:
+            self._navigation.finish_reward(state_pre_reset.position,terminated)
+            state_pre_reset.mission_progress_step = self._navigation.step_progress
+        reward = self._get_rewards(state_pre_reset)
 
         # Snapshot pre-reset vehicle state so eval/telemetry can attribute
         # terminal events to LANDED vs CRASHED and record touchdown
@@ -378,14 +328,6 @@ class TVCDirectRLEnv(TVCEnvBase):
         }
         if self._battery_model is not None:
             info['battery_pre_reset'] = {k: v.clone() for k, v in self._battery_model.telemetry().items()}
-        if self._flight is not None:
-            from tvc_env.envs.waypoint_flight import TIMEOUT
-            flight = self._flight.snapshot()
-            flight['outcome'] = torch.where(time_out & ~terminated, torch.full_like(flight['outcome'], TIMEOUT),
-                                            flight['outcome'])
-            info['flight_pre_reset'] = flight
-            info['reward_terms'] = self._flight.last_terms
-
         # Auto-reset terminated/timed-out envs
         reset_ids = (terminated | time_out).nonzero(as_tuple=False).squeeze(-1)
         if self._config.auto_reset and len(reset_ids) > 0:
@@ -400,10 +342,6 @@ class TVCDirectRLEnv(TVCEnvBase):
                 self._navigation.reset(reset_ids,self._body_iface.get_root_position())
             self._reset_previous_action(reset_ids)
             self._reset_imu(reset_ids)
-            if self._flight is not None:
-                self._flight.reset(reset_ids, self._body_iface.get_root_position(),
-                                   self._body_iface.get_root_linear_velocity_world(),
-                                   self._body_iface.get_angular_velocity_body_frd())
 
         obs = self._get_observations()
         truncated = time_out & ~terminated
@@ -435,10 +373,6 @@ class TVCDirectRLEnv(TVCEnvBase):
             self._navigation.reset(indices,self._body_iface.get_root_position())
         self._reset_previous_action(indices)
         self._reset_imu(indices)
-        if self._flight is not None:
-            self._flight.reset(indices, self._body_iface.get_root_position(),
-                               self._body_iface.get_root_linear_velocity_world(),
-                               self._body_iface.get_angular_velocity_body_frd())
         return self._get_observations(), {}
 
     def _reset_imu(self, env_ids: Tensor) -> None:
@@ -454,18 +388,6 @@ class TVCDirectRLEnv(TVCEnvBase):
         self._previous_action[env_ids] = 0.0
         self._previous_action[env_ids, 4] = rotor * 2.0 - 1.0
         self._action_delta[env_ids] = 0.0
-        if self._throttle_rate is not None:
-            # Rate contract: start from the duty that holds the spawned rotor
-            # at this env's loaded pack voltage (the vehicle is already flying).
-            from tvc_env.envs.waypoint_flight import holding_duty
-            battery = self._battery_model
-            c = battery.config
-            power = torch.zeros_like(battery.soc)
-            power[env_ids] = c['shaft_power_at_max_w'] * rotor.pow(3) / c['motor_efficiency'] + c['auxiliary_power_w']
-            voltage = battery.solve_load(power)[0][env_ids]
-            duty = holding_duty(rotor, voltage, float(c['reference_voltage_v']))
-            self._throttle_state[env_ids] = duty
-            self._previous_action[env_ids, 4] = duty * 2.0 - 1.0
 
     def close(self) -> None:
         """Release the simulation context."""
@@ -716,16 +638,6 @@ class TVCDirectRLEnv(TVCEnvBase):
 
         if state is None:
             state = self._build_vehicle_state()
-        if self._flight is not None:
-            rotor = (state.motor_omega / max(float(self._omega_max), 1.0)).clamp(0.0, 1.0)
-            obs = self._flight.observation(
-                state.position, state.quaternion_wxyz, state.linear_vel_frd, state.angular_vel_frd,
-                state.height, state.fin_angles, state.fin_rates, rotor, state.contact_state,
-                self._battery_model.observation(), self._previous_action,
-                float(self._servo_model.max_command_angle), float(self._servo_model.max_angular_velocity),
-                self._config.config.get('disturbances', {}).get('sensor_noise'), imu=self._imu)
-            self.sensor_measurement = self._flight.measurement
-            return {"policy": obs}
         target = self._navigation.goal if self._navigation else self._target_position
         obs = assemble_observation(state, target, self._omega_max)
         obs = apply_sensor_noise(obs, self._config.config, imu=self._imu)
@@ -773,21 +685,6 @@ class TVCDirectRLEnv(TVCEnvBase):
             (self._config.physics_dt * self._config.decimation)
         )
         return dones, time_out
-
-    def _flight_dones(self, state: VehicleState, before: Tensor) -> tuple[Tensor, Tensor]:
-        """Waypoint-flight terminal classification; timeout stays a truncation."""
-        from tvc_env.envs.terminations import check_altitude_termination, check_tilt_termination
-        term = self._config.config['task'].get('termination', {})
-        tilt = check_tilt_termination(state.quaternion_wxyz, term.get('max_tilt', 1.57))
-        altitude = check_altitude_termination(state.position, self._target_position,
-                                              term.get('max_altitude_error', 60.0))
-        terminated = self._flight.step(before, state.position, state.linear_vel_world, state.angular_vel_frd,
-                                       state.contact_state, self._touchdown_speed,
-                                       self._battery_energy_step_wh, tilt, altitude)
-        time_out = self._step_count >= int(
-            float(self._config.config['task']['episode_length_s']) /
-            (self._config.physics_dt * self._config.decimation))
-        return terminated, time_out
 
     def _update_contact_state(
         self,
@@ -922,9 +819,6 @@ class TVCDirectRLEnv(TVCEnvBase):
             import numpy as np
         except ImportError:
             return None
-        if self._flight is not None:
-            from tvc_env.envs.waypoint_flight import OBS_DIM
-            return gym.spaces.Box(low=-float("inf"), high=float("inf"), shape=(OBS_DIM,), dtype=np.float32)
         return gym.spaces.Box(
             low=-float("inf"),
             high=float("inf"),

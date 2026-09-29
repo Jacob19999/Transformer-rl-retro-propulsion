@@ -229,7 +229,7 @@ def test_off_pad_landing_penalty_only_flags_landed_outside_pad():
 def test_rotation_quality_pays_on_any_contact_not_only_gated_success():
     """The spin that causes a crash must be penalised on the crash itself.
 
-    ppo_waypoints_staged_v2 stage 1 (4,194,304 steps) ended 60.4% of
+    An earlier staged-curriculum run's stage 1 (4,194,304 steps) ended 60.4% of
     episodes CRASHED with peak yaw 1623 deg/s against a 172 deg/s contact
     gate.  While this term was gated on landing success it paid nothing on
     exactly those episodes, so it could not discourage the spin.

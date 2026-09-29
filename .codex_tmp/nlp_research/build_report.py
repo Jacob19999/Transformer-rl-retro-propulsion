@@ -127,7 +127,7 @@ table(['Idea','Core deliverable','Training in core','Relative effort'],[
 ('6 Align telemetry with language','Learn a trajectory-to-text space','Required','High')],[1.68,2.8,1.1,1.32])
 p('*A manual event vocabulary needs no encoder training. Fitting a clustering codebook or learning Word2Vec/VQ tokens is optional training and must be reported as such.')
 h('What counts as an embeddings project')
-p('Core work: prepare a corpus, encode it with pretrained models, retrieve or compare examples, and evaluate semantic behavior. TF-IDF/BM25 baselines and optional unsupervised clustering are allowed, but distinguish fitting these from updating a neural encoder. Generation, masked-token reconstruction, forecasting, and PPO retraining are outside the minimum project.')
+p('Core work: prepare a corpus, encode it with pretrained models, retrieve or compare examples, and evaluate semantic behavior. TF-IDF/BM25 baselines and optional unsupervised clustering are allowed, but distinguish fitting these from updating a neural encoder. Generation, masked-token reconstruction, forecasting, and controller retraining are outside the minimum project.')
 p('Recommendation: develop Idea 1 and borrow the hard contrast examples from Idea 3. If trajectory collection becomes the bottleneck, choose Idea 2. The strongest contribution is a careful aviation-specific evaluation, not a claim that using a Transformer for trajectories is new. [1, 6, 11]')
 
 page('What the repository already provides')
@@ -137,7 +137,7 @@ table(['Asset','Verified observation','Project implication'],[
 ('Evaluation traces [L2]','Time, episode, action, position, world velocity, before/after observation, contact and done','Reuse existing JSONL for a small prototype'),
 ('Diagnostic inventory [L3]','5 trace files, 25 episodes, 1,243 sampled rows','Pilot corpus only; sampled rows are not independent episodes'),
 ('Episode exporter [L4]','CSV steps and JSON metadata with seed and configuration/git hashes','Keep provenance attached to every representation'),
-('Controller status [L5]','Feed-forward PPO model exists; GTrXL trainer explicitly lacks a sequence-aware optimizer','Do not require a pretrained GTrXL embedding'),
+('Controller status [L5]','Convex guidance and PID are the available controllers; learned-policy code was removed on 2026-09-28','Do not require a pretrained trajectory embedding'),
 ('Landing criteria [L6]','Contact LANDED plus pad-distance tolerance defines landing success','A LANDED label alone is not a complete success label')],[1.35,2.65,2.9])
 h('Important details for trajectory encoding')
 p('The base observation includes position error, a wxyz quaternion, body-FRD linear and angular velocity, height, fin angles and rates, normalized motor speed, and contact state. World velocity in the trace is a separate field: do not read body-frame vertical velocity as altitude rate. The optional wind channels are an estimate, not proof of disturbance cause. [L1, L2]')
@@ -215,7 +215,7 @@ eq(sub('z','i'),' = ',frac(seq(sub('g','θ'),'(',sub('τ','i'),')'),seq('‖',su
 eq('ℒ = −',frac('1','B'),sm('i = 1','B',seq('log ',frac(seq('exp(',sup(sub('z','i'),'⊤'),sub('u','i'),'/η)'),sm('j = 1','B',seq('exp(',sup(sub('z','i'),'⊤'),sub('u','j'),'/η)'))))))
 p('g with parameters θ encodes telemetry; f encodes text; B is batch size; η > 0 is temperature. The contrastive objective raises similarity for matched trajectory–description pairs relative to other batch descriptions. This simple one-positive formula assumes the other descriptions are negatives; mask equivalent descriptions or use a multi-positive loss when that assumption fails.')
 h('What to train and what to hold fixed')
-p('Begin with a small 1D CNN or temporal encoder plus a projection layer. Normalize channels using training statistics, retain timestamps or time deltas, mask padding, and keep physical units in the schema. Reset any recurrent memory at episode boundaries. Do not retrain PPO as part of this extension.')
+p('Begin with a small 1D CNN or temporal encoder plus a projection layer. Normalize channels using training statistics, retain timestamps or time deltas, mask padding, and keep physical units in the schema. Reset any recurrent memory at episode boundaries. Do not retrain any controller as part of this extension.')
 p('Use independent human descriptions for evaluation. Template-generated pairs may be useful supervision, but a model trained and tested on the same templates may only imitate the event extractor. Contrast same-checkpoint/different-behavior episodes, and different-checkpoint/same-behavior episodes, to expose controller-identity shortcuts.')
 h('Evidence and novelty boundary')
 p('TMR demonstrated learned text-to-human-motion retrieval with contrastive alignment and a motion-generation objective; it is related methodology, not an aviation model. A June 2026 preprint, CADE, also investigates alignment between time-series representations and frozen text anchors for question answering. These precedents support feasibility of the framing, not success on this repository. [10, 11]')
@@ -280,12 +280,12 @@ page('Repository evidence and reproducibility notes')
 p('Local references are relative to C:\\Transformer-rl-retro-propulsion. They document available interfaces and the inspected snapshot; they do not imply that all historical runs share the current code or physics configuration.')
 local=[
 ('L1','simulation/isaac/tvc_env/envs/observations.py','Observation channel order, units, frame conventions and optional wind estimate.'),
-('L2','simulation/isaac/apps/run_eval_ppo.py','Trace sampling, stored fields and terminal pre-reset state; see trace_every and construction of the trace dictionary.'),
-('L3','simulation/isaac/runs/ppo_diagnostics/','Read-only inventory of the five trajectory.jsonl files listed below. The example landing record is in full28m_seed456/episodes.jsonl.'),
+('L2','(removed 2026-09-28)','Former evaluation-trace exporter; stored fields are documented by the episode exporter (L4).'),
+('L3','(removed 2026-09-28)','Former diagnostic trajectory files; the pilot corpus is no longer in the repository.'),
 ('L4','simulation/isaac/tvc_env/telemetry/episode_export.py','CSV step export plus JSON provenance and episode metadata.'),
-('L5','simulation/isaac/apps/run_train_gtrxl.py','Explicitly states that a sequence-aware GTrXL PPO optimizer is absent; environment compatibility smoke only. The available feed-forward model is tvc_env/controllers/ppo_model.py.'),
+('L5','simulation/isaac/tvc_env/controllers/convex_adapter.py','Convex guidance is the available controller; learned-policy code was removed.'),
 ('L6','simulation/isaac/tvc_env/envs/success_criteria.py','Landing-success helper combines LANDED contact state with a configurable pad-distance threshold.'),
-('L7','simulation/isaac/tvc_env/envs/evaluation_contract.py','Physical configuration and source-manifest checks for evaluation comparability.')]
+('L7','(removed 2026-09-28)','Former physical-configuration check for evaluation comparability.')]
 for n,path,note in local:
     a=p(f'[{n}] {path}'); a.paragraph_format.space_after=Pt(2)
     for r in a.runs:r.font.size=Pt(9.5);r.bold=True

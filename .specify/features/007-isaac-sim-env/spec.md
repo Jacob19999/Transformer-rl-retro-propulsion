@@ -124,7 +124,7 @@ A researcher runs a single-environment debug session and sees all required visua
 
 A researcher launches the environment in vectorized mode with 128 parallel environments. The environment correctly resets, observes, steps, and terminates across all instances without tensor shape mismatches or NaN values. Gizmos are disabled in vectorized mode for performance.
 
-**Why this priority**: Vectorized training is the pathway to RL policy learning (PPO/GTrXL-PPO), which is the ultimate research objective.
+**Why this priority**: Vectorized execution supports Monte Carlo evaluation across many scenarios.
 
 **Independent Test**: Can be tested by running a 128-env smoke test that resets all environments, takes random actions, collects observations, and verifies tensor shapes and value ranges.
 
@@ -257,7 +257,7 @@ A researcher runs a PID controller in the simulation with all modeled forces, ac
 - Incremental validation test ladder (tests 00-12)
 - PID hover smoke test
 - Controller-agnostic observation and action spaces
-- PID, PPO, and GTrXL-PPO adapter interfaces
+- PID and convex-guidance adapter interfaces
 
 ### Out of Scope
 
@@ -268,7 +268,6 @@ A researcher runs a PID controller in the simulation with all modeled forces, ac
 - Newton physics backend
 - Simulink/HIL bridge implementation
 - Jetson deployment pipeline
-- Final GTrXL-PPO benchmarking campaign
 - Real-time co-simulation synchronization
 - Full CFD wind modeling
 - Vane-to-vane interference or duct wall interaction at large deflection

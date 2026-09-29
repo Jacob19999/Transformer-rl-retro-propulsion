@@ -22,7 +22,7 @@ task:
       success_window_size: 1024     # rolling window of terminal events for success-fraction
       # Rule 5 spawn curriculum (CLAUDE.md), upgraded from linear-anneal to
       # feedback-driven staged advancement. Diagnostic evidence: linear
-      # anneal in run ppo_landing_seed0_20260426_192920 reached its best
+      # anneal in an earlier landing run reached its best
       # mean_pad_distance (1.56 m) at step 2.75 M (mid-curriculum) and then
       # *regressed* to 1.89 m by 5 M as the spawn box widened to ±2 m,
       # indicating the policy did not retain lateral guidance under the
@@ -97,7 +97,7 @@ task:
     control_effort: -0.002
     control_rate: -0.001
     vertical_speed_shaping: -0.01
-    # physics_review/ppo_landing_seed0_20260910_162004: stage success fell
+    # physics_review landing run 2026-09-10: stage success fell
     # to zero by 2M steps. Add bounded descent tracking and stronger attitude
     # feedback. The same 30 s hover example now costs -151.47 (including
     # descent tracking), still below the -200 crash and +475 soft on-pad event.

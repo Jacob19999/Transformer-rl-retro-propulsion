@@ -43,11 +43,7 @@ so a folded section still tells you what it is set to.
   tilt below the planned tilt is flagged in the form. *Parameter groups* is
   always visible: the full 38-parameter editor, one diagram per group. Saving
   and loading your own profiles sits under the profile cards.
-  Section 02 is shown for every controller. When the selected controller is
-  not convex guidance (for example the PPO policy, which the service picks by
-  default when its checkpoint is present), the section is dimmed. A notice
-  explains that its settings are not sent with that run, and a button
-  switches to convex guidance.
+  Section 02 applies to convex guidance, the only controller the service flies.
 - **Environment.** Presets: Calm, Light breeze, Moderate wind, Gusty
   crosswind, Noisy sensors, COM offset 1 cm, Combined stress. Each source tab
   shows ON/OFF and has an *Apply … to this flight* switch. When a source is
@@ -99,7 +95,7 @@ By default the simulator draws independent Gaussian noise at every 30 Hz control
 step (`tvc_env/envs/observations.apply_sensor_noise`). That path has no bias,
 drift or correlation model, so each datasheet figure becomes one white-noise
 sigma. An opt-in physical IMU chain (bias, drift, low-pass, output rate,
-latency, onboard attitude filter) exists for training and evaluation; see
+latency, onboard attitude filter) exists for evaluation; see
 [imu_model.md](imu_model.md). The cards below use the white-noise path:
 
 - `attitude_std`: the published pitch/roll error, the dynamic figure when the
@@ -254,7 +250,7 @@ editing, or enter exact coordinates in the rows. Takeoff/descent remain vertical
 
 Create up to **four named ground pads**, at least 3 m apart. Drag their green
 markers or edit their X/Y coordinates. The final Landing step chooses the pad;
-without a Landing step, the first pad is the target. PPO remains origin-pad only.
+without a Landing step, the first pad is the target.
 The physics success check, controller, route, and replay pad markers use the
 same selected pad. Pads are targets on the existing flat ground, not raised
 platforms; Z is fixed at zero.
@@ -291,7 +287,7 @@ make a physically infeasible maneuver feasible.
 
 Omitting Landing uses the first pad at the default 0.15 m/s touchdown speed.
 Landing is not counted as a captured airborne waypoint. Advanced types are
-restricted to convex missions; the PPO observation/action contract is unchanged.
+restricted to convex missions.
 For a ground start use an upright pose, zero velocity and Z = 0.34 m. An
 explicit Takeoff keeps launch contact from completing the landing dwell
 until the vehicle clears 0.8 m; contact telemetry and crash checks stay active.
@@ -371,7 +367,7 @@ about 30% here; it does not make the complete simulation real-time.
 
 ## Console layout (2026-09-24)
 
-The console is split into five pages, reached from the tab row or keys 1–5
+The console is split into four pages, reached from the tab row or keys 1–4
 (the URL hash, e.g. `#telemetry`, is bookmarkable):
 
 1. **Flight.** Mission archive and export bar, the camera array with the
@@ -381,16 +377,14 @@ The console is split into five pages, reached from the tab row or keys 1–5
    Launching switches to Flight.
 3. **Telemetry.** All eight strip charts, flight rotation totals, fin motion
    rates, power system readouts and the event log.
-4. **Flight software.** Registered policy, latest training runs, and the
-   selected run's history, curriculum, evaluation and checkpoints.
-5. **Checklists.** Physical testbed pre-flight checks, saved with timestamps
-   in this browser. Open directly with `#checklists` or key 5. Checks use the
+4. **Checklists.** Physical testbed pre-flight checks, saved with timestamps
+   in this browser. Open directly with `#checklists` or key 4. Checks use the
    current mission draft settings and update the shared GO/NO-GO board;
    they do not gate simulation launches.
 
 The header, clock and GO/NO-GO board stay on every page. The panels are:
 
-- **Header and GO/NO-GO board.** Mission clock; Isaac, trainer, next
+- **Header and GO/NO-GO board.** Mission clock; Isaac, next
   controller, telemetry, vehicle and power states. Each state shows a glyph
   and a word; colour is never the only signal.
 - **Camera array** with a webcast band:
@@ -407,19 +401,7 @@ The header, clock and GO/NO-GO board stay on every page. The panels are:
   to read values; click or drag to seek. Dashed lines are limits; vertical
   hairlines are the timeline milestones. Space plays or pauses the replay;
   ←/→ step 0.5 s (Shift: 5 s).
-- **Flight software panel.**
-  - Lists the registered mission-flyable policy.
-  - Lists the latest `runs/waypoint_flight` training runs from their logs:
-    curriculum stage, stage success, outcome mix, peak yaw, checkpoints, and
-    a history plot. Nothing is loaded from the checkpoints.
-  - These 54-channel `waypoint_flight_v1` checkpoints are listed for inspection
-    only. `run_mission.py` does not yet build explicit waypoint missions for
-    them.
-
-Both `run_train_ppo.py` and `run_train_waypoints.py` are recognised as trainers
-that own Isaac. Mission launches are refused while either runs.
-
-## Draggable mission planner and experimental recovery policy
+## Draggable mission planner
 
 Use the top **X/Y** and side **X/Z** canvases to drag the cyan starting diamond
 or numbered waypoints. Changes update the numeric form immediately. X/Y can
@@ -434,45 +416,10 @@ start marker. **Invert Start** toggles roll between 0° and 180°.
 continuously within its radius at speed ≤0.4 m/s; leaving resets the timer.
 **+ FLY-THROUGH** advances on a forward swept pass within the acceptance
 radius. Edit position, radius, speed and hover duration in the waypoint rows;
-reorder with ↑ or remove with ×. Up to twelve points can be edited; the
-training task currently samples zero to three. Every route ends at the
-selected landing pad (the origin for PPO). The dashed curve is a reference path, not a scripted controller.
+reorder with ↑ or remove with ×. Up to twelve points can be edited. Every route ends at the
+selected landing pad. The dashed curve is a reference path, not a scripted controller.
 Routes whose waypoint splines dip below ground clearance between control
 points are rejected; raising the neighboring points can remove the overshoot.
-
-Waypoint missions require the **EXPERIMENTAL PPO · latest recovery + waypoints**
-choice registered in `mission_policy_registry.json`, which is pinned by path and
-SHA256 to one checkpoint. Registering it does not qualify it or alter archived
-recordings, and each new mission logs the exact checkpoint file and hash it
-loaded.
-
-The deployed save is the final one from the 200,278,016-transition staged
-waypoint run (`runs/ppo_waypoints_staged_v5`). It trained only through
-curriculum stage 1 — ±3 m XY, 8–15 m altitude, ±0.15 rad tilt and **zero
-waypoints** — and never advanced, so route following, recovery and inverted
-starts have had no training at all and are not capabilities of this model.
-At that stage it reached 36.1% mission success, 60.0% landed, 0.412 m mean pad
-distance and 0.197 m/s mean touchdown speed. The uncurricularised full-task
-evaluation scored 0/8,192, which is the expected result for a stage-1 policy
-rather than a measurement of the approach. Whole-flight peak yaw stays near
-1,625°/s against a 180°/s soft limit and a 172°/s contact gate; that unresolved
-spin drives the remaining 40% crash rate.
-
-The legacy 26M and 34M landing policies were retired on 2026-09-17. They were
-trained before the radial fin hinge correction, so their fin mapping does not
-match the vehicle this simulation flies, and they never observed waypoint
-targets. The PID baseline and the legacy vane physics were removed from
-mission control on 2026-09-26 (below); their recorded missions still replay.
-Training status shows current stage and independent full-task evaluation
-separately. Simulation launch is disabled while the trainer owns Isaac; editing
-plans and replay remain usable.
-
-To test interactively before a long training run finishes, create a file named
-`STOP` inside its run directory. The trainer finishes its current rollout or
-evaluation, saves `ppo_final.pt`, and releases Isaac. Wait for the training
-banner to clear before launching a mission. The browser's **STOP RUN** button
-only stops a mission, not PPO training. The active run and exact launch options
-are recorded in `runs/ppo_waypoints_staged_v5/*/args.json`.
 
 The recorded mission phase displays the active waypoint, cross-track error
 and hover timer. Editing a draft does not alter the reference route in replay
@@ -518,7 +465,7 @@ fin articulation and trajectory all come from Isaac, not browser animation rules
 
 **Export Video** records all four cameras plus telemetry into a local WebM file.
 Keep the tab visible while it records. Each run stores request, source hashes,
-checkpoint hash, resolved physics parameters, frames, outcome and video in
+resolved physics parameters, frames, outcome and video in
 `simulation/isaac/runs/mission_control/<mission id>/`. JSON telemetry is also
 downloadable. `landing.webm` is a replay visualization, not camera sensor data.
 
@@ -580,10 +527,10 @@ is a deterministic classical controller with no checkpoint.
 - **Requirements.** The Clarabel solver from `requirements.txt`. Waypoint
   missions also need the LiPo model enabled.
 - **Vane physics.** Convex missions fly the momentum-bounded jet: the
-  coupled-jet model the waypoint_flight PPO trains on, with a torque-limited
-  motor. The motor applies at most 0.76 N·m, and at zero throttle (ESC brake
+  coupled-jet model with a torque-limited motor (`configs/env/mission_plant.yaml`).
+  The motor applies at most 0.76 N·m, and at zero throttle (ESC brake
   off) the rotor coasts. That removed a 430–710°/s pad spin after every
-  landing. PPO missions always fly their training plant.
+  landing.
 
   On 2026-09-26 the *legacy airfoils + damper* plant (8.5× too much vane
   torque per degree) and the PID baseline, which only flew it (on
@@ -671,7 +618,7 @@ not a complete electrical system or hardware flight qualification.
 - Fin commands and angles: radians in JSON, degrees on screen. Target motion
   rate is the change in the rate-limited servo target divided by the control
   interval. It is distinct from measured joint velocity.
-- These PPO policies output fin angles and throttle directly. There is no
+- The controller outputs fin angles and throttle directly. There is no
   commanded body-rate target. In recorded PID missions the internally named
   `rate_cmd` is a fin-mixer control signal, not a calibrated body-rate
   setpoint; it is not plotted as one.
@@ -687,15 +634,15 @@ not a complete electrical system or hardware flight qualification.
 New mission replays add an explicit two-second motor-off procedure after the
 LANDED event, beyond the active flight duration. Fin and throttle commands go
 to zero; Isaac continues to simulate rotor coast-down, contact and battery
-load. This is the flight executive's terminal procedure, outside the PPO
+load. This is the flight executive's terminal procedure, outside the simulated
 episode. It does not create or help reach the landing event. The final half
 second must retain contact with speed below 0.05 m/s, body rate below 0.15 rad/s,
 tilt below 0.2 rad and pad error within 0.5 m. A failed settling check is shown
 as POST_LANDING_FAILURE. The original landing event must also pass its own
 impact/pad gates. Summary fields separate flight energy/time from the added
-shutdown recording; batched PPO evaluation reports the original episode gates.
+shutdown recording.
 
-## Radial hinge correction and retraining
+## Radial hinge correction
 
 On September 14 the user confirmed that hinges run along each fin's radial
 span. Inspection of the USD showed the old joints perpendicular to that span,
@@ -706,36 +653,10 @@ authority. A common positive fin angle produces positive FRD yaw; FWD positive
 deflection produces negative roll and positive yaw. The previous asset is
 preserved as `drone_v2_tangential_hinges_legacy.usd` for historical reproduction.
 
-The old 97.7% PPO result belongs to the previous 6S, ideal-voltage, incorrect-
-hinge model. It does not establish performance with the corrected mechanism.
 Old recordings preserve their recorded poses and are labeled as old-hinge
-archives. Initial pre-correction 8S tests: legacy PPO timed
-out near 0.53 m after 30 s; legacy PID settled on the pad with 1.459 m/s impact
-and therefore failed the soft-landing criterion. The archive preserves both.
-New radial training uses explicit `train_512_8s_radial.yaml`. It initializes
-only the actor/distribution from the 8S transfer, with a documented initial
-output-channel permutation for the changed actuator basis. Critic, optimizer
-and step count start fresh. There is no runtime action permutation or scripted
-landing controller. The 28 policy inputs include SOC, normalized voltage,
-normalized current and polarization voltage. New input weights start at zero
-and learn through PPO. Four explicit spawn stages progress from short,
-pre-spooled approaches to the full 16–20 m cold-rotor task. Evaluations also
-run against the full task independently of the training stage.
-
-The reward no longer pays an alive bonus. Electrical work costs 0.5 per Wh,
-and propulsive delta-v costs 0.02 per m/s. A 30 s example at 2500 W and 10 m/s²
-costs 16.42 units, secondary to the +475 ideal terminal reward and −200 crash
-penalty. This budget is checked offline without global reward scaling.
-Evaluation reports energy, delta-v and time for **successful episodes**
-separately so early crashes cannot appear efficient. Initial charge is currently
-fixed at 100% for this curriculum; lower-charge performance needs a separate
-evaluation and, if necessary, explicit battery-domain training.
-
-The UI disables new GPU simulation runs while repository PPO training is
-active; existing recordings remain available. A corrected-physics policy is
-made available as `ppo_radial` only after validation, through the local
-`mission_control/policy_registry.json` checkpoint entry. Legacy choices are
-labeled as such; their results must not be confused with radial validation.
+archives. Initial pre-correction 8S tests: legacy PID settled on the pad with
+1.459 m/s impact and therefore failed the soft-landing criterion. The archive
+preserves it.
 
 `tools/verify_mission_hinges.py <mission folder>` checks recorded Isaac link
 quaternions against the four expected radial rotations, independently of the
@@ -744,13 +665,6 @@ maximum angular disagreement below 0.000034°. Its FWD fin at −5.645° moved
 an axial 78 mm chord vector sideways by 7.67 mm, with negligible radial
 movement. This run verifies articulation; its PID landing timed out and is
 explicitly marked as unsuccessful.
-
-At 4.06M radial training steps, the fresh critic had near-zero explained
-variance and an absolute output bound of only 20.8 versus +475 terminal
-rewards. Training continued from the saved 6.029M checkpoint with actor Adam
-LR 3e-5 and separate critic LR 1e-3. Both networks retain their learned weights
-and Adam moments. Unit verification checks that migration from the old single
-optimizer group preserves the next update exactly at equal learning rates.
 
 Verification: unit checks cover circuit equations, charge/energy accounting,
 low-charge thrust reduction, current and kinetic-energy bounds, cutoff, selective

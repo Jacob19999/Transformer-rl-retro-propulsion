@@ -60,7 +60,7 @@
         "name": "Cell 2",
         "hold_s": 4.0,
         "radius_m": 0.3,
-        "speed_m_s": 2.0,
+        "speed_m_s": 1.5,
         "corridor_m": 0.75
       },
       {
@@ -73,7 +73,7 @@
         "name": "Cell 3",
         "hold_s": 4.0,
         "radius_m": 0.3,
-        "speed_m_s": 2.0,
+        "speed_m_s": 1.5,
         "corridor_m": 0.75
       },
       {
@@ -86,7 +86,7 @@
         "name": "Cell 4",
         "hold_s": 4.0,
         "radius_m": 0.3,
-        "speed_m_s": 2.0,
+        "speed_m_s": 1.5,
         "corridor_m": 0.75
       },
       {
@@ -99,7 +99,7 @@
         "name": "Cell 5",
         "hold_s": 4.0,
         "radius_m": 0.3,
-        "speed_m_s": 2.0,
+        "speed_m_s": 1.5,
         "corridor_m": 0.75
       },
       {
@@ -112,7 +112,7 @@
         "name": "Cell 6",
         "hold_s": 4.0,
         "radius_m": 0.3,
-        "speed_m_s": 2.0,
+        "speed_m_s": 1.5,
         "corridor_m": 0.75
       },
       {
@@ -125,7 +125,7 @@
         "name": "Cell 7",
         "hold_s": 4.0,
         "radius_m": 0.3,
-        "speed_m_s": 2.0,
+        "speed_m_s": 1.5,
         "corridor_m": 0.75
       },
       {
@@ -138,7 +138,7 @@
         "name": "Cell 8",
         "hold_s": 4.0,
         "radius_m": 0.3,
-        "speed_m_s": 2.0,
+        "speed_m_s": 1.5,
         "corridor_m": 0.75
       },
       {
@@ -151,7 +151,7 @@
         "name": "Cell 9",
         "hold_s": 4.0,
         "radius_m": 0.3,
-        "speed_m_s": 2.0,
+        "speed_m_s": 1.5,
         "corridor_m": 0.75
       },
       {

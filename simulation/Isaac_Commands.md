@@ -279,70 +279,7 @@ python apps/run_smoke_128.py --task landing --steps 2000
 
 ---
 
-## 6. PPO Training
-
-Scaffolding for PPO training with the TVC environment. Integrate your RL library at the marked section in `apps/run_train_ppo.py`.
-
-```bash
-python apps/run_train_ppo.py [OPTIONS]
-```
-
-
-| Argument                       | Default                             | Description                                        |
-| ------------------------------ | ----------------------------------- | -------------------------------------------------- |
-| `--task`                       | `hover`                             | Task: `hover`                                      |
-| `--env-config`                 | `configs/env/train_128.yaml`        | Env config YAML                                    |
-| `--disturbance`                | `configs/disturbances/nominal.yaml` | Disturbance config                                 |
-| `--seed`                       | `0`                                 | Random seed                                        |
-| `--total-steps`                | `5000000`                           | Total environment steps                            |
-| `--output-dir`                 | `runs`                              | Base output directory (timestamped subdir created) |
-| `--headless` / `--no-headless` | headless                            | Viewport toggle                                    |
-
-
-**Examples:**
-
-```bash
-python apps/run_train_ppo.py --task hover --seed 42
-
-python apps/run_train_ppo.py --task landing \
-    --disturbance configs/disturbances/wind.yaml \
-    --total-steps 10000000 --seed 0
-```
-
----
-
-## 7. GTrXL Environment Compatibility (No Trainer Yet)
-
-The repository does not yet implement sequence-aware GTrXL-PPO optimization.
-The command below is an explicit random-action environment smoke only and
-cannot produce a trained checkpoint. Without `--env-smoke-only`, it exits 2.
-
-```bash
-python apps/run_train_gtrxl.py --env-smoke-only [OPTIONS]
-```
-
-
-| Argument                       | Default                             | Description                             |
-| ------------------------------ | ----------------------------------- | --------------------------------------- |
-| `--task`                       | `hover`                             | Task: `hover`                           |
-| `--env-config`                 | `configs/env/train_128.yaml`        | Env config YAML                         |
-| `--disturbance`                | `configs/disturbances/nominal.yaml` | Disturbance config                      |
-| `--seed`                       | `0`                                 | Random seed                             |
-| `--output-dir`                 | `runs`                              | Base output directory                   |
-| `--headless` / `--no-headless` | headless                            | Viewport toggle                         |
-| `--env-smoke-only`             | false                               | Required acknowledgement: no training  |
-| `--smoke-steps`                | `100`                               | Random-action policy steps              |
-
-
-**Examples:**
-
-```bash
-python apps/run_train_gtrxl.py --env-smoke-only --task hover --smoke-steps 100 --seed 0
-```
-
----
-
-## 8. Config Reference
+## 6. Config Reference
 
 ### Environment configs
 
@@ -350,7 +287,7 @@ python apps/run_train_gtrxl.py --env-smoke-only --task hover --smoke-steps 100 -
 | File                                | num_envs | Use case                     |
 | ----------------------------------- | -------- | ---------------------------- |
 | `configs/env/single_env_debug.yaml` | 1        | Debug / PID eval / GUI       |
-| `configs/env/train_128.yaml`        | 128      | Training (GPU pipeline)      |
+| `configs/env/train_128.yaml`        | 128      | 128-env smoke test (GPU)     |
 | `configs/env/hil_validation.yaml`   | 1        | Hardware-in-the-loop, 500 Hz |
 
 
@@ -377,7 +314,7 @@ python apps/run_train_gtrxl.py --env-smoke-only --task hover --smoke-steps 100 -
 
 ---
 
-## 9. Full Validation Run (sequential ladder)
+## 7. Full Validation Run (sequential ladder)
 
 Run all tests in order to validate a full environment build:
 

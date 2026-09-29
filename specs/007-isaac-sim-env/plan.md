@@ -6,7 +6,7 @@
 
 ## Summary
 
-Build a from-scratch Phase 1 simulation environment for the EDF thrust-vectoring drone in Isaac Sim 5.1 + Isaac Lab 2.3.2 using PhysX. The environment uses a DirectRLEnv architecture with per-fin force application at centers of pressure, a body-FRD canonical frame with a single conversion boundary, realistic servo/EDF actuator dynamics, a 4-state contact state machine, composable task-configurable rewards, single-env debug gizmos, and 128-environment vectorized training support. All physics modules are shared across modes; only wrappers and task configs change. Validation follows a 13-step incremental test ladder proving correctness before RL training.
+Build a from-scratch Phase 1 simulation environment for the EDF thrust-vectoring drone in Isaac Sim 5.1 + Isaac Lab 2.3.2 using PhysX. The environment uses a DirectRLEnv architecture with per-fin force application at centers of pressure, a body-FRD canonical frame with a single conversion boundary, realistic servo/EDF actuator dynamics, a 4-state contact state machine, composable task-configurable rewards, single-env debug gizmos, and 128-environment vectorized execution. All physics modules are shared across modes; only wrappers and task configs change. Validation follows a 13-step incremental test ladder proving correctness before controller evaluation.
 
 ## Technical Context
 
@@ -30,7 +30,7 @@ Build a from-scratch Phase 1 simulation environment for the EDF thrust-vectoring
 | I. Physics Fidelity             | PASS   | All sub-models (fin aero, servo, EDF, rotor reaction) parameterized from MG996R datasheet and EDF engineering estimates. All params labeled as measured/datasheet/estimate/to-be-calibrated. YAML config authoritative; USDC validated against YAML. |
 | II. Configuration-Driven Design | PASS   | All physics parameters, reward weights, disturbance settings, and environment configs in YAML under `simulation/isaac/configs/`. No magic numbers in source. USDC physics attributes validated against YAML via dedicated script.                    |
 | III. Test-Driven Validation     | PASS   | 13-step simulation validation ladder (test_00 through test_12) + 6 unit test files. Thrust liftoff test (test_06), fin articulation test (test_01, test_02), wind disturbance test (test_08) all included per constitution requirements.             |
-| IV. Reproducibility             | PASS   | Vectorized env supports seed control. Episode telemetry logged for comparison. Training runs use timestamped directories under `runs/`.                                                                                                              |
+| IV. Reproducibility             | PASS   | Vectorized env supports seed control. Episode telemetry logged for comparison.                                                                                                              |
 | V. Sim-to-Real Integrity        | PASS   | Body-FRD frame with single conversion boundary in `common/frames.py`. Quaternion convention (w,x,y,z) consistent with Isaac Lab 2.3.2. Wind/atmosphere disturbances configurable via YAML. Domain randomization hooks provided.                      |
 
 
@@ -66,8 +66,6 @@ simulation/isaac/
 │   ├── run_single_env_debug.py       # Single-env debug with gizmos
 │   ├── run_single_test.py            # Run individual validation tests
 │   ├── run_eval_pid.py               # PID hover evaluation
-│   ├── run_train_ppo.py              # PPO training entrypoint
-│   ├── run_train_gtrxl.py            # GTrXL-PPO training entrypoint
 │   └── run_smoke_128.py              # 128-env vectorized smoke test
 │
 ├── assets/
@@ -165,9 +163,7 @@ simulation/isaac/
 │   ├── controllers/                  # Layer 5: Controller adapters
 │   │   ├── base.py                  # Controller interface
 │   │   ├── pid_adapter.py           # PID → action mapping
-│   │   ├── pid_fin_mixer.py         # Roll/pitch/yaw → fin angle mixing
-│   │   ├── ppo_adapter.py           # PPO action interpretation
-│   │   └── gtrxl_adapter.py         # GTrXL-PPO action interpretation
+│   │   └── pid_fin_mixer.py         # Roll/pitch/yaw → fin angle mixing
 │   │
 │   └── telemetry/                    # Layer 6: Logging and export
 │       ├── logger.py                # Per-step telemetry logger

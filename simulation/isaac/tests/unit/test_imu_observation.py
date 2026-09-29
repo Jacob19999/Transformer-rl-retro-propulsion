@@ -1,17 +1,13 @@
-"""The simulated IMU replaces white attitude/rate noise in both observation builders."""
+"""The simulated IMU replaces white attitude/rate noise in the observation."""
 
-import math
 from pathlib import Path
 
 import pytest
 import torch
 import yaml
 
-from tvc_env.common.quaternions import from_euler
 from tvc_env.dynamics.imu_model import ImuModel, imu_model_from_config
-from tvc_env.envs import waypoint_flight as wf
 from tvc_env.envs.observations import apply_sensor_noise
-from tvc_env.envs.task_registry import load_merged_config
 
 ROOT = Path(__file__).resolve().parents[2]
 BIASED = {"sample_rate_hz": 1000.0, "gyro": {"turn_on_bias_dps": 30.0}}
@@ -48,29 +44,6 @@ def test_legacy_observation_still_adds_position_and_velocity_noise_with_an_imu()
     assert noisy[:, 0:3].abs().max() > 0 and noisy[:, 7:10].abs().max() > 0
 
 
-def test_waypoint_observation_uses_the_imu_and_records_it_as_the_measurement():
-    env = yaml.safe_load((ROOT / "configs/env/train_waypoint_flight.yaml").read_text())
-    cfg = load_merged_config("waypoint_flight", env_config=env, sim_root=ROOT)
-    flight = wf.WaypointFlightTask(2, "cpu", cfg, torch.zeros(2, 3), 1 / 30)
-    flight.set_explicit_missions([[dict(position=[10, 0, 5], type="flypass", radius_m=1.0),
-                                   dict(position=[10, 0, 1], type="land")]] * 2)
-    start = torch.tensor([[0.0, 0.0, 5.0]] * 2)
-    flight.reset(torch.arange(2), start)
-    imu = biased_imu(2)
-    q = from_euler(torch.zeros(2), torch.zeros(2), torch.zeros(2))
-    args = (start, q, torch.zeros(2, 3), torch.zeros(2, 3), start[:, 2], torch.zeros(2, 4), torch.zeros(2, 4),
-            torch.full((2,), 0.83), torch.zeros(2, dtype=torch.long), torch.zeros(2, 4), torch.zeros(2, 5),
-            0.262, 6.98)
-    noise = dict(enabled=True, position_std=0.0, velocity_std=0.0, attitude_std=0.3, angular_velocity_std=0.3)
-    obs = flight.observation(*args, noise, imu=imu)
-    m = flight.measurement
-    assert torch.equal(m["angular_vel_frd"], imu.gyro_frd) and torch.equal(m["quaternion_wxyz"], imu.quaternion_wxyz)
-    assert obs[0, 28:31].tolist() == pytest.approx((imu.gyro_frd[0] / math.pi).tolist(), abs=1e-6)
-    # Noise disabled: the IMU is ignored and truth passes through.
-    flight.observation(*args, None, imu=imu)
-    assert torch.equal(flight.measurement["quaternion_wxyz"], q)
-
-
 def test_wtgahrs1_disturbance_file_builds_the_model_and_expands_its_profile_in_place():
     disturbance = yaml.safe_load((ROOT / "configs/disturbances/sensor_imu_wtgahrs1.yaml").read_text())
     sensor_noise = disturbance["disturbances"]["sensor_noise"]
@@ -83,8 +56,7 @@ def test_wtgahrs1_disturbance_file_builds_the_model_and_expands_its_profile_in_p
 
 def test_env_config_expands_and_validates_the_imu_profile_before_isaac_starts(tmp_path):
     from tvc_env.envs.base_env import BaseEnvConfig
-    kwargs = dict(task_name="waypoint_flight", env_config_path=ROOT / "configs/env/train_waypoint_flight.yaml",
-                  sim_root=ROOT)
+    kwargs = dict(task_name="landing", env_config_path=ROOT / "configs/env/single_env_debug.yaml", sim_root=ROOT)
     config = BaseEnvConfig(disturbance_config_path=ROOT / "configs/disturbances/sensor_imu_wtgahrs1.yaml", **kwargs)
     imu = config.config["disturbances"]["sensor_noise"]["imu"]
     assert "profile" not in imu and imu["bandwidth_hz"] == 20.0 and imu["gyro"]["range_dps"] == 2000

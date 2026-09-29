@@ -54,7 +54,5 @@ The actual value ranges above are for documentation; the Gymnasium space uses un
 
 ## Consumers
 
-- PPO policy network (via VecNormalize)
-- GTrXL-PPO policy network (via custom normalization)
 - PID controller adapter (reads specific indices directly)
 - Telemetry logger (records full vector each step)

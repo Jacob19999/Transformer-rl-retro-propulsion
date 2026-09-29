@@ -37,18 +37,12 @@ Position and velocity stay white noise: this IMU measures neither (assume motion
 
 ## Enabling it
 
-```powershell
-python apps/run_train_waypoints.py --disturbance configs/disturbances/sensor_imu_wtgahrs1.yaml ...
-python apps/waypoint_eval.py --checkpoint <ppo_best.pt> --disturbance configs/disturbances/sensor_imu_wtgahrs1.yaml
-```
+Any `BaseEnvConfig(..., disturbance_config_path=configs/disturbances/sensor_imu_wtgahrs1.yaml)` enables it. Nothing in `apps/` selects it yet. Wiring it into `run_mission.py` and the mission-control
+UI (`validate_settings` rejects an `imu` block today) is the open follow-up.
 
 `sensor_noise.imu` takes `profile: wtgahrs1` (from `configs/sensors/imu_wtgahrs1.yaml`) and any inline keys
 override it. The profile is expanded and validated when the env config is built, so a typo fails before Isaac
-starts and `task_config.json` records the parameters actually used. Unknown keys are rejected.
-
-Not wired: the mission-control UI and `run_mission.py` (`validate_settings` rejects an `imu` block) — follow-up.
-Training with it is a curriculum decision (CLAUDE.md lever 5): introduce it as a late stage and evaluate on
-the full-noise task; do not enable it from stage 0 without evidence the policy can still learn.
+starts and the recorded config carries the parameters actually used. Unknown keys are rejected.
 
 ## Conventions worth knowing
 
@@ -84,7 +78,7 @@ force at rest / free fall / tilted, filter convergence and sign, gyro-only yaw h
 linear yaw drift, accelerometer gate, config validation, and observation routing. The Allan fit recovers the
 generating parameters (noise density 0.0199 vs 0.02, bias σ 0.0099 vs 0.01, τ_c 175 vs 200 s).
 
-Isaac smoke (`waypoint_flight`, 256 envs, zero policy action so the vehicle crashes and auto-resets often):
+Isaac smoke (256 envs, zero action so the vehicle crashes and auto-resets often):
 
 | Configuration | Result |
 |---|---|
@@ -93,7 +87,7 @@ Isaac smoke (`waypoint_flight`, 256 envs, zero policy action so the vehicle cras
 | Full WTGAHRS1 profile | gyro error ~2.2–4.3 °/s; attitude 2.3–3.0° mean (up to 9.8°) |
 
 So most of the gyro error a controller sees is **lag on a fast-changing rate**, which the white-noise model could not
-represent. No NaNs in any run. Not yet run: PPO training or evaluation with the model, or a convex-controller mission.
+represent. No NaNs in any run. Not yet run: a convex-controller mission with the model enabled.
 
 Cost: roughly +6–12 % wall time per policy step at 256 envs (run-to-run noise is of that order; the overhead is
 small-kernel launches per physics substep).

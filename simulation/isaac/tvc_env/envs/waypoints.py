@@ -211,7 +211,7 @@ class WaypointMission:
         def body(vector):
             return isaac_position_to_frd(rotate_vector(q,vector))
         kind = self.kinds[self.ids,self.index]
-        # Advanced phases are convex-only; retain the existing PPO observation
+        # Advanced phases are convex-only; retain the existing observation
         # size and represent their rest-at-target semantics as HOVER.
         onehot = torch.nn.functional.one_hot(torch.where(kind>=TAKEOFF,HOVER,kind),3).float()
         next_goal = self.positions[self.ids,(self.index+1).clamp(max=MAX_WAYPOINTS)]

@@ -17,7 +17,6 @@ from typing import Any
 _TASK_YAML_MAP = {
     "hover": "configs/tasks/hover.yaml",
     "landing": "configs/tasks/landing.yaml",
-    "waypoint_flight": "configs/tasks/waypoint_flight.yaml",
 }
 
 

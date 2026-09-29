@@ -256,11 +256,7 @@
 - [X] T077 [US10] Implement controller base interface in `simulation/isaac/tvc_env/controllers/base.py` — abstract base class defining `compute_action(obs) → action_tensor` method, common controller configuration loading, action space bounds validation
 - [X] T078 [P] [US10] Implement PID controller adapter in `simulation/isaac/tvc_env/controllers/pid_adapter.py` — map PID output (altitude error → throttle, attitude error → roll/pitch/yaw commands) to 5-dim action vector per action_space contract, configurable gains, anti-windup
 - [X] T079 [P] [US10] Implement PID fin mixing logic in `simulation/isaac/tvc_env/controllers/pid_fin_mixer.py` — convert roll/pitch/yaw rate commands to 4 individual fin deflection angles using fin geometry (fin positions at +X, +Y, -X, -Y), sign-correct mixing matrix based on fin hinge axes and COP positions
-- [X] T080 [P] [US10] Implement PPO action adapter in `simulation/isaac/tvc_env/controllers/ppo_adapter.py` — interpret raw 5-dim network output as fin angles[4] + throttle[1], apply action scaling/clipping, pass through to environment action space
-- [X] T081 [P] [US10] Implement GTrXL-PPO action adapter in `simulation/isaac/tvc_env/controllers/gtrxl_adapter.py` — interpret raw 5-dim network output as fin angles[4] + throttle[1], handle sequence context for transformer policy, apply action scaling/clipping
 - [X] T082 [US10] Implement PID hover evaluation app at `simulation/isaac/apps/run_eval_pid.py` — accept `--task`, `--env-config`, `--disturbance`, `--duration` args, instantiate single env with PID controller, run for configured duration, log telemetry, report position error, tilt, angular rate statistics
-- [X] T083 [P] [US10] Implement PPO training entrypoint at `simulation/isaac/apps/run_train_ppo.py` — accept `--task`, `--env-config`, `--disturbance`, `--seed`, `--total-steps` args, instantiate vectorized env, configure PPO with ppo_adapter, run training loop with timestamped output directory under `runs/`
-- [X] T084 [P] [US10] Implement GTrXL-PPO training entrypoint at `simulation/isaac/apps/run_train_gtrxl.py` — accept `--task`, `--env-config`, `--disturbance`, `--seed`, `--total-steps` args, instantiate vectorized env, configure GTrXL-PPO with gtrxl_adapter, run training loop with timestamped output directory under `runs/`
 - [X] T085 [US10] Write simulation test in `simulation/isaac/tests/sim/test_10_pid_hover_smoke.py` — run PID hover for 10+ seconds with all physics effects enabled, assert position error < 0.5m, tilt < 15° (0.26 rad), angular rate < 1.0 rad/s, no NaN in any state variable, no ground contact
 - [X] T086 [US10] Write simulation test in `simulation/isaac/tests/sim/test_12_steady_hover_all_forces.py` — run PID hover with wind disturbance enabled, log all torque contributions (fin, static reaction, dynamic spool, gyro precession, wind drag) separately per FR-018, verify all torque magnitudes are physically reasonable relative to each other, verify no sign-error-induced divergence
 
@@ -328,7 +324,6 @@ Setup → Foundational → US1 → US2 ──┬── US3 ──┐
 
 **After US6 (Phase 8)**:
 - US7, US8, and US9 dynamics can proceed in parallel (3 independent work streams)
-- Within US10: T078-T081 controller adapters can all run in parallel
 
 **Within Polish (Phase 13)**:
 - T087-T090 telemetry modules can all run in parallel

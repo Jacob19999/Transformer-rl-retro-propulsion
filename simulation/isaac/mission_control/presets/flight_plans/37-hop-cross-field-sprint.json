@@ -68,7 +68,7 @@
         "name": "Gate 1",
         "hold_s": 2.0,
         "radius_m": 1.0,
-        "speed_m_s": 4.5,
+        "speed_m_s": 4.0,
         "corridor_m": 1.5
       },
       {
@@ -81,7 +81,7 @@
         "name": "Gate 2",
         "hold_s": 2.0,
         "radius_m": 1.0,
-        "speed_m_s": 5.0,
+        "speed_m_s": 4.0,
         "corridor_m": 1.5
       },
       {
@@ -94,7 +94,7 @@
         "name": "Gate 3",
         "hold_s": 2.0,
         "radius_m": 1.0,
-        "speed_m_s": 5.0,
+        "speed_m_s": 4.0,
         "corridor_m": 1.5
       },
       {
@@ -130,7 +130,7 @@
   "sample": {
     "category": "hop",
     "profile": "hop-time-weighted",
-    "summary": "Challenge: 72 m at up to 5 m/s through three offset gates, then a full stop over a remote pad: long-range speed holding and a hard braking capture.",
-    "profile_name": "hop-time-weighted"
+    "summary": "Challenge: 72 m at 4 m/s through three offset gates, then a full stop over a remote pad: long-range speed holding and a hard braking capture.",
+    "profile_name": "Hop - time weighted agile"
   }
 }

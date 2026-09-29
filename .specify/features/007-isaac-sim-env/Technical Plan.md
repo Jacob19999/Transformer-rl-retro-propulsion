@@ -7,8 +7,6 @@ This document defines the **Phase 1 simulation environment** for the EDF retro-p
 Phase 1 is focused on building a **correct, debuggable, vectorizable simulation artifact** that can later support:
 
 - PID evaluation,
-- PPO training,
-- GTrXL-PPO training,
 - simulation-to-hardware validation.
 
 The goal of Phase 1 is **not** to deliver the final flight controller.  
@@ -195,8 +193,6 @@ The environment is split into five layers:
 
 5. **Controller layer**
    - PID adapter
-   - PPO adapter
-   - GTrXL-PPO adapter
 
 ---
 
@@ -209,8 +205,6 @@ simulation/isaac/
 │   ├── run_single_env_debug.py
 │   ├── run_single_test.py
 │   ├── run_eval_pid.py
-│   ├── run_train_ppo.py
-│   ├── run_train_gtrxl.py
 │   └── run_smoke_128.py
 │
 ├── assets/
@@ -308,9 +302,7 @@ simulation/isaac/
 │   ├── controllers/
 │   │   ├── base.py
 │   │   ├── pid_adapter.py
-│   │   ├── pid_fin_mixer.py
-│   │   ├── ppo_adapter.py
-│   │   └── gtrxl_adapter.py
+│   │   └── pid_fin_mixer.py
 │   │
 │   └── telemetry/
 │       ├── logger.py
@@ -773,8 +765,6 @@ Recommended default:
 
 ### Controller interpretation
 - PID adapter may use an external mixer
-- PPO may output raw fin commands
-- GTrXL-PPO may output raw fin commands
 
 This avoids baking a PID worldview into the physics environment.
 
@@ -1137,7 +1127,6 @@ Phase 1 does **not** include:
 - untethered hardware flight,
 - transonic reentry aerothermodynamics,
 - deployment-level certification,
-- final GTrXL-PPO benchmarking campaign,
 - Newton as the baseline backend,
 - irreversible training optimization before force validation,
 - a complete Simulink/HIL bridge.
@@ -1184,8 +1173,6 @@ Phase 1 should deliver a **single, validated, from-scratch Isaac Sim + Isaac Lab
 
 This environment becomes the foundation for:
 - PID comparisons,
-- PPO training,
-- GTrXL-PPO training,
 - later HIL integration,
 - and later simulation-to-hardware transfer work.
 

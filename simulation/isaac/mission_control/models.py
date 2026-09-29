@@ -1,22 +1,14 @@
-"""Validated mission inputs and fixed local policy choices."""
+"""Validated mission inputs and fixed local controller choices."""
 from pathlib import Path
 import copy
 import math
-import json
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-# The 26M and 34M landing policies were trained before the radial fin hinge
-# correction (tools/fix_radial_fin_hinges.py), so their learned fin mapping does
-# not match the vehicle this simulation now flies. They were retired from the
-# mission choices on 2026-09-17; the checkpoints remain in git history under
-# runs/ppo_exploration_anneal and runs/ppo_kl_consolidation for reference.
-POLICIES: dict[str, str] = {}
-# Explicit classical controllers (no checkpoint). 'convex' is the SOCP
+# Explicit controllers (no checkpoint). 'convex' is the SOCP
 # powered-descent guidance in tvc_env/controllers/convex_guidance.py.
 CLASSICAL_CONTROLLERS = ('convex',)
-# Missions fly the momentum-bounded coupled jet the waypoint_flight policies
-# train on: each vane turns at most its quarter of the jet, so its side force
+# Missions fly the momentum-bounded coupled jet: each vane turns at most its quarter of the jet, so its side force
 # cannot exceed (T/4) sin(angle). The pre-audit 'legacy' plant (independent
 # q*S*CNa airfoils plus a 0.27 N m s/rad damper, 8.5x the momentum-bounded
 # torque per degree, tvc_env/dynamics/coupled_jet.py) and the PID baseline,
@@ -128,8 +120,8 @@ def validate_mission(value):
     result['name'] = result['name'].strip()
     if result['controller'] == 'pid':
         raise ValueError('The PID baseline was removed from mission control (it only flew the legacy vanes); '
-                         'fly convex guidance or a PPO policy')
-    if result['controller'] not in (*policy_paths(), *CLASSICAL_CONTROLLERS):
+                         'fly convex guidance')
+    if result['controller'] not in CLASSICAL_CONTROLLERS:
         raise ValueError('Unknown controller')
     selected = result['disturbance']
     if isinstance(selected, str):  # Existing recorded requests remain replayable.
@@ -223,10 +215,6 @@ def validate_mission(value):
         waypoints.append(waypoint)
     result['waypoints']=waypoints
     validate_spline_clearance(result['position'], [w for w in waypoints if w['type'] != 'land'])
-    if waypoints and result['controller'] not in ('ppo_mission', 'convex'):
-        raise ValueError('Waypoints require the waypoint-flight PPO policy or convex guidance; other controllers do not observe route targets')
-    if result['controller'] != 'convex' and landing_pad(result)['position'] != [0., 0., 0.]:
-        raise ValueError('PPO policies are trained to land on the origin pad; other pads require convex guidance')
     result['initial_motor_fraction'] = finite(result['initial_motor_fraction'], 0, 1, 'Initial motor fraction')
     b = copy.deepcopy(DEFAULTS['battery'])
     if not isinstance(result['battery'], dict) or set(result['battery']) - set(b):
@@ -238,8 +226,6 @@ def validate_mission(value):
                       ('cell_resistance_ohm', .0001, .05), ('max_current_a', 5, 120)]:
         b[k] = finite(b[k], lo, hi, k)
     result['battery'] = b
-    if result['controller'] in ('ppo_radial', 'ppo_mission') and (result['hardware_profile'] != 'planned_8s' or not b['enabled']):
-        raise ValueError('The radial 8S policy requires the 8S hardware profile and coupled battery observations')
     if result['controller'] == 'convex' and waypoints and not b['enabled']:
         raise ValueError('Convex waypoint missions use the battery-coupled mission sequencer; enable the LiPo model')
     return result
@@ -263,7 +249,7 @@ def braking_envelopes():
     """
     edf = yaml.safe_load((ROOT / 'configs/params/edf_90mm.yaml').read_text(encoding='utf-8'))['edf']
     tilt = yaml.safe_load((ROOT / 'configs/controllers/convex_guidance.yaml').read_text(encoding='utf-8'))['guidance']['max_tilt_deg']
-    source = yaml.safe_load((ROOT / 'configs/env/train_waypoint_flight.yaml').read_text(encoding='utf-8'))
+    source = yaml.safe_load((ROOT / 'configs/env/mission_plant.yaml').read_text(encoding='utf-8'))
     limit = source.get('dynamics', {}).get('motor_torque_limit') or {}
     battery = yaml.safe_load((ROOT / 'configs/params/battery_6s.yaml').read_text(encoding='utf-8'))['battery']
     result = {}
@@ -295,72 +281,6 @@ def battery_config(mission):
     return c
 
 
-def flight_envelope_violations(mission, saved):
-    """waypoint_flight: compare against the full task the policy is trained toward.
-
-    The saved task_config is the un-curricularized task (stages only narrow
-    it). The mission route is its waypoints plus the landing on the pad.
-    """
-    task = saved['task_config']['task']
-    spawn = task['spawn']
-    violations = []
-    for field, key, scale in (('position', 'position_range', 1.),
-            ('velocity', 'velocity_range', 1.), ('attitude_deg', 'attitude_range', math.pi/180),
-            ('angular_rate_deg_s', 'angular_velocity_range', math.pi/180)):
-        limits = spawn.get(key)
-        if limits and any(not low-1e-5 <= value*scale <= high+1e-5
-                          for value, low, high in zip(mission[field], *limits)):
-            violations.append(field)
-    rotor = spawn.get('initial_motor_omega_fraction')
-    if rotor == 'hover':
-        rotor = (saved.get('reward_budget') or {}).get('hover_fraction')
-    jitter = float(spawn.get('initial_motor_omega_jitter', 0.))
-    if rotor is not None and abs(mission['initial_motor_fraction']-float(rotor)) > jitter+1e-5:
-        violations.append('initial_motor_fraction')
-    low, high = task['waypoint_flight']['generator']['count_range']
-    if not low <= len(mission.get('waypoints', []))+1 <= high:
-        violations.append('waypoint_count')
-    soc_low, soc_high = spawn.get('initial_soc_range', [0., 1.])
-    if not soc_low-1e-5 <= mission['battery']['initial_soc'] <= soc_high+1e-5:
-        violations.append('initial_soc')
-    return violations
-
-
-def training_envelope_violations(mission, saved):
-    """Compare against the checkpoint's current curriculum, not a fixed 18 m box.
-
-    Being within these bounds is not proof the policy has mastered them.
-    Explicit routes can differ from random training routes even with equal count.
-    """
-    if saved.get('observation_contract') == 'waypoint_flight_v1':
-        return flight_envelope_violations(mission, saved)
-    task = saved.get('task_config', {}).get('task', {})
-    spawn = dict(task.get('spawn', {}))
-    curriculum = saved.get('curriculum') or {}
-    stages = spawn.get('curriculum', {}).get('stages', [])
-    stage = curriculum.get('stage_index')
-    if stage is not None and 0 <= stage < len(stages):
-        spawn.update(stages[stage])
-    violations = []
-    for field, key, scale in (('position', 'position_range', 1.),
-            ('velocity', 'velocity_range', 1.), ('attitude_deg', 'attitude_range', math.pi/180),
-            ('angular_rate_deg_s', 'angular_velocity_range', math.pi/180)):
-        limits = spawn.get(key)
-        if limits and any(not low-1e-5 <= value*scale <= high+1e-5
-                          for value, low, high in zip(mission[field], *limits)):
-            violations.append(field)
-    rpm = spawn.get('initial_motor_omega_fraction')
-    if rpm is not None and abs(mission['initial_motor_fraction']-rpm)>1e-5:
-        violations.append('initial_motor_fraction')
-    count = spawn.get('waypoint_count_range', task.get('navigation', {}).get('count_range', [0,0]))
-    if not count[0] <= len(mission.get('waypoints', [])) <= count[1]:
-        violations.append('waypoint_count')
-    soc = saved.get('task_config', {}).get('battery', {}).get('initial_soc')
-    if soc is not None and abs(mission['battery']['initial_soc']-soc)>1e-5:
-        violations.append('initial_soc')
-    return violations
-
-
 def hardware_overrides(mission):
     if mission['hardware_profile'] == 'legacy_6s':
         return {}
@@ -370,13 +290,12 @@ def hardware_overrides(mission):
 def vane_model_overrides(mission):
     """Physics and dynamics sections for a convex mission.
 
-    They come from the waypoint_flight training config, so these missions fly
-    exactly the plant the PPO policies train on: coupled-jet vanes, no
+    They come from configs/env/mission_plant.yaml: coupled-jet vanes, no
     artificial damper, the torque-limited motor, and the coupled Cayley gyro
     integration with PhysX external forces applied once per step (which that
     integration needs).
     """
-    source = yaml.safe_load((ROOT / 'configs/env/train_waypoint_flight.yaml').read_text(encoding='utf-8'))
+    source = yaml.safe_load((ROOT / 'configs/env/mission_plant.yaml').read_text(encoding='utf-8'))
     return {key: copy.deepcopy(source[key]) for key in ('physics', 'dynamics')}
 
 
@@ -409,52 +328,5 @@ def disturbance_config(mission):
     return result
 
 
-def policy_paths():
-    result = dict(POLICIES)
-    registry = ROOT / 'mission_control/policy_registry.json'
-    if registry.exists():
-        record = json.loads(registry.read_text())
-        path = (ROOT / record['checkpoint']).resolve()
-        if path.is_relative_to((ROOT / 'runs').resolve()) and path.suffix == '.pt' and path.is_file():
-            result['ppo_radial'] = str(path.relative_to(ROOT))
-    mission_registry = ROOT / 'mission_control/mission_policy_registry.json'
-    if mission_registry.exists():
-        record = json.loads(mission_registry.read_text())
-        path = (ROOT / record['checkpoint']).resolve()
-        # Explicitly experimental, opt-in tracking of completed atomic saves.
-        # Each mission still records the exact file and SHA256 it loaded.
-        if record.get('follow_training_run') and record.get('training_run'):
-            run = (ROOT / record['training_run']).resolve()
-            if run.is_relative_to((ROOT/'runs').resolve()) and run.is_dir():
-                candidates = [p for p in run.glob('ppo_step_*.pt')
-                              if p.stem.removeprefix('ppo_step_').isdigit()]
-                if (run/'ppo_final.pt').is_file():
-                    candidates.append(run/'ppo_final.pt')
-                if candidates:
-                    path = max(candidates, key=lambda p: p.stat().st_mtime).resolve()
-        if path.is_relative_to((ROOT/'runs').resolve()) and path.suffix=='.pt' and path.is_file():
-            result['ppo_mission'] = str(path.relative_to(ROOT))
-    return result
-
-
-def mission_policy_record():
-    try:
-        return json.loads((ROOT / 'mission_control/mission_policy_registry.json').read_text())
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-
-def default_mission(paths=None):
-    paths = policy_paths() if paths is None else paths
-    result = copy.deepcopy(DEFAULTS)
-    if 'ppo_radial' in paths:
-        result['controller'] = 'ppo_radial'
-    if 'ppo_mission' in paths:
-        result['controller'] = 'ppo_mission'
-        hover = mission_policy_record().get('hover_rotor_fraction')
-        if hover is not None:
-            # waypoint_flight policies are trained from a spun-up rotor; the
-            # 0.25 duty/s throttle-rate contract cannot spool a stopped rotor
-            # to hover (~3.4 s) before the vehicle falls.
-            result['initial_motor_fraction'] = float(hover)
-    return result
+def default_mission():
+    return copy.deepcopy(DEFAULTS)

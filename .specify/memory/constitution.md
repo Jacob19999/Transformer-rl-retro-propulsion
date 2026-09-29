@@ -32,7 +32,7 @@ Sync Impact Report
     source of truth. (Carried forward from v1.1.0)
 -->
 
-# GTrXL-PPO Retro-Propulsion Constitution
+# Retro-Propulsion Constitution
 
 ## Core Principles
 
@@ -189,8 +189,6 @@ the training distribution matches expected real-world disturbances.
 ## Technical Constraints
 
 - **Language**: Python 3.10+
-- **RL Framework**: Stable-Baselines3 (PPO) for the MLP baseline;
-  custom GTrXL-PPO for the target architecture
 - **Simulation Stack (active)**:
   - Custom 6-DOF rigid-body plant (`simulation/`) — baseline for physics
     validation and PID tuning

@@ -9,7 +9,7 @@ The hold timer correctly remained zero outside the capture sphere.
 `ConvexGuidance` now times each leg from the remaining arc plus the distance
 needed to rejoin it, bounded below by direct target distance. Landing horizon
 search uses the same calculation. The complete corridor geometry remains in
-the constraint checks. Capture radii, continuous dwell, speed gates, PPO,
+the constraint checks. Capture radii, continuous dwell, speed gates,
 physical dynamics and controller gains are unchanged.
 
 ## Simulation checks

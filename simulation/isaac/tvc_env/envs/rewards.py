@@ -127,11 +127,11 @@ def compute_rotation_quality_reward(env_state, config: dict) -> Tensor:
     Diagnostic basis: the 132.12M-transition waypoint run landed with mean
     successful-flight yaw peaks of 1574 deg/s against the 180 deg/s soft
     limit while the old integrated rotation term contributed less than one
-    reward unit per flight.  This bounded terminal term gives PPO a useful
+    reward unit per flight.  This bounded terminal term gives a learning agent a useful
     whole-trajectory comparison without imposing a hard termination gate.
 
-    Success gating removed 2026-09-17.  ppo_waypoints_staged_v2
-    curriculum_eval.jsonl stage 1 at 4,194,304 steps: quality 0.110 (peak
+    Success gating removed 2026-09-17.  An earlier staged-curriculum
+    evaluation log, stage 1 at 4,194,304 steps: quality 0.110 (peak
     yaw 1623 deg/s against the 180 deg/s limit) with success_fraction
     0.108, so the success-gated term was worth 0.108 * 0.110 * 500 ~= 6 of
     a possible 500 reward units per episode.  Worse, 60.4% of episodes
@@ -252,10 +252,10 @@ def compute_landing_success_reward(env_state, config: dict) -> Tensor:
     Success requires LANDED plus ``success.max_pad_distance`` (lateral
     accuracy) plus, when ``success.max_touchdown_speed`` is configured,
     a soft enough impact. Paying this reward for every LANDED contact
-    let PPO learn the easier "touch down softly anywhere" strategy seen
+    let a learner find the easier "touch down softly anywhere" strategy seen
     in fix4/curriculum eval logs; tightening on touchdown speed too
     excludes "land on pad but slam into it" from counting as success
-    (Phase-1 follow-on: the ppo_landing_seed0_20260426_192920 5M run
+    (Phase-1 follow-on: an earlier 5M-step landing run
     reported max_touchdown_speed 0.347 m/s, so a 0.25 m/s gate forces
     the policy to learn a genuinely soft terminal flare).
     """
@@ -352,7 +352,7 @@ def compute_vertical_speed_shaping(env_state, config: dict) -> Tensor:
 
     The previous implementation used ``|v_down - target|`` (two-sided), which
     was the largest single per-step term in the integrated episode budget
-    (Phase-1 diagnosis, run ppo_landing_seed0_20260426_192920: -78.8 of
+    (Phase-1 diagnosis, an earlier landing run: -78.8 of
     -129.6 per-step total at 9 m/s descent over ~75 steps). With the
     landing_success/pad_accuracy terminal so easily missed from large
     spawns, that cost dominated the policy's incentive landscape and made

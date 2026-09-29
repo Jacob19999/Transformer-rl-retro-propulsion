@@ -1,29 +1,25 @@
-# Transformer-RL Retro-Propulsion
+# EDF Retro-Propulsion
 
-**Simulation-to-Hardware Validation of Gated Transformer-XL PPO for Disturbance-Resistant Retro-Propulsive Landings**
+**Simulation-to-Hardware Validation of Convex Guidance for Disturbance-Resistant Retro-Propulsive Landings**
 
-> Bridging the sim-to-real gap for attention-enhanced reinforcement learning in thrust-vectoring control systems.
+> Thrust-vectoring control of an Electric Ducted Fan (EDF) drone, from a physics-corrected Isaac Sim plant to tethered flight tests.
 
 ---
-Work-in-progress Isaac Sim training environment (parallel envs):
+Isaac Sim environment (parallel envs):
 <img width="2517" height="1244" alt="image" src="https://github.com/user-attachments/assets/8a5a5e4d-327d-45d1-8080-6d50f27499b4" />
 
 ---
 
 ## Current Status (September 2026)
 
-Phase 1 (simulation) is in progress. The latest results are written up in the draft paper
-[*Reinforcement Learning for Thrust-Vectored Fin Control of an Electric Ducted Fan VTOL Vehicle in Simulation*](Paper/tvc_fin_control_rl.tex).
-
-**Headline result so far.** On the corrected plant, explicit convex guidance substantially outperforms model-free PPO:
+Phase 1 (simulation) is in progress. The controller in use is explicit convex guidance; learned-policy work was removed from the repository on 2026-09-28 and is recoverable from git history.
 
 | Controller | Result on the corrected Isaac Sim plant |
 |------------|------------------------------------------|
 | **Convex (SOCP) guidance** | Landed all 7 benchmark missions inside the vehicle envelope (touchdown 0.146–0.184 m/s, 0.05–0.40 m from pad centre), including combined wind + sensor noise + CoM offset, a 50 m cold-rotor start and a two-waypoint route. Also flew a 100 s three-hover route and landed four ~100 m starts in wind at up to 30 m/s initial speed. |
 | **PID baseline** | Touched down at 1.50 m/s on the default mission (above the 0.5 m/s target). |
-| **PPO (waypoint_flight)** | Best full randomized-task success 1.3% after 700M transitions (best hover-heavy policy: 31.7% overall, 53% hover missions, 0% landing missions). |
 
-The dominant obstacle to learning is **rotor–body angular-momentum exchange**: every throttle change yaws the airframe (~46.5 rad/s body yaw per unit throttle change in the unmitigated plant), while the four jet vanes provide only ~0.3 N·m of yaw authority.
+The dominant physical obstacle is **rotor–body angular-momentum exchange**: every throttle change yaws the airframe (~46.5 rad/s body yaw per unit throttle change in the unmitigated plant), while the four jet vanes provide only ~0.3 N·m of yaw authority.
 
 ### Recent development
 
@@ -32,53 +28,34 @@ The dominant obstacle to learning is **rotor–body angular-momentum exchange**:
   - The EDF is coupled to a LiPo equivalent circuit.
   - Rotor spool and gyroscopic reactions are integrated with an energy-conserving implicit-midpoint (Cayley) scheme.
   - External forces are applied about the true centre of mass.
-- **Torque-limited motor model** ([train_waypoint_flight.yaml](simulation/isaac/configs/env/train_waypoint_flight.yaml)). The motor applies at most K<sub>t</sub>·I<sub>max</sub> ≈ 0.76 N·m, and zero throttle coasts with no brake, as EDF ESCs do. The previously unbounded spool lag put 5.2 N·m on the body at disarm and spun landed vehicles at 430–710 °/s on the pad.
-- **Waypoint-flight PPO task** ([waypoint_flight_2026-09-23.md](simulation/isaac/docs/waypoint_flight_2026-09-23.md)). This replaced the landing-first task, which stalled at 200M steps. The policy learns one skill: reach the next waypoint efficiently, with the efficiency cost weighted ~75% energy and ~25% time. Landings and holds are composed by a planner as routes ending in `land` or `hover`.
-  - The hardware-facing action contract is a throttle **rate** command (±0.25 duty/s) plus four vane angles. A fixed flight-computer yaw-rate damper owns yaw and removes the common mode of the policy's vane commands.
-  - Reward uses potential-based route shaping and a bounded `hover_track` station-keeping bonus. Terminal rewards are checked to dominate the per-step budget.
-  - The curriculum changes one difficulty axis per stage, and success is measured by start cohorts.
-  - A reverse landing ladder (touchdown → descent → approach → landing) mixes hover missions into every stage. Landing-only stages had erased flight skill.
-  - Contact-detection fix: the crash gate now reads the pre-contact body rate. Before, 82 of 98 gentle touchdowns in one replay were misclassified as crashes.
+- **Torque-limited motor model** ([mission_plant.yaml](simulation/isaac/configs/env/mission_plant.yaml)). The motor applies at most K<sub>t</sub>·I<sub>max</sub> ≈ 0.76 N·m, and zero throttle coasts with no brake, as EDF ESCs do. The previously unbounded spool lag put 5.2 N·m on the body at disarm and spun landed vehicles at 430–710 °/s on the pad.
 - **Convex guidance controller** ([convex_guidance_2026-09-25.md](simulation/isaac/docs/convex_guidance_2026-09-25.md)). It adapts Açıkmeşe & Ploen (2007) lossless convexification to a constant-mass, battery-powered vehicle, solved in closed loop with Clarabel.
   - It minimizes electrical energy with a power-cone objective.
   - Added constraints: a thrust-vector rate bound derived from the vanes' yaw authority, a gate approached from above, and waypoint nodes.
   - A servo-deadband inverse removed a 1 Hz gyroscopic coning limit cycle, cutting hover body-rate RMS from 15 to 1.5 °/s.
-- **Mission Control** ([mission_control.md](simulation/isaac/docs/mission_control.md)). A local web console (`simulation/isaac/mission_control/start.ps1`, http://127.0.0.1:8830) plans and launches Isaac missions with convex or PPO controllers. It replays telemetry on a 3D vehicle model, shows convex-guidance diagnostics and browses training runs.
+- **IMU measurement model** ([imu_model.md](simulation/isaac/docs/imu_model.md)). An opt-in chain models the WTGAHRS1: sensor bias and drift, 20 Hz low-pass, output rate, latency and an onboard attitude filter. Most parameters are placeholders until bench data exists (`tools/imu_allan_variance.py`).
+- **Mission Control** ([mission_control.md](simulation/isaac/docs/mission_control.md)). A local web console (`simulation/isaac/mission_control/start.ps1`, http://127.0.0.1:8830) plans and launches Isaac missions with convex guidance. It replays telemetry on a 3D vehicle model and shows convex-guidance diagnostics.
 
 ### Next steps
 
-- Retrain PPO route skills on the torque-limited, coupled-jet plant, then tighten the touchdown gate (`landing_soft`, 0.25 m/s)
-- GTrXL-PPO training on the corrected plant (`apps/run_train_gtrxl.py`) and comparison with MLP PPO and convex guidance
 - Measure EDF rotor inertia and servo deadband on hardware, then begin HIL integration
-
+- Characterize the WTGAHRS1 on the bench and replace the IMU model's placeholder parameters
+- Wire the IMU model into mission control and fly convex missions with it enabled
 
 ## Overview
 
-This research project investigates the **simulation-to-hardware transfer** of a **Gated Transformer-XL (GTrXL) enhanced Proximal Policy Optimization (PPO)** algorithm for thrust-vectoring control (TVC) in disturbance-resistant retro-propulsive landings. Motivated by the growing need for rocket booster recovery in reusable launch vehicles (e.g., SpaceX Falcon 9, Starship, Blue Origin New Glenn), the project addresses fundamental limitations in traditional controllers:
+This project investigates the **simulation-to-hardware transfer** of **convex (SOCP) powered-descent guidance** for thrust-vectoring control (TVC) in disturbance-resistant retro-propulsive landings. Motivated by the growing need for rocket booster recovery in reusable launch vehicles (e.g., SpaceX Falcon 9, Starship, Blue Origin New Glenn), the project uses a scaled EDF drone testbed to study a controller family that is transparent, deterministic and certifiable in ways learned controllers are not:
 
 - **PID controllers** struggle with nonlinear dynamics, parameter variations, and external disturbances.
-- **Sequential Convex Programming (SCP)** can fail when large perturbations push solutions outside trust regions, leading to infeasibility.
-- **Vanilla PPO** handles uncertainty well but suffers from short-term memory constraints, limiting performance on long-horizon trajectories like entry, descent, and landing (EDL).
-
-**GTrXL-PPO** integrates gated attention mechanisms into the PPO framework, enabling the agent to leverage long-term temporal context for improved decision-making across extended trajectories. Prior work (Federici et al., 2024; Carradori et al., 2025) has demonstrated GTrXL-PPO's effectiveness in simulation, achieving up to 98.7% landing success under uncertainties. However, **no prior study has validated transformer-augmented PPO on physical hardware for TVC landing systems** -- this project fills that critical gap.
+- **Convex guidance** plans a minimum-energy thrust trajectory under thrust, tilt, glide-slope, speed and thrust-rate constraints and is re-solved in closed loop; large perturbations can still push a plan infeasible, so its robustness envelope must be characterized.
 
 ### Key Goals
 
-- Train and validate GTrXL-PPO in high-fidelity simulation (NVIDIA Isaac Sim)
-- Transfer learned policies to a physical Electric Ducted Fan (EDF) drone testbed
-- Quantitatively compare GTrXL-PPO against baseline controllers (vanilla PPO, PID, SCP)
+- Validate convex guidance in high-fidelity simulation (NVIDIA Isaac Sim)
+- Transfer the controller to a physical Electric Ducted Fan (EDF) drone testbed
+- Quantitatively compare convex guidance against a PID baseline
 - Characterize robustness under realistic disturbances (wind, sensor noise, CoM shifts, varying initial conditions)
 - Advance the technology from **TRL 3** (analytical proof-of-concept) to **TRL 5** (validated in relevant environment)
-
----
-
-## Research Questions
-
-| # | Question | Key Metrics |
-|---|----------|-------------|
-| **RQ1** | What is the fidelity of simulation-to-hardware transfer for GTrXL-PPO on the EDF testbed? | Landing dispersion (CEP < 0.1 m), jerk (< 10 m/s³), touchdown velocity (< 0.5 m/s), success rate (> 99%, n=100), controller latency (< 50 ms) |
-| **RQ2** | How robust is GTrXL-PPO to disturbances (wind, CoM shift, sensor noise, varying ICs) in trajectory-following and landing tasks? | RMSE deviation (< 0.1 m), recovery time, control effort (below saturation), robustness margin (max disturbance before failure) |
-| **RQ3** | How does GTrXL-PPO compare to baselines (PPO, PID, SCP) in touchdown accuracy, trajectory efficiency, and safety margins? | Touchdown accuracy, delta-V magnitude, simulated fuel remaining (> 20%), success rate across controllers |
 
 ---
 
@@ -99,7 +76,7 @@ The system is designed to handle the following perturbations:
 
 ## Project Architecture -- High-Level Modules
 
-The project is organized into the following major modules, each addressing a distinct aspect of the research pipeline. Module paths below are the planned architecture; see [Repository Layout](#repository-layout) for where the implemented code lives today.
+The project is organized into the following major modules. Module paths below are the planned architecture; see [Repository Layout](#repository-layout) for where the implemented code lives today.
 
 ### 1. Simulation Environment (`simulation/`)
 
@@ -109,31 +86,15 @@ The high-fidelity simulation backbone built on **NVIDIA Isaac Sim**.
 - **Dynamic Center of Mass Model**: Simulates CoM variation due to fuel consumption and payload shifts
 - **Disturbance Injection Framework**: Configurable wind field models, Gaussian sensor noise injection, CoM perturbation profiles
 - **Landing Terrain**: Simulated landing pad with ground contact physics
-- **Sensor Simulation**: Emulated IMU, optical flow, and barometric sensor outputs matching hardware specifications
-- **Data Logging**: Automated state vector, reward, and metric collection per episode via Isaac Sim API
+- **Sensor Simulation**: Emulated IMU (bias, drift, filtering, latency), optical flow, and barometric sensor outputs matching hardware specifications
+- **Data Logging**: Automated state vector and metric collection per run
 
-### 2. RL Training Pipeline (`training/`)
+### 2. Controllers (`baselines/`)
 
-Training infrastructure for all controller variants using reinforcement learning.
-
-- **GTrXL-PPO Agent**: Custom policy and value networks using Gated Transformer-XL architecture (Parisotto et al., 2020) with PPO optimization (Schulman et al., 2017)
-  - Segment-level recurrence for long-term memory
-  - Relative positional encoding
-  - Gating mechanisms for gradient stability
-- **Vanilla PPO Baseline**: Standard PPO without transformer memory (MLP-based policy)
-- **Reward Shaping**: Custom reward function encoding landing precision, fuel efficiency, jerk minimization, and safety constraints
-- **Hyperparameter Tuning**: Automated search via Ray Tune for RL agents; Ziegler-Nichols method for PID tuning
-- **Meta-RL Training**: Training over distributions of scenarios (varied initial conditions, disturbance profiles) for generalization
-
-### 3. Baseline Controllers (`baselines/`)
-
-Traditional and classical control baselines for comparative evaluation.
-
+- **Convex Guidance (SOCP)**: Optimization-based powered descent guidance using lossless convexification of the thrust constraints (Açıkmeşe & Ploen, 2007), tracked by position feedback and a geometric attitude loop
 - **PID Controller**: Ziegler-Nichols tuned proportional-integral-derivative controller for attitude and position control
-- **Sequential Convex Programming (SCP)**: Optimization-based powered descent guidance using convex relaxation of nonlinear constraints (Açıkmeşe & Ploen, 2007); implemented as the convex guidance controller
-- **Vanilla PPO**: Standard PPO agent without transformer augmentation
 
-### 4. Hardware Platform (`hardware/`)
+### 3. Hardware Platform (`hardware/`)
 
 The physical EDF drone testbed for real-world validation.
 
@@ -150,21 +111,21 @@ The physical EDF drone testbed for real-world validation.
   - PX4 optical flow camera (0.1 m accuracy at 1 Hz) for position estimation
 - **Compute**
   - NVIDIA Jetson Nano (128-core Maxwell GPU, 4-core ARM CPU, 4 GB LPDDR4)
-  - Real-time inference target: < 50 ms latency
+  - Real-time target: < 50 ms latency
 - **Frame**: Carbon fibre rods with 3D-printed joints and mounts
 - **Bill of Materials**: Estimated total < $1,000 USD
 
-### 5. Hardware-in-the-Loop (HIL) Integration (`hil/`)
+### 4. Hardware-in-the-Loop (HIL) Integration (`hil/`)
 
 Bridging simulation and hardware before physical flight.
 
 - **MATLAB Simulink Integration**: Real-time HIL pipeline connecting Isaac Sim dynamics to physical hardware I/O
-- **Synthetic Sensor Feed**: Simulink feeds synthetic sensor data to the Jetson Nano running the trained policy
+- **Synthetic Sensor Feed**: Simulink feeds synthetic sensor data to the Jetson Nano running the controller
 - **Latency Profiling**: End-to-end measurement of sensor-input to control-output delay
 - **Transfer Fidelity Assessment**: Pearson correlation (target r > 0.9) between simulation and hardware metrics
-- **Trial Volume**: ~500 HIL trials per controller variant with controlled disturbance injection
+- **Trial Volume**: ~500 HIL trials per controller with controlled disturbance injection
 
-### 6. Flight Test Framework (`flight_tests/`)
+### 5. Flight Test Framework (`flight_tests/`)
 
 Controlled tethered flight validation of the final system.
 
@@ -172,10 +133,10 @@ Controlled tethered flight validation of the final system.
 - **Test Protocol**: Autonomous descent from 5-10 m altitude with precision landing on marked pad
 - **Disturbance Hardware**: External fans (wind injection), variable water payloads (CoM shift and fuel slosh emulation), added weights
 - **Data Collection**: Onboard sensor logs at 100 Hz, optical flow ground-truth tracking via ground markers
-- **Trial Volume**: 50-100+ tethered flights for GTrXL-PPO controller
+- **Trial Volume**: 50-100+ tethered flights for the convex guidance controller
 - **Safety Systems**: Manual kill switch, software-defined flight envelope limits, tether constraint, pre-flight checklists
 
-### 7. Evaluation & Analysis (`evaluation/`)
+### 6. Evaluation & Analysis (`evaluation/`)
 
 Statistical analysis and visualization pipeline for all experimental phases.
 
@@ -189,17 +150,16 @@ Statistical analysis and visualization pipeline for all experimental phases.
   - Trajectory RMSE, recovery time, control effort, robustness margin
   - Delta-V (trajectory efficiency), simulated fuel remaining
   - Controller latency (sensor-to-actuator)
-- **Visualization**: Trajectory plots, landing scatter maps, metric comparison tables, training curves (via Matplotlib)
+- **Visualization**: Trajectory plots, landing scatter maps, metric comparison tables (via Matplotlib)
 
-### 8. Deployment & Artifacts (`artifacts/`)
+### 7. Deployment & Artifacts (`artifacts/`)
 
 Open-source deliverables and reproducibility assets.
 
-- **Trained Policies**: Verifiable GTrXL-PPO weights and checkpoints (Hugging Face)
-- **Source Code**: Isaac Sim environment, training scripts, baseline implementations (GitHub)
+- **Source Code**: Isaac Sim environment, controllers and mission tooling (GitHub)
 - **Hardware Documentation**: Full bill of materials, CAD files for 3D-printed components, wiring diagrams
 - **Datasets**: 100+ flight test logs with full state vectors for community benchmarking
-- **Reproducibility**: Containerized training environment, configuration files, random seeds
+- **Reproducibility**: Configuration files and random seeds
 
 ---
 
@@ -207,11 +167,11 @@ Open-source deliverables and reproducibility assets.
 
 | Path | Contents |
 |------|----------|
-| [simulation/isaac/tvc_env/](simulation/isaac/tvc_env/) | Isaac Lab environment package: dynamics (EDF, coupled jet, LiPo), envs (`direct_rl_env`, `waypoint_flight`, rewards, curriculum), controllers (PID, convex, PPO, GTrXL adapters) |
-| [simulation/isaac/configs/](simulation/isaac/configs/) | Plant/env configs, task definitions (`hover`, `landing`, `waypoint_flight`) and controller settings |
-| [simulation/isaac/apps/](simulation/isaac/apps/) | Entry points: `run_train_waypoints.py`, `run_train_ppo.py`, `run_train_gtrxl.py`, `waypoint_eval.py`, `run_mission.py`, PID evaluation and sweeps |
+| [simulation/isaac/tvc_env/](simulation/isaac/tvc_env/) | Isaac Lab environment package: dynamics (EDF, coupled jet, LiPo, IMU), envs (`direct_rl_env`, waypoints), controllers (PID, convex) |
+| [simulation/isaac/configs/](simulation/isaac/configs/) | Plant/env configs, task definitions (`hover`, `landing`), sensor profiles and controller settings |
+| [simulation/isaac/apps/](simulation/isaac/apps/) | Entry points: `run_mission.py`, PID evaluation and sweeps, smoke tests |
 | [simulation/isaac/mission_control/](simulation/isaac/mission_control/) | Local mission-control web console (server + frontend) |
-| [simulation/isaac/docs/](simulation/isaac/docs/) | Dated design notes and investigation reports (physics review, PPO convergence, waypoint flight, convex guidance) |
+| [simulation/isaac/docs/](simulation/isaac/docs/) | Dated design notes and investigation reports (physics review, convex guidance, IMU model) |
 | [simulation/isaac/tests/](simulation/isaac/tests/) | Unit tests (`pytest`) |
 | [Paper/](Paper/) | Draft paper (LaTeX) and references |
 | [CAD/](CAD/) | EDF drone CAD, Blender/USD models and FEA |
@@ -226,24 +186,22 @@ The research follows a **design science** framework with three sequential experi
 Phase 1: Simulation          Phase 2: HIL Testing          Phase 3: Flight Tests
 ┌─────────────────────┐     ┌──────────────────────┐     ┌──────────────────────┐
 │ Isaac Sim 6-DOF     │     │ MATLAB Simulink +    │     │ Tethered EDF drone   │
-│ environment setup    │────>│ Jetson Nano HIL      │────>│ indoor flight tests   │
+│ environment setup   │────>│ Jetson Nano HIL      │────>│ indoor flight tests  │
 │                     │     │                      │     │                      │
-│ - Train GTrXL-PPO   │     │ - Transfer fidelity  │     │ - 50-100+ landings   │
-│ - Train PPO baseline│     │ - Latency profiling  │     │ - Disturbance inject │
-│ - Tune PID (Z-N)    │     │ - 500 trials/variant │     │ - Ground truth via   │
-│ - Implement SCP     │     │ - Correlation r>0.9  │     │   optical flow       │
-│ - Disturbance models│     │                      │     │                      │
+│ - Convex guidance   │     │ - Transfer fidelity  │     │ - 50-100+ landings   │
+│ - Tune PID (Z-N)    │     │ - Latency profiling  │     │ - Disturbance inject │
+│ - Disturbance models│     │ - 500 trials/variant │     │ - Ground truth via   │
+│ - IMU model         │     │ - Correlation r>0.9  │     │   optical flow       │
 └─────────────────────┘     └──────────────────────┘     └──────────────────────┘
 ```
 
-### Phase 1 -- Simulation Training & Evaluation
+### Phase 1 -- Simulation & Evaluation
 - High-fidelity 6-DOF simulation in NVIDIA Isaac Sim with disturbance models
-- Custom GTrXL-PPO policy and value function training with meta-RL over scenario distributions
-- Baseline controller implementation and tuning
-- Initial metric evaluation and statistical comparison across all controllers
+- Convex guidance and PID baseline implementation and tuning
+- Initial metric evaluation and statistical comparison across controllers
 
 ### Phase 2 -- Hardware-in-the-Loop (HIL)
-- Deploy trained policies on Jetson Nano embedded compute
+- Deploy the controller on Jetson Nano embedded compute
 - Real-time HIL integration via MATLAB Simulink feeding synthetic sensor data
 - Characterize latency, transfer fidelity, and controller behavior under simulated hardware constraints
 - ~500 trials per variant with disturbance injection
@@ -261,10 +219,8 @@ Phase 1: Simulation          Phase 2: HIL Testing          Phase 3: Flight Tests
 
 | Controller | Description | Tuning Method |
 |------------|-------------|---------------|
-| **GTrXL-PPO** | Gated Transformer-XL augmented PPO with long-term memory | Ray Tune (automated) |
-| **Vanilla PPO** | Standard PPO without transformer memory (MLP backbone) | Ray Tune (automated) |
+| **Convex guidance** | SOCP powered-descent guidance, re-solved in closed loop | Solver and constraint configuration |
 | **PID** | Classical proportional-integral-derivative controller | Ziegler-Nichols |
-| **SCP** | Sequential convex programming optimization-based guidance | Convex solver config |
 
 All controllers are evaluated on identical scenarios with statistical comparison via t-tests/ANOVA (alpha = 0.05).
 
@@ -277,7 +233,7 @@ All controllers are evaluated on identical scenarios with statistical comparison
 | Literature review & research questions | Jan 2026 |
 | Research design finalization | Feb 2026 |
 | Isaac Sim environment construction | Mar 2026 |
-| Training & simulation experiments | Mar - Jul 2026 |
+| Simulation experiments | Mar - Jul 2026 |
 | Hardware build & HIL integration | Jul - Nov 2026 |
 | Flight test data collection | Nov 2026 |
 | Data analysis | Dec 2026 |
@@ -290,7 +246,7 @@ All controllers are evaluated on identical scenarios with statistical comparison
 ## Scope & Limitations
 
 ### In Scope
-- GTrXL-PPO, PPO, PID, and SCP for 6-DOF landing control
+- Convex guidance and PID for 6-DOF landing control
 - NVIDIA Isaac Sim simulation with disturbance models
 - EDF drone hardware testbed with TVC emulation
 - HIL testing and tethered flight tests (100+ landings)
@@ -314,130 +270,18 @@ All controllers are evaluated on identical scenarios with statistical comparison
 
 ## Expected Deliverables
 
-- Verifiable GTrXL-PPO trained policies and weights (Hugging Face)
-- Isaac Sim environment and training source code (GitHub)
+- Isaac Sim environment and controller source code (GitHub)
 - EDF drone testbed design: bill of materials, CAD files, wiring documentation
 - Dataset of 100+ hardware flight logs with full state vectors
-- Statistical benchmarks comparing GTrXL-PPO vs. PPO, PID, and SCP
+- Statistical benchmarks comparing convex guidance and PID
 - Graduate thesis documenting methodology, results, and analysis
-
----
-
-## Future Work & Publication Roadmap
-
-Beyond the core thesis (hardware validation of GTrXL-PPO), this project opens several research directions suitable for top ML venues. The analysis below evaluates each potential paper through a first-principles lens: **Does it advance ML theory, algorithms, or empirical understanding?** -- the bar for venues like NeurIPS, as opposed to application venues (ICRA, AIAA) where domain validation is the contribution.
-
-### Venue Strategy
-
-The thesis itself -- hardware validation of an existing algorithm -- is best suited for **robotics and aerospace venues** (ICRA, IROS, AIAA SciTech, IEEE RA-L). NeurIPS/ICML/ICLR require the contribution to be a **generalizable ML advance**, not a domain-specific demo. The papers below are scoped to extract ML contributions from this project that stand on their own.
-
-### Candidate Papers
-
-#### Paper 1: Hardware Validation of GTrXL-PPO for Retro-Propulsive Landings on Scaled Testbeds
-
-**NeurIPS Fit: Low** -- Applied validation paper. NeurIPS 2024/2025 accepts RL work but prioritizes novel methods over hardware demonstrations. No recent acceptances for drone/rocket-specific validation; closest are simulation-based RL papers like *"Efficient RL by Discovering Neural Pathways."*
-
-**First-Principles Critique:**
-- Core contribution is control engineering (force balance), not ML methodology
-- Hardware testing without proving method novelty is putting the cart before the horse
-- Tethered flight tests add engineering value but not ML insight
-
-**Recommendation:** Submit to **ICRA, IROS, or IEEE RA-L** where sim-to-real transfer is a valued contribution. Could be elevated to medium NeurIPS fit if a novel domain adaptation technique (e.g., learned dynamics residuals for sim-to-real transfer) is introduced and shown to generalize beyond aerospace.
-
----
-
-#### Paper 2: Physics-Informed Custom Attention in RL for Trajectory Control Under Uncertainties
-
-**NeurIPS Fit: High** -- Physics-informed ML is a hot area (2025 orals include adjoint Schrodinger methods, dynamical mean field theory). Custom attention mechanisms that encode physical priors (e.g., Newtonian dynamics as inductive bias in attention weights) could generalize well beyond aerospace.
-
-**Core Idea:** Standard attention treats all history tokens uniformly. Physics-informed attention biases the weighting by known dynamics -- e.g., attention scores modulated by F=ma consistency, energy conservation, or Lyapunov stability criteria. The attention mechanism *knows* which past states are dynamically relevant, not just statistically correlated.
-
-**First-Principles Critique:**
-- Attention as weighted history is wasteful if uniform; biasing by equations of motion is principled
-- Must answer: if disturbances are modelable, why not delete RL entirely and use Kalman filters? (Answer: RL handles the unmodelable residual)
-- Risk: if physics prior is too strong, attention degenerates to a filter -- need to show the learned component adds value
-
-**Requirements for NeurIPS:**
-- Theoretical convergence analysis under physics-informed priors
-- Benchmarks on **non-aerospace** tasks (MuJoCo locomotion, manipulation, multi-body contact) to prove generality
-- Ablation: physics-informed attention vs. vanilla attention vs. no attention (LSTM/MLP)
-- Delete aerospace framing from the title; lead with the ML method
-
-**Target:** NeurIPS, ICML, or ICLR (main conference or workshop)
-
----
-
-#### Paper 3: Sparse Attention Variants in PPO for Efficient Long-Horizon RL
-
-**NeurIPS Fit: High** -- Sparsity and efficiency are perennial winners (2025 best paper: *"Gated Attention... Sparsity"*). Sparse attention (top-k, local+global, or learned sparsity masks) for RL aligns with *"Low-Switching RL"* oral acceptances. Strong if accompanied by compute-savings proofs and regret bounds.
-
-**Core Idea:** Full self-attention in RL is O(n^2) over the episode history -- wasteful when only a sparse subset of past states matter for current decisions. Propose learned sparsity patterns (e.g., top-k attention, sliding window + landmark states, or disturbance-triggered attention) that reduce compute while preserving or improving policy quality.
-
-**First-Principles Critique:**
-- Fundamental question: do landing trajectories (~100 steps) even need long-horizon attention? If sequences are short, the O(n^2) cost is negligible and the paper's motivation collapses
-- Must benchmark on **genuinely long-horizon tasks** (thousands of steps) -- games, multi-phase robotics, or logistics
-- Delete aerospace-specific framing if it limits the generality of the contribution
-- The win condition is: sparse attention matches dense on quality while being provably cheaper
-
-**Requirements for NeurIPS:**
-- Formal regret bounds or sample complexity analysis for sparse vs. dense attention in PPO
-- Ablation: dense vs. top-k vs. local-window vs. random sparse vs. learned masks
-- Benchmarks across domains: continuous control (MuJoCo), discrete (Atari), and multi-agent
-- Compute scaling plots (wall-clock time, memory, FLOPs vs. episode length)
-
-**Target:** NeurIPS, ICML (main conference)
-
----
-
-#### Paper 4: Hierarchical Attention in RL for Multi-Scale Disturbance Rejection
-
-**NeurIPS Fit: High** -- Direct match to 2025 poster *"Hierarchical Self-Attention for Multi-Scale Problems."* Multi-head attention where each head specializes in a different temporal scale (fast jerk rejection vs. slow trajectory planning) is architecturally novel if the hierarchy is learned or provably optimal.
-
-**Core Idea:** Disturbances operate at multiple time scales -- high-frequency sensor noise (~ms), medium-frequency wind gusts (~s), slow CoM drift (~10s of seconds). Flat attention blends all scales indiscriminately. Hierarchical attention assigns dedicated heads or layers to different temporal resolutions, with an entropy-based gating mechanism to route information across scales.
-
-**First-Principles Critique:**
-- Decomposing disturbances as multi-scale vectors is physically principled -- flat attention is provably suboptimal when signals have known spectral structure
-- Question: is this overkill for single-phase landing? If flat multi-head attention achieves 95% of the performance, the hierarchy adds complexity without value
-- The strong version: hierarchy enables **emergent specialization** (one head learns wind, another learns noise) without explicit supervision -- show this via attention visualization and ablation
-
-**Requirements for NeurIPS:**
-- Generalize beyond aerospace: test on multi-scale tasks in other domains (e.g., LLM long-context reasoning, video prediction, multi-resolution planning)
-- Prove or empirically show that hierarchy outperforms flat multi-head when temporal scales span >2 orders of magnitude
-- Attention head specialization analysis (what does each level attend to?)
-- Comparison against frequency-domain baselines (wavelet attention, spectral methods)
-
-**Target:** NeurIPS, ICML, ICLR (main conference or spotlight)
-
----
-
-### Summary: Publication Venue Matrix
-
-| Paper | Core ML Contribution | NeurIPS Fit | Best Venue if Not NeurIPS |
-|-------|---------------------|-------------|---------------------------|
-| **1. Hardware Validation** | Sim-to-real transfer (applied) | Low | ICRA, IEEE RA-L, AIAA SciTech |
-| **2. Physics-Informed Attention** | Inductive bias in attention via physical laws | High | ICML, ICLR |
-| **3. Sparse Attention for RL** | Compute-efficient attention with regret bounds | High | ICML, ICLR |
-| **4. Hierarchical Multi-Scale Attention** | Learned temporal-scale specialization | High | ICML, ICLR |
-
-### Strategic Notes
-
-- **Papers 2-4 share training infrastructure** from this project but must be framed as general ML contributions, not aerospace papers. The aerospace domain provides motivation and one benchmark, but the paper must also demonstrate generality on standard RL benchmarks (MuJoCo, Atari, D4RL, etc.)
-- **Paper 1 is the thesis** and should be submitted to robotics/aerospace venues first; it provides the empirical grounding that motivates Papers 2-4
-- **Combining Papers 2 + 4** (physics-informed hierarchical attention) could produce a particularly strong submission if the physics prior naturally induces the multi-scale hierarchy
-- **Timeline:** Paper 1 can be written from thesis results (mid-2027). Papers 2-4 require additional experiments beyond the thesis scope and could target NeurIPS 2027 or 2028 submission deadlines
 
 ---
 
 ## Key References
 
-- Schulman et al. (2017). *Proximal Policy Optimization Algorithms*. arXiv:1707.06347
-- Dai et al. (2019). *Transformer-XL: Attentive Language Models Beyond a Fixed-Length Context*. ACL 2019
-- Parisotto et al. (2020). *Stabilizing Transformers for Reinforcement Learning*. ICML 2020
-- Federici et al. (2024). *Meta-Reinforcement Learning with Transformer for Lunar Landing*. AIAA SciTech 2024
-- Carradori et al. (2025). *Transformer-Based Robust Feedback Guidance for Atmospheric Powered Landing*. AIAA SciTech 2025
 - Açıkmeşe & Ploen (2007). *Convex Programming Approach to Powered Descent Guidance for Mars Landing*. JGCD
-- Hwangbo et al. (2017). *Control of a Quadrotor with Reinforcement Learning*. IEEE RA-L
-- Zhang & Li (2020). *Testing and Verification of Neural-Network-Based Safety-Critical Control Software*. IST
+- Mahony, Hamel & Pflimlin (2008). *Nonlinear Complementary Filters on the Special Orthogonal Group*. IEEE TAC
 
 ---
 

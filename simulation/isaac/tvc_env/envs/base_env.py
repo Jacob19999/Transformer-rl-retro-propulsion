@@ -92,7 +92,7 @@ class BaseEnvConfig:
         if gyro_mode in ('coupled_midpoint','coupled_cayley') and physics.get('enable_external_forces_every_iteration', True):
             raise ValueError('Coupled angular integration requires physics.enable_external_forces_every_iteration: false')
         if self.config.get('task',{}).get('navigation',{}).get('enabled') and not env.get('observe_battery'):
-            raise ValueError('Waypoint policy observation contract requires observe_battery: true')
+            raise ValueError('Waypoint mission observations require observe_battery: true')
 
     @staticmethod
     def _default_physics_config_path(

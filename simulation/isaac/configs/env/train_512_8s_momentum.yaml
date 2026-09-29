@@ -3,7 +3,7 @@
 # Diagnostic: 30M radial baseline final eval 95.7% success, 3.487 Wh / successful
 # landing, 46.99 m/s propulsive impulse per mass, 4.69 s, with artificial
 # .27 Nms/rad damping and independent unbounded vane loads. Not transferable
-# validation. Initialize actor only; reset critic/optimizer; gamma=.999.
+# validation.
 # No descent reference, throttle floor, guidance wrapper or survival reward.
 # Objective: soft on-pad touchdown first, then electrical Wh and integral
 # |Fprop|/m dt. A Falcon-9-like late burn is an outcome to measure, not a
@@ -11,7 +11,7 @@
 # 30s at 2500W, 10m/s^2 propulsion: energy -41.67, impulse -30, time -4.5.
 # Typical 18m/2mXY/.15rad tilt/1rad/s costs another -84.6 (900 steps).
 # Total magnitude ~161 < crash 200 and ideal soft landing 475.
-# All terminal gates unchanged; gamma=.999 retains .861 of a 5s terminal.
+# All terminal gates unchanged.
 # Residual swirl fraction .1 is an UNCERTAIN prior, not measured stator data.
 # Qualify at 0 and .2 separately. Motor/rotor inertia also need bench data.
 # 240Hz physics / 30Hz policy. No artificial rotational damper in this model.

@@ -3,7 +3,7 @@
 Generates a moving altitude reference (a "premade trajectory") toward a
 landing pad and disarms the controller on touchdown. The wrapper is
 controller-agnostic: it rewrites the altitude error component of the
-observation so any inner controller (PID, or PPO's residual-PID baseline)
+observation so any inner controller (e.g. PID)
 sees a descending waypoint instead of a static pad target.
 
 Trajectory profile per environment:

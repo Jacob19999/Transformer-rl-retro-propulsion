@@ -12,13 +12,11 @@
   <button role="tab" data-page="flight" aria-controls="page-flight"><i>01</i>FLIGHT</button>
   <button role="tab" data-page="plan" aria-controls="page-plan"><i>02</i>MISSION PLAN</button>
   <button role="tab" data-page="telemetry" aria-controls="page-telemetry"><i>03</i>TELEMETRY</button>
-  <button role="tab" data-page="models" aria-controls="page-models"><i>04</i>FLIGHT SOFTWARE</button>
-  <button role="tab" data-page="checklists" aria-controls="page-checklists"><i>05</i>CHECKLISTS</button>
-  <span class="tab-hint">KEYS 1–5 · SPACE PLAY · ←/→ STEP · I IMU</span>
+  <button role="tab" data-page="checklists" aria-controls="page-checklists"><i>04</i>CHECKLISTS</button>
+  <span class="tab-hint">KEYS 1–4 · SPACE PLAY · ←/→ STEP · I IMU</span>
 </nav>
 <main>
 <div id="notice" role="status">8S planned hardware · part identities and calibration pending · Loading recorded mission details</div>
-<div id="trainingStatus" class="training-status" role="status" hidden></div>
 
 <!-- 01 / FLIGHT: what is happening now -->
 <section id="page-flight" class="page" role="tabpanel" aria-label="Flight">
@@ -118,7 +116,7 @@
 <div class="hint" id="rotationNote">Provisional soft limits: 90 / 90 / 180 °/s.</div>
 <table class="fin-table"><thead><tr><th>METRIC</th><th>ROLL</th><th>PITCH</th><th>YAW</th></tr></thead><tbody id="rotationRows"></tbody></table>
 <canvas id="rotationPlots" aria-label="Roll pitch and yaw body rates with dashed soft limits throughout the flight"></canvas>
-<div class="hint" id="rateNote">PPO commands fin angles and throttle directly. No body-rate setpoint is generated.</div></div></div>
+<div class="hint" id="rateNote">No body-rate setpoint is generated.</div></div></div>
 <div class="panel"><div class="panel-title">FIN MOTION RATE <span>°/s</span></div><div class="card-body"><table class="fin-table"><thead><tr><th>FIN</th><th>TARGET</th><th>ACTUAL</th></tr></thead><tbody id="finRateRows"></tbody></table></div></div>
 <div class="panel"><div class="panel-title">POWER SYSTEM <span>LIPO / EDF</span></div><div class="card-body"><div id="batteryMetrics" class="battery-metrics"></div></div></div>
 <div class="panel event-panel"><div class="panel-title">MISSION EVENTS <span>RECORDED</span></div><div id="events">Awaiting simulation.</div></div>
@@ -126,11 +124,6 @@
 </div>
 </section>
 
-<!-- 04 / FLIGHT SOFTWARE: policies and training runs -->
-<section id="page-models" class="page" role="tabpanel" aria-label="Flight software" hidden>
-<div id="models" class="panel models-panel"></div>
-</section>
-
 <footer><span>EDF RESEARCH / MISSION CONTROL</span><span id="footerProfile">8S PLANNED · 3.104 kg · 120 Hz PHYSICS</span><span>LOCAL HOST / NO HARDWARE ACTUATION</span></footer></main>
 <dialog id="hardwareDialog"><div class="dialog-head"><div><div class="eyebrow">CONFIGURATION / PROVENANCE</div><h2>Vehicle & hardware</h2></div><button id="closeHardware" aria-label="Close hardware details">✕</button></div><p id="hardwareStatus"></p><div id="hardwareParts"></div><p class="hint">Source files: Paper/Reference/parts.md; CAD/EDF Drone v1/Parts List/Master Parts List.xlsx; simulation/isaac/configs. Scene appearance is a WebGL rendering of actual Isaac states; it is not an Isaac RTX camera feed.</p></dialog>
-<script type="module" src="/static/app.js?v=imu-overlay-20260927"></script></body></html>
+<script type="module" src="/static/app.js?v=convex-only-20260928"></script></body></html>

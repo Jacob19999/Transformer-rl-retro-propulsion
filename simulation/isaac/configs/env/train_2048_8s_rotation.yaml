@@ -5,8 +5,7 @@
 # Coriolis amplified transverse rate squared 114x in 2s at +/-40 rad/s.
 # Coupled midpoint + inverse PhysX projection + free-flight Cayley drift,
 # external forces once, 480Hz resolves this amplification (test18 <.14% energy drift);
-# policy remains 30Hz, real contact dwell remains .125s. See Sept15 journal.
-# Transfer actor only: reward/physics changed, so critic/optimizer reset.
+# control loop remains 30Hz, real contact dwell remains .125s. See Sept15 journal.
 # No rate clamp, scripted trajectory, PID wrapper, throttle floor, or reduced H.
 # Rate observations already contain true+configured sensor-noise FRD p/q/r.
 # New cost integrates bounded max-axis exceedance (1-limit/abs(rate)) at

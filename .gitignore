@@ -34,7 +34,6 @@ simulation/runs/
 simulation/isaac/logs/
 simulation/isaac/runs/*
 # Small reference results cited by docs / tools
-!simulation/isaac/runs/validated_landing_ppo/
 !simulation/isaac/runs/landing_reference/
 
 # Model checkpoints and weights

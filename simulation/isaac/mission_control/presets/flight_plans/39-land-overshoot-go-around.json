@@ -123,6 +123,6 @@
     "category": "land",
     "profile": "land-routed-tracking",
     "summary": "Challenge: arrive at 5 m/s, pass over the pad at 12 m instead of landing, fly a 14 m go-around circuit and re-establish a stable hover before touchdown.",
-    "profile_name": "land-routed-tracking"
+    "profile_name": "Landing - routed approach tracking"
   }
 }

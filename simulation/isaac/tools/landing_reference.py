@@ -1,4 +1,4 @@
-"""Optimistic 1D coast/burn references; never used by the PPO action path.
+"""Optimistic 1D coast/burn references; never used by a controller's action path.
 
 Closed-form constant-thrust braking with instantaneous spool, no steering or
 drag. This restricted trajectory family is NOT a proof of global optimality.

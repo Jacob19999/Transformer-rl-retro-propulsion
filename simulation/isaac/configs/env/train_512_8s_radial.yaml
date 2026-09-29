@@ -1,7 +1,6 @@
 # 2026-09-14: user confirms radial hinge spans after wrong-axis camera report.
-# Old 8S/old-axis transfer: 3.014M steps, 12.5% deterministic success; initial
-# 6S actor hovered at z=0.53m. This is a new physical task, not an old validation.
-# Battery observation gives PPO the state needed to react to voltage sag.
+# An earlier 6S vehicle hovered at z=0.53m. This is a new physical task, not an old validation.
+# Battery observation gives the controller the state needed to react to voltage sag.
 env:
   num_envs: 512
   env_spacing: 4.0

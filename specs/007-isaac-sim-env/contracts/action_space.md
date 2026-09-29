@@ -43,8 +43,6 @@ Different controllers produce actions differently:
 | Controller | Fin Angle Source | Throttle Source |
 |------------|-----------------|-----------------|
 | PID | `pid_fin_mixer.py` maps roll/pitch/yaw commands to 4 fin angles | PID altitude loop output |
-| PPO | Direct network output (4 values) | Direct network output (1 value) |
-| GTrXL-PPO | Direct network output (4 values) | Direct network output (1 value) |
 
 The environment is agnostic to how actions are generated. All controllers produce the same 5D action vector.
 
