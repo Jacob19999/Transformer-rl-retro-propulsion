@@ -601,7 +601,7 @@ class WaypointFlightTask:
 
     def observation(self, position, quaternion_wxyz, linear_vel_frd, angular_vel_frd, height,
                     fin_angles, fin_rates, rotor_fraction, contact_state, battery_obs, previous_action,
-                    max_fin_angle: float, max_fin_rate: float, noise: dict | None = None) -> Tensor:
+                    max_fin_angle: float, max_fin_rate: float, noise: dict | None = None, imu=None) -> Tensor:
         """51 channels, every vector in body FRD, all scaled to O(1).
 
         [0:3] active waypoint - position, [3:6] next - active, [6:9] next2 - next,
@@ -620,14 +620,22 @@ class WaypointFlightTask:
             position_noise = torch.randn(n, 3, device=dev) * float(noise.get('position_std', 0.0))
             position = position + position_noise
             height = height + position_noise[:, 2]
-            attitude_std = float(noise.get('attitude_std', 0.0))
-            if attitude_std > 0:
-                euler = torch.randn(n, 3, device=dev) * attitude_std
-                quaternion_wxyz = normalize(multiply(quaternion_wxyz,
-                                                     from_euler(euler[:, 0], euler[:, 1], euler[:, 2])))
+            if imu is not None:
+                # Simulated IMU: attitude from its onboard filter, rate from its gyro. These replace
+                # attitude_std / angular_velocity_std, which model neither bias, lag nor filtering.
+                quaternion_wxyz = imu.quaternion_wxyz
+            else:
+                attitude_std = float(noise.get('attitude_std', 0.0))
+                if attitude_std > 0:
+                    euler = torch.randn(n, 3, device=dev) * attitude_std
+                    quaternion_wxyz = normalize(multiply(quaternion_wxyz,
+                                                         from_euler(euler[:, 0], euler[:, 1], euler[:, 2])))
             linear_vel_frd = linear_vel_frd + torch.randn(n, 3, device=dev) * float(noise.get('velocity_std', 0.0))
-            angular_vel_frd = angular_vel_frd + torch.randn(n, 3, device=dev) * float(
-                noise.get('angular_velocity_std', 0.0))
+            if imu is not None:
+                angular_vel_frd = imu.gyro_frd
+            else:
+                angular_vel_frd = angular_vel_frd + torch.randn(n, 3, device=dev) * float(
+                    noise.get('angular_velocity_std', 0.0))
         # The state as the flight computer measured it (truth when noise is
         # off); telemetry records it beside the PhysX pose.
         self.measurement = dict(position=position, quaternion_wxyz=quaternion_wxyz,

@@ -65,6 +65,14 @@ class BaseEnvConfig:
             sim_root=sim_root,
         )
 
+        # Expand an IMU profile reference and validate it now: a bad IMU config then fails before
+        # Isaac starts, and the recorded task config carries the parameters actually used.
+        noise = self.config.get("disturbances", {}).get("sensor_noise")
+        if noise and noise.get("imu"):
+            from tvc_env.dynamics.imu_model import ImuParams, resolve_imu_config
+            noise["imu"] = resolve_imu_config(noise["imu"])
+            ImuParams.from_config(noise["imu"])
+
         # Extract common settings
         env = self.config.get("env", {})
         self.num_envs: int = env.get("num_envs", 1)

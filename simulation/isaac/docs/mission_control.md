@@ -95,9 +95,12 @@ actual / IMU / Δ table. The Telemetry page plots the four errors over the
 flight. The toggle is disabled for replays recorded before the `imu` channel
 existed; the choice is remembered in this browser.
 
-The simulator draws independent Gaussian noise at every 30 Hz control step
-(`tvc_env/envs/observations.apply_sensor_noise`). It has no bias, drift or
-correlation model, so each datasheet figure becomes one white-noise sigma:
+By default the simulator draws independent Gaussian noise at every 30 Hz control
+step (`tvc_env/envs/observations.apply_sensor_noise`). That path has no bias,
+drift or correlation model, so each datasheet figure becomes one white-noise
+sigma. An opt-in physical IMU chain (bias, drift, low-pass, output rate,
+latency, onboard attitude filter) exists for training and evaluation; see
+[imu_model.md](imu_model.md). The cards below use the white-noise path:
 
 - `attitude_std`: the published pitch/roll error, the dynamic figure when the
   maker publishes one, else the static one.
@@ -130,7 +133,9 @@ Caveats:
   the 0.5 m noise bound and the 0.5 m landing criterion.
 - A datasheet error is mostly slow bias, while the simulator's noise is
   white. White noise at the spec magnitude shakes the controller harder but
-  averages out, where a bias would not.
+  averages out, where a bias would not. The IMU chain in
+  [imu_model.md](imu_model.md) models the slow part; the mission-control UI
+  does not expose it yet.
 
 Offline replica check (same replica as the sample table below, with
 `apply_sensor_noise` on the controller's observation; not Isaac):
