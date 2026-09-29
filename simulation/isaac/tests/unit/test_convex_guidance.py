@@ -10,8 +10,8 @@ pytest.importorskip('clarabel')
 
 from tvc_env.controllers.convex_adapter import ConvexGuidanceController, VehicleModel, _FRD_TO_ISAAC  # noqa: E402
 from tvc_env.controllers.convex_guidance import (  # noqa: E402
-    ConvexGuidance, EnergyModel, GuidanceLimits, LandingGate, RouteWaypoint, _Segment, catmull_rom_leg,
-    curve_fraction, curve_point,
+    ConvexGuidance, EnergyModel, GuidanceLimits, LandingGate, ObjectiveWeights, RouteWaypoint, _Segment, catmull_rom_leg,
+    curve_distance, curve_fraction, curve_point,
 )
 from tvc_env.controllers.pid_fin_mixer import PIDFinMixer  # noqa: E402
 from tvc_env.common.quaternions import from_euler, to_euler, to_rotation_matrix  # noqa: E402
@@ -774,3 +774,175 @@ def test_receding_horizon_captures_hover_after_long_incoming_leg(objective):
         assert nav.ready_to_land[0], 'Repeated replans postponed the hover indefinitely'
     finally:
         guidance.close()
+
+
+# ---- secondary objectives and the fly-through arrival cone (2026-09-28) ----
+
+def _tracking_planner(weights=None, **kwargs):
+    """Planned 8S limits with the 10 deg/s attitude-slew bound and a 1 m corridor."""
+    limits = GuidanceLimits(mass_kg=MASS, thrust_min_n=0.8 * WEIGHT, thrust_max_n=0.86 * FULL, thrust_rate_n_s=RATE,
+                            max_tilt_rad=math.radians(15), max_speed_m_s=4., glide_slope_rad=math.radians(45),
+                            tilt_rate_rad_s=math.radians(10), emergency_thrust_max_n=FULL,
+                            emergency_thrust_rate_n_s=8 * RATE)
+    return ConvexGuidance(limits, EnergyModel(FULL, 3072 / .88, 10.), corridor_m=1., corridor_weight=25.,
+                          weights=weights, **kwargs)
+
+
+def _drawn(start, route):
+    """The controller's corridor curves for a route ending at the pad (never below a leg's lower end)."""
+    points = [start] + [w.position for w in route] + [[0., 0., 0.]]
+    path = [catmull_rom_leg(points, leg) for leg in range(len(route) + 1)]
+    for curve in path:
+        curve[:, 2] = np.maximum(curve[:, 2], min(curve[0, 2], curve[-1, 2]))
+    return path
+
+
+def _leg_deviation(plan, legs=None):
+    """Largest node distance from the drawn curve over the first `legs` fly-through legs."""
+    worst, node = 0., 0
+    for i, seg in enumerate(plan.segments):
+        first, node = node, node + seg.nodes
+        if (legs is None or i < legs) and seg.kind == 'flypass' and seg.curve is not None:
+            worst = max(worst, float(curve_distance(seg.curve, plan.position[first + 1:node + 1]).max()))
+    return worst
+
+
+def test_path_weight_pulls_the_plan_from_the_corridor_edge_onto_the_route():
+    # Inside the corridor the energy optimum is indifferent to position and
+    # rides the edge (0.98 m of a 1 m corridor); a path price moves the plan
+    # onto the drawn route for a small energy premium.
+    start = [0., 0., 20.]
+    route = (RouteWaypoint((20., 0., 15.), 'flypass', 1., 3.), RouteWaypoint((20., 20., 10.), 'flypass', 1., 3.))
+    path = _drawn(start, route)
+    energy = _tracking_planner().plan(start, [0., 0., 0.], WEIGHT, GATE, route, path=path)
+    tracked = _tracking_planner(ObjectiveWeights(path=10.)).plan(start, [0., 0., 0.], WEIGHT, GATE, route, path=path)
+    assert energy.mode == tracked.mode == 'optimal'
+    assert _leg_deviation(energy, 1) > .9 and _leg_deviation(tracked, 1) < .1
+    assert tracked.energy_wh < 1.01 * energy.energy_wh
+    assert set(tracked.cost_terms) >= {'energy', 'path'} and tracked.convexification_gap < 1e-4
+    assert math.isclose(sum(tracked.cost_terms.values()), tracked.cost, rel_tol=1e-4)
+    assert tracked.route_deviation_m >= _leg_deviation(tracked) - 1e-6
+
+
+def test_arrival_cone_makes_a_tight_zigzag_feasible_and_keeps_gate_direction():
+    start = [0., 0., 3.]
+    route = (RouteWaypoint((8., 6., 6.), 'flypass', 1., 3.), RouteWaypoint((16., -6., 8.), 'flypass', 1., 3.),
+             RouteWaypoint((24., 6., 6.), 'flypass', 1., 3.), RouteWaypoint((24., 6., 4.), 'hover', .5, 2., 2.))
+    path = _drawn(start, route)
+    exact = _tracking_planner().plan(start, [0., 0., 0.], WEIGHT, GATE, route, path=path)
+    assert exact.mode == 'soft_terminal'     # exact gate velocities: no feasible plan under the slew bound
+    tolerance = math.radians(20)
+    guidance = _tracking_planner(ObjectiveWeights(path=10.), flypass_min_speed_fraction=.5,
+                                 flypass_heading_tolerance_rad=tolerance)
+    plan = guidance.plan(start, [0., 0., 0.], WEIGHT, GATE, route, path=path)
+    assert plan.mode == 'optimal' and plan.convexification_gap < 1e-4
+    segments = guidance._route_segments(np.array(start), np.zeros(3), route, 1., path)
+    for node, seg in zip(plan.waypoint_nodes[:3], segments[:3]):
+        v, tangent = plan.velocity[node], seg.arrival_velocity / np.linalg.norm(seg.arrival_velocity)
+        along = float(v @ tangent)
+        assert .5 * 3. - 1e-3 <= along <= 3. + 1e-3
+        assert math.atan2(float(np.linalg.norm(v - along * tangent)), along) <= tolerance + 1e-3
+    assert _leg_deviation(plan) < .3
+
+
+def test_default_arrival_is_the_exact_leg_velocity():
+    start = [0., 0., 20.]
+    route = (RouteWaypoint((20., 0., 15.), 'flypass', 1., 3.), RouteWaypoint((20., 20., 10.), 'flypass', 1., 3.))
+    guidance = _tracking_planner()
+    plan = guidance.plan(start, [0., 0., 0.], WEIGHT, GATE, route, path=_drawn(start, route))
+    assert plan.mode == 'optimal'
+    segments = guidance._route_segments(np.array(start), np.zeros(3), route, 1., _drawn(start, route))
+    for node, seg in zip(plan.waypoint_nodes, segments):
+        np.testing.assert_allclose(plan.velocity[node], seg.arrival_velocity, atol=1e-5)
+
+
+def test_smoothness_and_tilt_weights_trade_energy_for_actuator_margin():
+    start = [0., 0., 20.]
+    route = (RouteWaypoint((20., 0., 15.), 'flypass', 1., 3.), RouteWaypoint((20., 20., 10.), 'flypass', 1., 3.))
+    path = _drawn(start, route)
+
+    def jerk(plan):
+        return float(np.sqrt(np.mean(np.square(np.linalg.norm(np.diff(plan.thrust_accel, axis=0), axis=1)
+                                               / np.diff(plan.times)))))
+
+    def tilt(plan):
+        return float(np.mean(np.linalg.norm(plan.thrust_accel[:, :2], axis=1)))
+
+    base = _tracking_planner().plan(start, [0., 0., 0.], WEIGHT, GATE, route, path=path)
+    smooth = _tracking_planner(ObjectiveWeights(smoothness=5.)).plan(start, [0., 0., 0.], WEIGHT, GATE, route, path=path)
+    level = _tracking_planner(ObjectiveWeights(tilt=5.)).plan(start, [0., 0., 0.], WEIGHT, GATE, route, path=path)
+    assert jerk(smooth) < .6 * jerk(base) and smooth.cost_terms['smoothness'] > 0.
+    assert tilt(level) < tilt(base) and level.cost_terms['tilt'] > 0.
+    for plan in (smooth, level):
+        assert plan.mode == 'optimal' and plan.convexification_gap < 1e-4
+        assert math.isclose(sum(plan.cost_terms.values()), plan.cost, rel_tol=1e-4)
+
+
+def test_time_weight_prices_duration_in_hover_seconds():
+    start = [6., -4., 12.]
+    route = (RouteWaypoint((0., 8., 8.), 'hover', .5, 3., 1.),)
+    path = _drawn(start, route)
+    timed = _tracking_planner(ObjectiveWeights(time=1.)).plan(start, [0., 0., 0.], WEIGHT, GATE, route, path=path)
+    assert timed.mode == 'optimal'
+    # weight x hover cost x duration, in Wh (the auxiliary load is not part of the priced hover cost).
+    e = _tracking_planner().energy
+    hover_wh = e.power_ref_w * (WEIGHT / e.thrust_ref_n) ** 1.5 / 3600.
+    assert math.isclose(timed.cost_terms['time'], hover_wh * timed.duration, rel_tol=1e-3)
+    free = _tracking_planner().plan(start, [0., 0., 0.], WEIGHT, GATE, route, path=path)
+    assert timed.duration <= free.duration + 1e-6
+
+
+def test_objective_weights_and_arrival_settings_are_validated():
+    with pytest.raises(ValueError):
+        ObjectiveWeights(path=-1.)
+    with pytest.raises(ValueError):
+        _tracking_planner(flypass_min_speed_fraction=0.)
+
+
+def test_controller_reports_cost_terms_and_flown_cross_track():
+    s = settings()
+    s['guidance'].update(path_weight=10., smoothness_weight=2.)
+    controller = ConvexGuidanceController(s, _with_vanes(MOMENTUM_VANES), (0., 0., 0.), .3125, 1 / 30)
+    assert controller.guidance.weights == ObjectiveWeights(path=10., smoothness=2.)
+    route = [dict(position=[6., 0., 8.], type='hover', hold_s=2., radius_m=.5, speed_m_s=2.)]
+    obs = np.concatenate([[6., 0., 0.], [1., 0., 0., 0.], np.zeros(6), [8.], np.zeros(8), [.81], [0.]])
+    controller.compute_action(torch.tensor(obs[None], dtype=torch.float32), reference_position=[6., 0., 8.],
+                              route=route, path_points=[[0., 0., 8.], [6., 0., 8.], [0., 0., .3125]], path_index=0)
+    telemetry = controller.last_telemetry
+    assert telemetry['phase'] == 'ROUTE' and 'path' in telemetry['solver']['cost_terms']
+    assert telemetry['cross_track_m'] < 1e-3 and telemetry['solver']['route_deviation_m'] >= 0.
+
+
+def test_landing_leg_never_outruns_its_braking_envelope():
+    # Isaac 751dd0214086: from a 4.6 m hover the energy optimum sank at 2.0
+    # m/s and braked on the thrust-rate bound; the vehicle touched down at
+    # 2.1 m/s. The envelope keeps -v_z <= sqrt(v_gate^2 + 2 a (z - z_gate)).
+    fraction = 0.35
+    limits = GuidanceLimits(**{**planner().limits.__dict__, 'landing_sink_brake_fraction': fraction})
+    guidance = ConvexGuidance(limits, EnergyModel(FULL, 3072 / .88, 10.))
+    free = planner().plan([0., .3, 4.6], [0., 0., 0.], WEIGHT, GATE)
+    plan = guidance.plan([0., .3, 4.6], [0., 0., 0.], WEIGHT, GATE)
+    assert plan.mode == 'optimal' and plan.convexification_gap < 1e-3
+    a = fraction * (limits.thrust_max_n - WEIGHT) / MASS
+    envelope = np.sqrt(.15 ** 2 + 2 * a * (plan.position[:, 2] - GATE.position[2]))
+    assert np.all(-plan.velocity[:, 2] <= envelope + 1e-3)
+    assert -free.velocity[:, 2].min() > -plan.velocity[:, 2].min() + .2   # the unconstrained plan sinks faster
+    # A fast direct descent starts outside the envelope and is still planned.
+    fast = guidance.plan([2., -1., 12.], [0., 0., -5.], WEIGHT, GATE)
+    assert fast is not None and fast.mode == 'optimal'
+
+
+def test_braking_emergency_fires_only_when_the_yaw_safe_slew_cannot_stop():
+    s = settings()
+    controller = ConvexGuidanceController(s, _with_vanes(MOMENTUM_VANES), (0., 0., 0.), .3125, 1 / 30)
+    controller._phase = 'POWERED_DESCENT'
+    available = controller.vehicle.available_thrust_n(29.6)
+    fires = lambda z, sink, thrust: controller._braking_emergency(  # noqa: E731
+        np.array([0., 0., z]), np.array([0., 0., -sink]), thrust, available, 29.6)
+    assert fires(2.6, 2.6, .9 * WEIGHT)           # Isaac 751dd0214086 at 69.4 s
+    assert not fires(4.6, .5, WEIGHT)             # a calm start of the landing leg
+    assert not fires(.6, .18, WEIGHT)             # the terminal descent's own rate
+    s['guidance']['braking_emergency_height_fraction'] = None
+    off = ConvexGuidanceController(s, _with_vanes(MOMENTUM_VANES), (0., 0., 0.), .3125, 1 / 30)
+    off._phase = 'POWERED_DESCENT'
+    assert not off._braking_emergency(np.array([0., 0., 2.6]), np.array([0., 0., -2.6]), .9 * WEIGHT, available, 29.6)

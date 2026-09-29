@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {convexCaptureStatus,normalizeWaypoints,parseFlightPlan,serializeFlightPlan,waypointLabel,escapeHtml,sampleRouteLegs,routeProfile,pickRoute,routeFields,serializeRoute} from './flight-plan.js';
 import {samplePlannerSpline} from './planner.js';
 import * as THREE from 'three';
-import {axisDragPlane,editableAxes} from './planner-3d.js';
+import {axisDragPlane,editableAxes,legOfSelection,addableTypes,snapValue} from './planner-3d.js';
+import {chevronStations,routeLength} from './route-line.js';
 
 test('gizmo drag planes preserve the selected axis for oblique cameras',()=>{
   const origin=new THREE.Vector3(3,4,5),camera=new THREE.Vector3(18,-24,20);
@@ -100,4 +101,23 @@ test('flight plans carry the route only, never guidance or environment',()=>{
   const file=JSON.parse(serializeRoute(mission));
   assert.equal(file.scope,'route');assert.equal(file.mission.convex_settings,undefined);assert.equal(file.mission.disturbance,undefined);
   assert.deepEqual(parseFlightPlan(serializeRoute(mission)).mission,route);
+});
+
+test('3D editor maps selections to route legs and knows which steps it can still add',()=>{
+  const route=[{type:'takeoff'},{type:'hover'},{type:'flypass'},{type:'land'}];
+  assert.deepEqual([0,1,2,3].map(i=>legOfSelection(i,route)),[0,1,2,3]);
+  assert.equal(legOfSelection('start',route),-1);assert.equal(legOfSelection('pad:0',route),-1);
+  const types=addableTypes(route);
+  assert.equal(types.takeoff,false);assert.equal(types.land,false);assert.equal(types.hover,true);
+  assert.ok(Object.values(addableTypes(Array(12).fill({type:'hover'}))).every(v=>!v));
+  assert.equal(snapValue(12.26,.5),12.5);assert.equal(snapValue(-3.2,.5),-3);assert.equal(snapValue(1.234,0),1.234);
+});
+
+test('route chevrons are evenly spaced along the drawn legs and point along them',()=>{
+  const leg=[[0,0,0],[4,0,0],[4,3,0]];
+  assert.equal(routeLength([leg]),7);
+  const stations=chevronStations(leg,2);
+  assert.deepEqual(stations.map(s=>s.point.map(v=>+v.toFixed(6))),[[1,0,0],[3,0,0],[4,1,0],[4,3,0]]);   // half a spacing in, then every 2 m
+  assert.deepEqual(stations[0].tangent,[1,0,0]);assert.deepEqual(stations.at(-1).tangent,[0,1,0]);
+  assert.deepEqual(chevronStations([[0,0,0]],1),[]);
 });

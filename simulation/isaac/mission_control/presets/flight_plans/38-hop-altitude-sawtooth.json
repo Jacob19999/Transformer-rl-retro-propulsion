@@ -1,0 +1,175 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "scope": "route",
+  "mission": {
+    "name": "Hop challenge - altitude sawtooth",
+    "duration_s": 240.0,
+    "position": [
+      0.0,
+      0.0,
+      0.34
+    ],
+    "velocity": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "attitude_deg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_motor_fraction": 0.0,
+    "pads": [
+      {
+        "name": "Home pad",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Sawtooth pad",
+        "position": [
+          40.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          0.0,
+          0.0,
+          3.0
+        ],
+        "type": "takeoff",
+        "name": "Climb",
+        "hold_s": 2.0,
+        "radius_m": 0.3,
+        "speed_m_s": 1.5,
+        "corridor_m": 1.0
+      },
+      {
+        "position": [
+          6.0,
+          0.0,
+          12.0
+        ],
+        "type": "flypass",
+        "name": "Peak 1",
+        "hold_s": 2.0,
+        "radius_m": 0.6,
+        "speed_m_s": 3.0,
+        "corridor_m": 1.0
+      },
+      {
+        "position": [
+          12.0,
+          0.0,
+          3.0
+        ],
+        "type": "flypass",
+        "name": "Trough 1",
+        "hold_s": 2.0,
+        "radius_m": 0.6,
+        "speed_m_s": 3.0,
+        "corridor_m": 1.0
+      },
+      {
+        "position": [
+          18.0,
+          0.0,
+          12.0
+        ],
+        "type": "flypass",
+        "name": "Peak 2",
+        "hold_s": 2.0,
+        "radius_m": 0.6,
+        "speed_m_s": 3.0,
+        "corridor_m": 1.0
+      },
+      {
+        "position": [
+          24.0,
+          0.0,
+          3.0
+        ],
+        "type": "flypass",
+        "name": "Trough 2",
+        "hold_s": 2.0,
+        "radius_m": 0.6,
+        "speed_m_s": 3.0,
+        "corridor_m": 1.0
+      },
+      {
+        "position": [
+          30.0,
+          0.0,
+          12.0
+        ],
+        "type": "flypass",
+        "name": "Peak 3",
+        "hold_s": 2.0,
+        "radius_m": 0.6,
+        "speed_m_s": 3.0,
+        "corridor_m": 1.0
+      },
+      {
+        "position": [
+          36.0,
+          0.0,
+          4.0
+        ],
+        "type": "flypass",
+        "name": "Trough 3",
+        "hold_s": 2.0,
+        "radius_m": 0.6,
+        "speed_m_s": 3.0,
+        "corridor_m": 1.0
+      },
+      {
+        "position": [
+          40.0,
+          0.0,
+          3.0
+        ],
+        "type": "hover",
+        "name": "Over sawtooth pad",
+        "hold_s": 4.0,
+        "radius_m": 0.3,
+        "speed_m_s": 2.0,
+        "corridor_m": 1.0
+      },
+      {
+        "position": [
+          40.0,
+          0.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "Sawtooth pad touchdown",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 0.15,
+        "corridor_m": null,
+        "pad": 1,
+        "approach_speed_m_s": null
+      }
+    ]
+  },
+  "sample": {
+    "category": "hop",
+    "profile": "hop-agile",
+    "summary": "Challenge: three 9 m climbs and dives every 6 m of ground track (~56 deg flight path) at 3 m/s: alternating near-full-thrust climbs and floor-limited descents.",
+    "profile_name": "Hop - agile wide tilt"
+  }
+}

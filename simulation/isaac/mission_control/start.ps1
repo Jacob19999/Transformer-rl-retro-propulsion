@@ -18,5 +18,5 @@ try {
 Push-Location $missionRoot
 try {
     Write-Host "Mission control: http://127.0.0.1:$Port (Ctrl+C to stop service)"
-    if ($Local) { & $isaacPython -m mission_control.server --port $Port } else { & $isaacPython -m mission_control.server --port $Port --lan }
+    if ($Local) { & $isaacPython -m mission_control.server --port $Port --local } else { & $isaacPython -m mission_control.server --port $Port }
 } finally { Pop-Location }

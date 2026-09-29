@@ -9,10 +9,10 @@
       "mission": "hop",
       "corridor": "soft",
       "summary": "First hops and short pad-to-pad transfers: slow, near-vertical thrust, generous margins.",
-      "rationale": "8 deg planned tilt and 2 m/s keep lateral acceleration under ~1.4 m/s^2, leaving most of the vane authority for disturbance rejection. The corridor penalty is raised 2.5x so a short arc is followed closely without giving up the soft emergency fallback.",
+      "rationale": "8 deg planned tilt and 2 m/s keep lateral acceleration under ~1.4 m/s^2, leaving most of the vane authority for disturbance rejection. The corridor penalty is raised 2.5x so a short arc is followed closely without giving up the soft emergency fallback. Path weight 10 prices cross-track distance inside the corridor too (the energy optimum otherwise rides its edge); smoothness 1 keeps planned jerk low.",
       "settings": {
         "guidance": {"route_corridor_mode": "soft", "route_corridor_m": 1.0, "route_corridor_weight": 25.0,
-                     "max_speed_m_s": 2.0, "max_tilt_deg": 8.0},
+                     "max_speed_m_s": 2.0, "max_tilt_deg": 8.0, "path_weight": 10.0, "smoothness_weight": 1.0},
         "tracking": {"max_tilt_deg": 16.0}
       }
     },
@@ -22,10 +22,11 @@
       "mission": "hop",
       "corridor": "soft",
       "summary": "General takeoff, transfer and landing hops. Follows the drawn arc but always gets a plan.",
-      "rationale": "Repository tilt limits with a 3 m/s speed cap suited to hops under ~20 m. Corridor excess priced at 25 s of hover energy per m*s (default 10) so the plan hugs the route; soft mode still brakes an over-speed start at full thrust when the corridor is unreachable.",
+      "rationale": "Repository tilt limits with a 3 m/s speed cap suited to hops under ~20 m. Corridor excess priced at 25 s of hover energy per m*s (default 10); soft mode still brakes an over-speed start at full thrust when the corridor is unreachable. Path weight 10 pulls the plan onto the drawn route inside the corridor (offline closed loop: cross-track RMS 0.31 -> 0.16 m on the slalom, 0.32 -> 0.13 m on the remote-pad approach), and gates are crossed at 50-100% of the leg speed within 20 deg of the route so tight turns stay feasible under the 10 deg/s slew bound. Smoothness 1 limits planned jerk.",
       "settings": {
         "guidance": {"route_corridor_mode": "soft", "route_corridor_m": 1.0, "route_corridor_weight": 25.0,
-                     "max_speed_m_s": 3.0}
+                     "max_speed_m_s": 3.0, "path_weight": 10.0, "smoothness_weight": 1.0,
+                     "flypass_min_speed_fraction": 0.5, "flypass_heading_tolerance_deg": 20.0}
       }
     },
     {
@@ -37,7 +38,9 @@
       "rationale": "Strict corridors reject any plan with slack and hold if infeasible, so the profile keeps plans comfortably feasible: 2.5 m/s, 12 deg planned tilt and a 1 m half-width. Tighter re-plan triggers (0.6 m, 0.6 m/s) restart from the measured state before the tube is exhausted.",
       "settings": {
         "guidance": {"route_corridor_mode": "strict", "route_corridor_m": 1.0, "max_speed_m_s": 2.5,
-                     "max_tilt_deg": 12.0, "replan_error_m": 0.6, "replan_velocity_error_m_s": 0.6},
+                     "max_tilt_deg": 12.0, "replan_error_m": 0.6, "replan_velocity_error_m_s": 0.6,
+                     "path_weight": 10.0, "smoothness_weight": 1.0,
+                     "flypass_min_speed_fraction": 0.5, "flypass_heading_tolerance_deg": 20.0},
         "tracking": {"max_tilt_deg": 20.0}
       }
     },

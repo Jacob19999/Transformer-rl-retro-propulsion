@@ -137,6 +137,13 @@ class TVCDirectRLEnv(TVCEnvBase):
         self._navigation = None
         # Measured state behind the latest observation (see _get_observations).
         self.sensor_measurement = None
+        # Simulated IMU chain (sensor errors, low-pass, output rate, latency, onboard attitude
+        # filter) when disturbances.sensor_noise.imu is enabled; otherwise None and the legacy
+        # per-step white attitude/rate noise applies.
+        from tvc_env.dynamics.imu_model import imu_model_from_config
+        self._imu = imu_model_from_config(
+            self._config.num_envs, device, self._config.physics_dt,
+            self._config.config.get('disturbances', {}).get('sensor_noise'))
         if self._config.config.get('task',{}).get('navigation',{}).get('enabled'):
             from tvc_env.envs.waypoints import WaypointMission
             self._navigation = WaypointMission(self._config.num_envs,device,self._config.config,env_origins,self._target_position)
@@ -280,7 +287,8 @@ class TVCDirectRLEnv(TVCEnvBase):
             action = torch.cat((action[:, :4], self._throttle_state[:, None]), dim=-1)
         if self._yaw_damper_gain is not None:
             from tvc_env.envs.waypoint_flight import apply_yaw_damper
-            yaw_rate = self._body_iface.get_angular_velocity_body_frd()[:, 2]
+            yaw_rate = (self._imu.gyro_frd[:, 2] if self._imu is not None
+                        else self._body_iface.get_angular_velocity_body_frd()[:, 2])
             fins = apply_yaw_damper(action[:, :4], yaw_rate, self._yaw_damper_gain,
                                     float(self._servo_model.max_command_angle), self._yaw_owns_common_mode)
             action = torch.cat((fins, action[:, 4:]), dim=-1)
@@ -310,8 +318,11 @@ class TVCDirectRLEnv(TVCEnvBase):
             self._apply_action()
             self._sim_scene.step()
             self._correct_freeflight_orientation()
-            self._rotation.update(rates_before, self._body_iface.get_angular_velocity_body_frd(),
-                                  self._config.physics_dt, rotation_active)
+            rates_after = self._body_iface.get_angular_velocity_body_frd()
+            if self._imu is not None:
+                self._imu.step(self._body_iface.get_root_quaternion_wxyz(),
+                               self._body_iface.get_root_linear_velocity_world(), rates_after)
+            self._rotation.update(rates_before, rates_after, self._config.physics_dt, rotation_active)
             landing_force, unsafe_contact = self._sensor_iface.read_contact_summary(
                 self._contact_sm.min_contact_force
             )
@@ -388,6 +399,7 @@ class TVCDirectRLEnv(TVCEnvBase):
             if self._navigation:
                 self._navigation.reset(reset_ids,self._body_iface.get_root_position())
             self._reset_previous_action(reset_ids)
+            self._reset_imu(reset_ids)
             if self._flight is not None:
                 self._flight.reset(reset_ids, self._body_iface.get_root_position(),
                                    self._body_iface.get_root_linear_velocity_world(),
@@ -422,11 +434,19 @@ class TVCDirectRLEnv(TVCEnvBase):
         if self._navigation:
             self._navigation.reset(indices,self._body_iface.get_root_position())
         self._reset_previous_action(indices)
+        self._reset_imu(indices)
         if self._flight is not None:
             self._flight.reset(indices, self._body_iface.get_root_position(),
                                self._body_iface.get_root_linear_velocity_world(),
                                self._body_iface.get_angular_velocity_body_frd())
         return self._get_observations(), {}
+
+    def _reset_imu(self, env_ids: Tensor) -> None:
+        """Power-cycle the simulated IMU of freshly reset envs from their post-reset state."""
+        if self._imu is not None:
+            self._imu.reset(env_ids, self._body_iface.get_root_quaternion_wxyz(),
+                            self._body_iface.get_root_linear_velocity_world(),
+                            self._body_iface.get_angular_velocity_body_frd())
 
     def _reset_previous_action(self, env_ids: Tensor) -> None:
         """Neutral vanes and the throttle matching the spawned rotor speed."""
@@ -703,12 +723,12 @@ class TVCDirectRLEnv(TVCEnvBase):
                 state.height, state.fin_angles, state.fin_rates, rotor, state.contact_state,
                 self._battery_model.observation(), self._previous_action,
                 float(self._servo_model.max_command_angle), float(self._servo_model.max_angular_velocity),
-                self._config.config.get('disturbances', {}).get('sensor_noise'))
+                self._config.config.get('disturbances', {}).get('sensor_noise'), imu=self._imu)
             self.sensor_measurement = self._flight.measurement
             return {"policy": obs}
         target = self._navigation.goal if self._navigation else self._target_position
         obs = assemble_observation(state, target, self._omega_max)
-        obs = apply_sensor_noise(obs, self._config.config)
+        obs = apply_sensor_noise(obs, self._config.config, imu=self._imu)
         # What the controller measured (IMU/position noise included), for telemetry.
         self.sensor_measurement = measured_state(obs, target)
         if self._config.config.get('env', {}).get('observe_battery', False):

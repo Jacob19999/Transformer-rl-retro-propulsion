@@ -1,0 +1,136 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "scope": "route",
+  "mission": {
+    "name": "Hop challenge - 72 m cross-field sprint",
+    "duration_s": 210.0,
+    "position": [
+      0.0,
+      0.0,
+      0.34
+    ],
+    "velocity": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "attitude_deg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_motor_fraction": 0.0,
+    "pads": [
+      {
+        "name": "Home pad",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Far field pad",
+        "position": [
+          72.0,
+          12.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          0.0,
+          0.0,
+          8.0
+        ],
+        "type": "takeoff",
+        "name": "Climb to 8 m",
+        "hold_s": 2.0,
+        "radius_m": 0.4,
+        "speed_m_s": 2.5,
+        "corridor_m": 1.5
+      },
+      {
+        "position": [
+          18.0,
+          4.0,
+          10.0
+        ],
+        "type": "flypass",
+        "name": "Gate 1",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 4.5,
+        "corridor_m": 1.5
+      },
+      {
+        "position": [
+          36.0,
+          -2.0,
+          10.0
+        ],
+        "type": "flypass",
+        "name": "Gate 2",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 5.0,
+        "corridor_m": 1.5
+      },
+      {
+        "position": [
+          54.0,
+          8.0,
+          10.0
+        ],
+        "type": "flypass",
+        "name": "Gate 3",
+        "hold_s": 2.0,
+        "radius_m": 1.0,
+        "speed_m_s": 5.0,
+        "corridor_m": 1.5
+      },
+      {
+        "position": [
+          72.0,
+          12.0,
+          6.0
+        ],
+        "type": "hover",
+        "name": "Brake over far pad",
+        "hold_s": 4.0,
+        "radius_m": 0.4,
+        "speed_m_s": 3.0,
+        "corridor_m": 1.5
+      },
+      {
+        "position": [
+          72.0,
+          12.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "Far field touchdown",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 0.15,
+        "corridor_m": null,
+        "pad": 1,
+        "approach_speed_m_s": null
+      }
+    ]
+  },
+  "sample": {
+    "category": "hop",
+    "profile": "hop-time-weighted",
+    "summary": "Challenge: 72 m at up to 5 m/s through three offset gates, then a full stop over a remote pad: long-range speed holding and a hard braking capture.",
+    "profile_name": "hop-time-weighted"
+  }
+}

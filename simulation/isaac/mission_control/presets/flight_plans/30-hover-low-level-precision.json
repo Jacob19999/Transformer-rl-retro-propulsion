@@ -1,0 +1,141 @@
+{
+  "format": "edf-flight-plan",
+  "version": 2,
+  "scope": "route",
+  "mission": {
+    "name": "Hover challenge - low-level precision square",
+    "duration_s": 240.0,
+    "position": [
+      0.0,
+      0.0,
+      0.34
+    ],
+    "velocity": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "attitude_deg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "angular_rate_deg_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_motor_fraction": 0.0,
+    "pads": [
+      {
+        "name": "Home pad",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "waypoints": [
+      {
+        "position": [
+          0.0,
+          0.0,
+          1.5
+        ],
+        "type": "takeoff",
+        "name": "Low lift-off",
+        "hold_s": 2.0,
+        "radius_m": 0.2,
+        "speed_m_s": 0.8,
+        "corridor_m": 0.5
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          1.5
+        ],
+        "type": "hover",
+        "name": "Settle at 1.5 m",
+        "hold_s": 6.0,
+        "radius_m": 0.2,
+        "speed_m_s": 0.8,
+        "corridor_m": 0.5
+      },
+      {
+        "position": [
+          3.0,
+          0.0,
+          1.3
+        ],
+        "type": "hover",
+        "name": "East corner",
+        "hold_s": 6.0,
+        "radius_m": 0.2,
+        "speed_m_s": 1.0,
+        "corridor_m": 0.5
+      },
+      {
+        "position": [
+          3.0,
+          3.0,
+          1.3
+        ],
+        "type": "hover",
+        "name": "North-east corner",
+        "hold_s": 6.0,
+        "radius_m": 0.2,
+        "speed_m_s": 1.0,
+        "corridor_m": 0.5
+      },
+      {
+        "position": [
+          0.0,
+          3.0,
+          1.3
+        ],
+        "type": "hover",
+        "name": "North corner",
+        "hold_s": 6.0,
+        "radius_m": 0.2,
+        "speed_m_s": 1.0,
+        "corridor_m": 0.5
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          1.5
+        ],
+        "type": "hover",
+        "name": "Return over pad",
+        "hold_s": 6.0,
+        "radius_m": 0.2,
+        "speed_m_s": 1.0,
+        "corridor_m": 0.5
+      },
+      {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "type": "land",
+        "name": "Precision touchdown",
+        "hold_s": 2.0,
+        "radius_m": 0.5,
+        "speed_m_s": 0.12,
+        "corridor_m": null,
+        "pad": 0,
+        "approach_speed_m_s": 0.6
+      }
+    ]
+  },
+  "sample": {
+    "category": "hover",
+    "profile": "hover-precision",
+    "summary": "Challenge: 1.3-1.5 m holds on a 3 m square with 0.2 m capture in a strict 0.5 m corridor, just above the 0.8 m route floor: a braking overshoot has almost no height to sag into.",
+    "profile_name": "Hover - precision hold strict"
+  }
+}

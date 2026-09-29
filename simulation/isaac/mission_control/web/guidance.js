@@ -29,6 +29,17 @@ export function guidanceStatus(g) {
   return { label: (g.solver.status ?? 'STATUS NOT RECORDED').toUpperCase(), tone: g.solver.status === 'Solved' ? 'good' : 'warning' };
 }
 
+// Plan cost split by objective term (primary energy/delta-v plus any priced
+// secondary terms), in the primary objective's unit, largest first.
+export function costBreakdown(solver) {
+  const terms = solver?.cost_terms;
+  if (!terms || typeof terms !== 'object') return '';
+  const unit = solver.objective === 'delta_v' ? 'm/s' : 'Wh';
+  return Object.entries(terms).filter(([, v]) => Number.isFinite(v) && Math.abs(v) >= 5e-4)
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+    .map(([k, v]) => `${k.replace('_', '-')} ${fmt(v, 2)} ${unit}`).join(', ');
+}
+
 export function createGuidancePanel(root, { onSeek }) {
   root.innerHTML = `
     <div class="optimization-heading"><div><div class="eyebrow">RECEDING-HORIZON GUIDANCE</div><h2>Convex optimization</h2></div><span class="optimization-status" data-field="status"></span></div>
@@ -73,7 +84,10 @@ export function createGuidancePanel(root, { onSeek }) {
     put('gap', `${fmt(Number.isFinite(s?.convexification_gap) ? s.convexification_gap * 100 : null, 3)} %`);
     const headroom = Number.isFinite(g.thrust_available_n) && Number.isFinite(g.thrust_command_n) ? g.thrust_available_n - g.thrust_command_n : null;
     put('headroom', `${fmt(headroom)} N`); field('headroom').classList.toggle('negative', headroom != null && headroom < 0);
-    const details = s ? `${s.solves ?? '—'} candidate solves · ${s.iterations ?? '—'} iterations · terminal miss ${fmt(s.terminal_miss_m, 2)} m · corridor excess ${fmt(s.corridor_excess_m, 3)} m. ` : '';
+    const tracking = [s && Number.isFinite(s.route_deviation_m) ? `planned route deviation ${fmt(s.route_deviation_m, 2)} m` : null,
+      Number.isFinite(g.cross_track_m) ? `flown cross-track ${fmt(g.cross_track_m, 2)} m` : null].filter(Boolean).join(' · ');
+    const terms = costBreakdown(s);
+    const details = s ? `${s.solves ?? '—'} candidate solves · ${s.iterations ?? '—'} iterations · terminal miss ${fmt(s.terminal_miss_m, 2)} m · corridor excess ${fmt(s.corridor_excess_m, 3)} m${tracking ? ' · ' + tracking : ''}. ${terms ? 'Cost terms: ' + terms + '. ' : ''}` : '';
     put('note', (status.tone === 'warning' && s?.mode === 'soft_terminal' ? 'No safe terminal plan; showing the maximum-braking fallback. ' : '') + details +
       (plan ? 'Thrust plan shows the optimizer’s slack σ. Amber line is current available thrust, not a recorded optimization bound. Headroom = available − commanded thrust.' : 'Waiting for the first recorded trajectory. Live reference and vehicle position are shown when available.'));
     if (!root.getClientRects().length) return;

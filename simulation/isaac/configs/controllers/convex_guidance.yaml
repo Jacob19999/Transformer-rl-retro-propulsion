@@ -9,6 +9,29 @@ guidance:
   #         P = shaft_power_at_max / efficiency * (T / T_full)^1.5 + aux.
   # delta_v: integral of |T|/m, the paper's fuel analog (propulsive delta-v).
   objective: energy
+  # Secondary objectives, each priced in seconds of hover cost (so a weight
+  # reads "worth this many seconds of hovering" under either objective).
+  # All zero here: the repository default is the energy/delta-v plan that the
+  # Isaac validations flew. Mission profiles opt in (presets/convex_profiles.json).
+  #   path: per m s of planned cross-track distance from the drawn route.
+  #         Inside the corridor the energy optimum is indifferent to position
+  #         and rides the edge (offline 2026-09-28: 0.98 m on every leg of a
+  #         1 m corridor); path 10 held the legs at 0.01-0.16 m for +0.1-2% Wh.
+  #   time: per s of plan duration (also tries 0.8x waypoint-leg timings).
+  #   smoothness: per s at the planned attitude-slew bound, quadratic in
+  #         thrust jerk (3 halved the planned jerk RMS offline).
+  #   tilt: per s at max_tilt_deg, quadratic in horizontal thrust.
+  path_weight: 0.0
+  time_weight: 0.0
+  smoothness_weight: 0.0
+  tilt_weight: 0.0
+  # Fly-through arrival. 1.0 / 0 deg: the gate is crossed at exactly the leg
+  # speed along the route tangent (the validated behaviour). Lower speed
+  # fractions and a heading tolerance let the plan slow down and cut in at
+  # a gate: a 10 m zigzag had no feasible plan under the 10 deg/s slew bound
+  # with the exact arrival and was planned 0.01-0.16 m off route with 0.5 / 20.
+  flypass_min_speed_fraction: 1.0
+  flypass_heading_tolerance_deg: 0.0
   # rho1 floor. The vanes sit in the EDF jet and their authority scales with
   # its dynamic pressure, so thrust is never planned below 60% of weight
   # (descent_brake_ratio below usually raises it further).
@@ -118,6 +141,23 @@ guidance:
   gate_capture_radius_m: 0.3    # the plan, not terminal centering, removes lateral error
   gate_capture_speed_m_s: 0.5
   thrust_lead_s: 0.15           # feedforward the plan's thrust one spool lag (tau_motor) ahead
+  # Landing-leg sink-rate envelope (null disables): the plan never sinks
+  # faster than it could brake to the gate speed with this share of its
+  # braking acceleration, -v_z <= sqrt(v_gate^2 + 2 a (z - z_gate)). Without
+  # it the energy optimum from a 4.6 m hover sank at 2.0 m/s and braked on
+  # the thrust-rate bound, which is the whole yaw-safe duty slew. The rotor
+  # lagged the plan by 3-8 N and Isaac 751dd0214086 / c41efd7ff96f touched
+  # down at 2.1 / 1.7 m/s. Offline replica (bus sag, 0.8 s downdrafts of
+  # 1.5 m/s^2, 3-8 m legs): 13 of 32 hard touchdowns -> 3 of 32 with the
+  # braking emergency below (0.5 left 6; 0.35 adds ~0.5 s to a 4.6 m landing).
+  landing_sink_brake_fraction: 0.35
+  # Braking emergency: when the fastest stop at the yaw-safe duty slew needs
+  # more than this share of the height above touchdown, the duty slews at the
+  # spool-up rate (the soft-terminal trade of a yaw transient for braking).
+  # Replayed on 120 recorded missions it fires 1.3-1.7 s before the
+  # soft-terminal fallback in all four hard touchdowns and never in a mission
+  # that did not reach that fallback anyway. null disables.
+  braking_emergency_height_fraction: 0.85
 tracking:
   # Feedback around the plan (world frame). Integrators absorb thrust-model
   # bias and wind. The vanes also push the vehicle sideways directly, against

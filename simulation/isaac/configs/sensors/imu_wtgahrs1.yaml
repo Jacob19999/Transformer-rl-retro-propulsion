@@ -1,0 +1,62 @@
+# WITMOTION WTGAHRS1 measurement model for tvc_env/dynamics/imu_model.py.
+#
+# Provenance tags on every value:
+#   [MANUAL]      WTGAHRS1 user manual v0707 (CAD/EDF Drone v1/Components/WITMotion IMU.pdf)
+#   [PRESET]      figure the repo already attributes to "WTGAHRS1 datasheet v20-0615 s3.1"
+#                 (mission_control/presets/disturbance_presets.json); that datasheet
+#                 is NOT in the repo and has not been re-checked
+#   [ASSUMED]     WIT serial protocol / common MEMS practice, not stated in the manual
+#   [PLACEHOLDER] typical consumer-MEMS magnitude, NOT measured on this unit.
+#                 Replace with a bench Allan-variance fit:
+#                   python tools/imu_allan_variance.py <static_log.csv> --rate-hz 200
+#                 (>= 6 h static log, EDF off; repeat with EDF spinning for vibration).
+#
+# Every error term is redrawn per episode = one power cycle of a randomly drawn unit.
+imu:
+  sample_rate_hz: 200.0        # [MANUAL 2.4.3] max output rate; factory default is 10 Hz, needs baud >= 115200
+  bandwidth_hz: 20.0           # [MANUAL 2.4.9] default digital bandwidth; first-order low-pass modelled
+  latency_s: 0.005             # [PLACEHOLDER] on-sensor processing + ~3 ms UART frame at 115200 baud
+
+  gyro:
+    range_dps: 2000            # [MANUAL 2.2.2] default gyro range
+    resolution_dps: 0.061      # [ASSUMED] 16-bit output over +-2000 dps (2000/32768)
+    noise_density_dps_rthz: 0.01     # [PLACEHOLDER] typical MEMS angle random walk
+    bias_instability_dps: 0.05       # [PRESET] "gyro stability 0.05 deg/s", read as the Allan floor
+    bias_correlation_time_s: 100.0   # [PLACEHOLDER]
+    rate_random_walk_dps_rt_s: 0.0005  # [PLACEHOLDER]
+    turn_on_bias_dps: 0.1      # [PLACEHOLDER] residual after the manual's 2.3.3 gyro auto-calibration
+    scale_factor_pct: 1.0      # [PLACEHOLDER]
+    misalignment_mrad: 5.0     # [PLACEHOLDER] cross-axis coupling incl. mounting error (~0.3 deg)
+    g_sensitivity_dps_per_g: 0.1     # [PLACEHOLDER] EDF thrust load leaks into the rate channel
+
+  accel:
+    range_g: 16                # [MANUAL 2.2.2] default accelerometer range
+    resolution_g: 0.000488     # [ASSUMED] 16-bit over +-16 g (16/32768)
+    noise_density_ug_rthz: 300 # [PLACEHOLDER] typical MEMS accelerometer
+    bias_instability_mg: 5.0   # [PRESET] "accel stability 0.005 g"
+    bias_correlation_time_s: 100.0   # [PLACEHOLDER]
+    random_walk_ug_rt_s: 0.0
+    turn_on_bias_mg: 2.0       # [MANUAL 2.3.1, p.16] residual after accelerometer calibration: X -0.0020 g, Y 0.0024 g
+                               # (the [PRESET] "accuracy 0.01 g" would be ~0.6 deg of tilt and contradicts the 0.05 deg static claim)
+    scale_factor_pct: 1.0      # [PLACEHOLDER]
+    misalignment_mrad: 5.0     # [PLACEHOLDER]
+
+  attitude:
+    # [ASSUMED] Mahony gains; WIT's onboard Kalman filter is proprietary. This is the single most
+    # consequential unknown: a thrust-vectored vehicle's accelerometer always reads along the body
+    # axis, so any accelerometer aiding pulls the tilt estimate toward level during sustained tilted
+    # flight (sweep in docs/imu_model.md: kp=1 -> 10 deg error after 5 s of a 10 deg tilt, kp=0.1 ->
+    # 4 deg). Low gains trade that for slower gyro-bias correction. Fit it from a flight/rig log.
+    kp: 0.1
+    ki: 0.002
+    integral_limit_dps: 5.0
+    accel_gate: 0.3            # accelerometer ignored unless | |f| - g | <= 0.3 g
+    initial_tilt_error_deg: 0.5  # [PLACEHOLDER] accelerometer-initialised roll/pitch at power-up
+    yaw:
+      mode: gyro               # 6-axis algorithm [MANUAL 2.3.4]; "magnetometer" = 9-axis. The EDF's
+                               # 120 A bus is expected to disturb the magnetometer, so gyro is the default.
+      gain: 0.5                # 1/s heading correction (magnetometer mode)
+      initial_error_deg: 1.0   # [PLACEHOLDER] operator alignment of the heading frame at launch (gyro mode)
+      mag_turn_on_deg: 2.0     # [PLACEHOLDER] uncalibrated hard-iron offset (magnetometer mode)
+      mag_sigma_deg: 3.0       # [PLACEHOLDER] slow disturbance near the motor bus (magnetometer mode)
+      mag_correlation_time_s: 30.0
