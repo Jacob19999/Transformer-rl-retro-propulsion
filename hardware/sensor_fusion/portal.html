@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang=en>
+<head>
+<meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<title>Sensor fusion · TFmini Plus + WTGAHRS1</title>
+<style>
+:root{
+ --bg:#f3f5f7;--surface:#fff;--surface-2:#f7f8fa;--border:#e3e7eb;--border-strong:#cdd4db;
+ --text:#1b2128;--text-2:#46505b;--muted:#6b7580;--grid:#eef1f4;--axis:#c3cbd3;
+ --accent:#2563eb;--accent-soft:rgba(37,99,235,.10);--accent-text:#fff;
+ --ok:#16803c;--ok-soft:rgba(22,128,60,.10);--warn:#b45309;--warn-soft:rgba(217,119,6,.12);--bad:#c62828;--bad-soft:rgba(198,40,40,.09);
+ --s1:#2563eb;--s2:#d97706;--s3:#0d9488;--s4:#7c3aed;--face:#dde3ea;
+ --shadow:0 1px 2px rgba(16,24,40,.05),0 1px 3px rgba(16,24,40,.04);
+ --font:"Segoe UI Variable Text","Segoe UI",Inter,ui-sans-serif,system-ui,-apple-system,Roboto,sans-serif;
+ --mono:"Cascadia Mono",ui-monospace,SFMono-Regular,Consolas,monospace;
+}
+@media(prefers-color-scheme:dark){:root{
+ --bg:#0a0d11;--surface:#11151b;--surface-2:#171c23;--border:#222932;--border-strong:#303945;
+ --text:#e6eaef;--text-2:#b4bdc7;--muted:#7c8793;--grid:#1a2129;--axis:#2e3843;
+ --accent:#5b9dff;--accent-soft:rgba(91,157,255,.14);--accent-text:#06101f;
+ --ok:#3fcf73;--ok-soft:rgba(63,207,115,.12);--warn:#f5b041;--warn-soft:rgba(245,176,65,.12);--bad:#ff6b6b;--bad-soft:rgba(255,107,107,.12);
+ --s1:#5b9dff;--s2:#f5a524;--s3:#2dd4bf;--s4:#b794f6;--face:#2a323c;
+ --shadow:0 1px 2px rgba(0,0,0,.35);
+}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font:14px/1.45 var(--font);-webkit-font-smoothing:antialiased}
+b,strong{font-weight:600}
+small{font-size:12px;color:var(--muted)}
+code{font:12px var(--mono);background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:1px 5px}
+.muted{color:var(--muted)}.pos{color:var(--ok)}
+
+/* ---- header ---- */
+.top{position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:saturate(1.4) blur(10px);
+ border-bottom:1px solid var(--border)}
+.top-in{max-width:1480px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.brand svg{flex:none}
+.brand .title{font-weight:650;font-size:15px;letter-spacing:-.01em}
+.brand .sub{font-size:12px;color:var(--muted);white-space:nowrap}
+.tabs{display:flex;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:3px}
+.tab{appearance:none;border:0;background:none;color:var(--text-2);font:500 13px var(--font);padding:6px 14px;border-radius:7px;cursor:pointer}
+.tab:hover{color:var(--text)}
+.tab[aria-selected=true]{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
+.status{margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;border:1px solid var(--border);border-radius:999px;
+ background:var(--surface);font-size:12.5px;font-weight:600;white-space:nowrap}
+.chip .sub{font-weight:400;color:var(--muted);font-variant-numeric:tabular-nums}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
+.dot.ok{background:var(--ok);box-shadow:0 0 0 3px var(--ok-soft)}.dot.bad{background:var(--bad);box-shadow:0 0 0 3px var(--bad-soft)}
+.chip.state{font-weight:600}
+.chip.state.ok{color:var(--ok);background:var(--ok-soft);border-color:transparent}
+.chip.state.warn{color:var(--warn);background:var(--warn-soft);border-color:transparent}
+.chip.state.bad{color:var(--bad);background:var(--bad-soft);border-color:transparent}
+.chip.state.idle{color:var(--muted)}
+
+/* ---- controls ---- */
+.btn{appearance:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 13px;border-radius:8px;
+ border:1px solid var(--border-strong);background:var(--surface);color:var(--text);font:500 13px var(--font);cursor:pointer;text-decoration:none;
+ white-space:nowrap;transition:background .12s,border-color .12s}
+.btn:hover{background:var(--surface-2)}
+.btn:disabled{opacity:.42;cursor:default;background:var(--surface)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-text)}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--text-2)}
+.btn.ghost:hover{background:var(--surface-2);color:var(--text)}
+.btn.danger{color:var(--bad);border-color:var(--border-strong)}
+.btn.sm{height:28px;padding:0 10px;font-size:12.5px}
+.btn:focus-visible,.tab:focus-visible,input:focus-visible,select:focus-visible,.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input[type=number],select{height:32px;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);color:var(--text);
+ font:13px var(--font);padding:0 10px;width:100%;font-variant-numeric:tabular-nums}
+input[type=number]:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);outline:none}
+.check{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-2);cursor:pointer;user-select:none}
+.check input{accent-color:var(--accent);margin:0}
+.seg{display:inline-flex;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;gap:2px}
+.seg button{appearance:none;border:0;background:none;color:var(--text-2);font:500 13px var(--font);padding:6px 12px;border-radius:6px;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
+.switch{display:grid;grid-template-columns:36px 1fr;gap:12px;align-items:start;cursor:pointer;padding:10px 0}
+.switch input{appearance:none;width:36px;height:20px;border-radius:999px;background:var(--border-strong);position:relative;margin:1px 0 0;cursor:pointer;
+ transition:background .15s}
+.switch input::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;
+ box-shadow:0 1px 2px rgba(0,0,0,.3);transition:transform .15s}
+.switch input:checked{background:var(--accent)}.switch input:checked::after{transform:translateX(16px)}
+.switch b{display:block;font-size:13px}.switch small{display:block;margin-top:1px}
+
+/* ---- layout ---- */
+main{max-width:1480px;margin:0 auto;padding:18px 20px 40px}
+.grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px}
+.span-3{grid-column:span 3}.span-4{grid-column:span 4}.span-5{grid-column:span 5}.span-6{grid-column:span 6}
+.span-7{grid-column:span 7}.span-8{grid-column:span 8}.span-12{grid-column:span 12}
+.col{display:flex;flex-direction:column;gap:16px;min-width:0}.col>.card:last-child{flex:1}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.card>.caption:last-child{margin-top:auto;padding-top:10px}
+.nt{text-transform:none;letter-spacing:0}
+@media(max-width:1240px){.span-3,.span-4,.span-5,.span-7{grid-column:span 6}.span-8,.col{grid-column:span 12!important}}
+@media(max-width:900px){.pair{grid-template-columns:1fr}}
+@media(max-width:780px){.grid>*{grid-column:span 12!important}.top-in{padding:10px 16px}main{padding:16px 16px 32px}.status{margin-left:0}}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);padding:16px;min-width:0;display:flex;flex-direction:column}
+.card-h{display:flex;align-items:center;gap:10px;margin:0 0 12px;min-height:22px}
+.card-h h2{font-size:13px;font-weight:600;margin:0;letter-spacing:.005em}
+.card-h .tag{font-size:11.5px;color:var(--muted)}
+.card-h .end{margin-left:auto}
+h3{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:18px 0 10px}
+.sep{height:1px;background:var(--border);margin:16px -16px}
+
+/* ---- alerts ---- */
+#alerts{display:grid;gap:8px;margin-bottom:16px}#alerts:not(:has(.alert:not([hidden]))){display:none}
+.alert{display:flex;gap:10px;align-items:flex-start;padding:10px 14px;border-radius:10px;font-size:13px;border:1px solid transparent}
+.alert::before{content:"!";flex:none;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font:700 12px var(--font);margin-top:1px}
+.alert.bad{background:var(--bad-soft);color:var(--bad)}.alert.bad::before{background:var(--bad);color:var(--surface)}
+.alert.warn{background:var(--warn-soft);color:var(--warn)}.alert.warn::before{background:var(--warn);color:var(--surface)}
+
+/* ---- readouts ---- */
+.label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.hero{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.hero>div{background:var(--surface);padding:12px 14px}
+.hero .v{display:flex;align-items:baseline;gap:5px;margin-top:4px}
+.hero b{font-size:28px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.1}
+.hero.sm b{font-size:20px}
+.unit{font-size:12px;color:var(--muted)}
+.accent-1{color:var(--s1)}.accent-2{color:var(--s2)}
+dl.kv{display:grid;grid-template-columns:auto 1fr;margin:14px 0 0;font-size:13px}
+dl.kv dt,dl.kv dd{padding:7px 0;border-top:1px solid var(--border);margin:0}
+dl.kv dt{color:var(--muted);padding-right:16px}
+dl.kv dd{text-align:right;font-variant-numeric:tabular-nums;color:var(--text);overflow-wrap:anywhere}
+dl.kv dt:first-of-type,dl.kv dt:first-of-type+dd{border-top:0}
+.readouts{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-top:12px}
+.readouts>div{background:var(--surface);padding:9px 12px}
+.readouts b{display:block;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px}
+
+/* ---- canvases ---- */
+canvas{display:block;width:100%;height:auto}
+.bezel{background:#000;border-radius:10px;padding:6px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+.cube{border-radius:10px;background:var(--surface-2);border:1px solid var(--border)}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin-left:auto;font-size:12px;color:var(--text-2)}
+.legend span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.legend i{width:10px;height:3px;border-radius:2px;background:var(--c)}
+.legend i.pt{width:6px;height:6px;border-radius:50%}
+.caption{font-size:12px;color:var(--muted);margin-top:10px}
+.controls{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+.controls .btn{margin-left:auto}
+.subchart{margin-top:12px}
+.subchart .label{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.subchart .label i{width:10px;height:3px;border-radius:2px;background:var(--c)}
+
+/* ---- setup ---- */
+.form{display:grid;grid-template-columns:1fr 1fr;gap:14px 18px}
+.field{display:grid;gap:6px;min-width:0;border:0;padding:0;margin:0}
+.field.full{grid-column:1/-1}
+.field>label,.field legend{font-size:12px;font-weight:600;color:var(--text-2);padding:0}
+.trio{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.trio label{display:grid;gap:4px;font-size:11.5px;color:var(--muted)}
+.actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px}
+.actions .spacer{flex:1}
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:8px;counter-reset:s}
+.steps li{display:grid;grid-template-columns:28px 1fr auto;gap:12px;align-items:center;padding:10px 12px;border:1px solid var(--border);border-radius:10px;
+ background:var(--surface-2);counter-increment:s}
+.steps li::before{content:counter(s);width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font:600 12px var(--font);
+ background:var(--surface);border:1px solid var(--border-strong);color:var(--text-2)}
+.steps li.done::before{content:"✓";background:var(--ok);border-color:var(--ok);color:#fff}
+.steps b{display:block;font-size:13px}
+.calstatus{display:grid;gap:8px;padding:12px 14px;border-radius:10px;background:var(--surface-2);border:1px solid var(--border);margin-bottom:6px}
+.bar{height:4px;border-radius:2px;background:var(--border);overflow:hidden;visibility:hidden}
+.bar.on{visibility:visible}.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s}
+.msg{font-size:13px;color:var(--text-2)}.msg.err{color:var(--bad)}
+.proc{display:grid;grid-template-columns:1fr auto;gap:8px 20px;align-items:center;padding:14px 0;border-top:1px solid var(--border)}
+.proc:first-child{border-top:0}
+.proc b{display:block;font-size:13px}
+.proc small{display:block;margin-top:2px;max-width:60ch}
+.proc-a{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.faces{display:grid!important;grid-template-columns:repeat(3,auto);gap:6px}
+.btn.face{min-width:54px;font-variant-numeric:tabular-nums}
+.btn.face.done{border-color:var(--ok);color:var(--ok);background:var(--ok-soft)}
+.stamp{display:inline-block;margin-top:6px;font-size:11.5px;color:var(--muted)}
+.stamp.done{color:var(--ok)}
+@media(max-width:780px){.form{grid-template-columns:1fr}.proc{grid-template-columns:1fr}.proc-a{justify-content:flex-start}}
+</style>
+</head>
+<body>
+<header class=top><div class=top-in>
+ <div class=brand>
+  <svg width=28 height=28 viewBox="0 0 28 28" aria-hidden=true><rect width=28 height=28 rx=7 fill="var(--accent)"/>
+   <path d="M5 16.5h18" stroke="#fff" stroke-width=2 stroke-linecap=round/><path d="M9 11.5l5-4 5 4" fill=none stroke="#fff" stroke-width=2 stroke-linecap=round stroke-linejoin=round/>
+   <path d="M14 16.5v5" stroke="#fff" stroke-width=2 stroke-linecap=round stroke-dasharray="1.5 2.5"/></svg>
+  <div><div class=title>Sensor fusion</div><div class=sub>TFmini Plus · WTGAHRS1 · <span id=kindname>EKF3-style estimator</span></div></div>
+ </div>
+ <nav class=tabs role=tablist>
+  <button class=tab role=tab data-tab=monitor aria-selected=true>Monitor</button>
+  <button class=tab role=tab data-tab=setup aria-selected=false>Setup &amp; calibration</button>
+ </nav>
+ <div class=status>
+  <span class=chip><i class=dot id=d1></i>TFmini<span class=sub id=s1>–</span></span>
+  <span class=chip><i class=dot id=d2></i>IMU<span class=sub id=s2>–</span></span>
+  <span class="chip state idle" id=mode>–</span>
+  <a class="btn ghost" href=/samples.csv download=fusion.csv>Export CSV</a>
+  <button class=btn id=reset title="Re-initialise the filter (re-aligns from the accelerometer)">Reset filter</button>
+ </div>
+</div></header>
+
+<main>
+<div id=alerts>
+ <div id=w1 class="alert bad" hidden></div>
+ <div id=w2 class="alert bad" hidden></div>
+ <div id=w3 class="alert warn" hidden></div>
+</div>
+
+<!-- ================================ MONITOR ================================ -->
+<section class=grid data-panel=monitor id=tab-monitor>
+<div class="col span-5">
+ <article class=card>
+  <div class=card-h><h2>Primary flight display</h2><span class=tag>A320 style</span></div>
+  <div class=bezel><canvas id=hor width=420 height=392></canvas></div>
+  <div class=readouts>
+   <div><span class=label>Roll</span><b id=hr>–</b></div>
+   <div><span class=label>Pitch</span><b id=hp>–</b></div>
+   <div><span class=label>Heading</span><b id=hy>–</b></div>
+   <div><span class=label>Magnetic</span><b id=hg>–</b></div>
+  </div>
+  <div class=caption>Left tape: raw TFmini range. Right tape: fused height and vertical speed. Heading is relative to power-on
+   until the magnetometer is calibrated, then magnetic (cyan).</div>
+ </article>
+ <article class=card>
+  <div class=card-h><h2>Vehicle attitude</h2><span class=tag>FRD · NED</span></div>
+  <div class=cube><canvas id=cube width=420 height=230></canvas></div>
+  <div class=caption>X right · Y nose · Z up · dashed line is the TFmini beam.</div>
+  <div class=controls>
+   <label class=check><input type=checkbox id=ir>Invert roll</label>
+   <label class=check><input type=checkbox id=ip>Invert pitch</label>
+   <label class=check><input type=checkbox id=iy>Invert yaw</label>
+   <button class="btn sm" id=zero>Zero yaw</button>
+  </div>
+ </article>
+</div>
+<div class="col span-7">
+ <div class=pair>
+ <article class=card>
+  <div class=card-h><h2>Height estimate</h2></div>
+  <div class=hero>
+   <div><span class=label>Fused height</span><div class=v><b id=hf class=accent-1>–</b><span class=unit>m</span></div></div>
+   <div><span class=label>Vertical speed</span><div class=v><b id=vf class=accent-2>–</b><span class=unit>m/s</span></div></div>
+   <div><span class=label>Height <span class=nt>σ</span></span><div class=v><b id=sg>–</b><span class=unit>m</span></div></div>
+   <div><span class=label>Tilt</span><div class=v><b id=tilt>–</b></div></div>
+  </div>
+  <dl class=kv>
+   <dt>TFmini range</dt><dd><span id=rng>–</span> m</dd>
+   <dt>Tilt-compensated</dt><dd><span id=hm>–</span> m</dd>
+   <dt>Signal strength</dt><dd id=str>–</dd>
+   <dt>Range innovation</dt><dd><span id=nis>–</span> σ</dd>
+   <dt>Range sample</dt><dd id=rs>–</dd>
+   <dt>Baro offset</dt><dd><span id=bb>–</span> m</dd>
+   <dt>Accel bias</dt><dd><span id=ab>–</span> m/s²</dd>
+   <dt>TFmini chip temperature</dt><dd id=tTF>–</dd>
+   <dt>IMU temperature</dt><dd id=tIMU>–</dd>
+  </dl>
+ </article>
+ <article class=card>
+  <div class=card-h><h2>Barometer</h2><span class=tag>WTGAHRS1</span></div>
+  <div class="hero sm">
+   <div><span class=label>Pressure</span><div class=v><b id=bP>–</b><span class=unit>hPa</span></div></div>
+   <div><span class=label>Baro height</span><div class=v><b id=bH class=accent-2>–</b><span class=unit>m</span></div></div>
+  </div>
+  <dl class=kv>
+   <dt>Absolute altitude</dt><dd><span id=bA>–</span> m</dd>
+   <dt>Learned offset</dt><dd><span id=bO>–</span> m</dd>
+   <dt>Baro − fused (10 s)</dt><dd><span id=bR>–</span> m</dd>
+   <dt>Pressure noise (3 s)</dt><dd><span id=bN>–</span> Pa</dd>
+   <dt>Filter assumes σ</dt><dd><span id=bM>–</span> m</dd>
+  </dl>
+  <div class=subchart><div class=label style="--c:var(--s1)"><i></i>Pressure · hPa</div><canvas id=ch_p data-h=96></canvas></div>
+  <div class=subchart><div class=label style="--c:var(--s4)"><i></i>Baro height − fused height · m</div><canvas id=ch_b data-h=96></canvas></div>
+ </article>
+ </div>
+ <article class=card>
+  <div class=card-h><h2>Height</h2><span class=tag>last 10 s</span>
+   <div class=legend><span><i style="--c:var(--s1)"></i>Fused</span><span><i class=pt style="--c:var(--s3)"></i>TFmini (accepted)</span>
+    <span><i style="--c:var(--s2)"></i>Barometer</span></div></div>
+  <canvas id=ch_h data-h=470></canvas>
+  <div class=caption>Cover the TFmini to watch the estimate coast on IMU and barometer.</div>
+ </article>
+</div>
+
+ <article class="card span-4"><div class=card-h><h2>Vertical speed</h2><span class=tag>m/s</span></div><canvas id=ch_v data-h=170></canvas></article>
+ <article class="card span-4"><div class=card-h><h2>Vertical acceleration</h2><span class=tag>m/s²</span>
+  <div class=legend><span><i style="--c:var(--s1)"></i>a<sub>up</sub></span><span><i style="--c:var(--s2)"></i>Bias</span></div></div>
+  <canvas id=ch_a data-h=170></canvas></article>
+ <article class="card span-4"><div class=card-h><h2>Attitude</h2><span class=tag>°</span>
+  <div class=legend><span><i style="--c:var(--s1)"></i>Roll</span><span><i style="--c:var(--s2)"></i>Pitch</span><span><i style="--c:var(--s3)"></i>Yaw</span></div></div>
+  <canvas id=ch_r data-h=170></canvas></article>
+ <article class="card span-4"><div class=card-h><h2>Body rate</h2><span class=tag>°/s</span>
+  <div class=legend><span><i style="--c:var(--s1)"></i>x</span><span><i style="--c:var(--s2)"></i>y</span><span><i style="--c:var(--s3)"></i>z</span></div></div>
+  <canvas id=ch_w data-h=170></canvas></article>
+ <article class="card span-4"><div class=card-h><h2>Gyro bias estimate</h2><span class=tag>°/s</span>
+  <div class=legend><span><i style="--c:var(--s1)"></i>x</span><span><i style="--c:var(--s2)"></i>y</span><span><i style="--c:var(--s3)"></i>z</span></div></div>
+  <canvas id=ch_g data-h=170></canvas></article>
+ <article class="card span-4"><div class=card-h><h2>Range innovation</h2><span class=tag>σ · gate ±5</span></div>
+  <canvas id=ch_n data-h=170></canvas></article>
+</section>
+
+<!-- ================================ SETUP ================================ -->
+<section class=grid data-panel=setup hidden>
+ <article class="card span-4">
+  <div class=card-h><h2>Estimator</h2></div>
+  <div class=seg id=kind role=group aria-label="Filter">
+   <button data-v=ekf3 aria-pressed=true>EKF3-style</button><button data-v=simple aria-pressed=false>Simple vertical KF</button>
+  </div>
+  <div style="margin-top:6px">
+   <label class=switch><input type=checkbox id=bench><span><b>Bench aiding</b>
+    <small>Gravity and stationary updates. Turn off for flight-like tests: a hover looks stationary.</small></span></label>
+   <label class=switch><input type=checkbox id=magyaw><span><b>Magnetic yaw</b>
+    <small>Fuse the calibrated magnetometer heading. Motors and steel will pull it.</small></span></label>
+  </div>
+  <h3>Filter state</h3>
+  <dl class=kv id=ekfkv style="margin-top:0"></dl>
+ </article>
+
+ <article class="card span-8">
+  <div class=card-h><h2>Mount and geometry</h2><span class=tag>vehicle frame: x forward · y right · z down</span></div>
+  <div class=form>
+   <div class="field full"><label for=mount>Sensor mount orientation</label><select id=mount></select></div>
+   <fieldset class=field><legend>Trim · degrees</legend><div class=trio>
+    <label>Roll<input id=tr type=number step=0.1></label><label>Pitch<input id=tp type=number step=0.1></label><label>Yaw<input id=ty type=number step=0.1></label></div></fieldset>
+   <fieldset class=field><legend>TFmini position from IMU · metres</legend><div class=trio>
+    <label>x<input id=ox type=number step=0.01></label><label>y<input id=oy type=number step=0.01></label><label>z<input id=oz type=number step=0.01></label></div></fieldset>
+  </div>
+  <div class=actions><button class="btn primary" id=applyCfg>Apply</button><span id=cfgmsg class=muted></span>
+   <span class=spacer></span><small>Applying saves the calibration file and restarts the filter.</small></div>
+  <h3>Detect mount from gravity</h3>
+  <ol class=steps>
+   <li id=stepL><div><b>Hold level</b><small>Vehicle level and still.</small></div><button class=btn id=mL>Capture</button></li>
+   <li id=stepN><div><b>Pitch the nose up</b><small>More than 20°, ideally 45–90°, then hold still. The residual tilt becomes the trim.</small></div>
+    <button class=btn id=mN disabled>Capture</button></li>
+  </ol>
+  <div class=actions><button class=btn id=lvl>Level trim only</button><small>Mount already known: capture the level pose to set roll and pitch trim.</small></div>
+ </article>
+
+ <article class="card span-8">
+  <div class=card-h><h2>IMU calibration</h2><span class=tag>applied on the host</span></div>
+  <div class=calstatus><div class=bar id=cprog><i></i></div><div id=cmsg class=msg>Idle — choose a procedure below.</div></div>
+  <div>
+   <div class=proc><div><b>Gyro bias</b><small>Keep the sensor completely still for 10 s.</small><span class=stamp id=st-gyro></span></div>
+    <div class=proc-a><button class=btn id=cGyro>Start</button></div></div>
+   <div class=proc><div><b>Accelerometer · six positions</b><small>Rest the sensor with each axis pointing up, then down, 3 s each. Solves offset and scale per axis.</small>
+    <span class=stamp id=st-accel></span></div><div class="proc-a faces" id=faces></div></div>
+   <div class=proc><div><b>Magnetometer</b><small>Start, rotate slowly through every orientation, then Finish. Needs at least 50 % coverage.</small>
+    <span class=stamp id=st-mag></span></div><div class=proc-a><button class=btn id=cMag>Start</button><button class="btn primary" id=cMagEnd disabled>Finish</button></div></div>
+   <div class=proc><div><b>Sensor gyro auto-zero</b><small>The WTGAHRS1 clamps its gyro to zero when still, which hides the bias. Disable it before the gyro-bias step.
+    This writes to the sensor's flash.</small></div><div class=proc-a><button class=btn id=gzOff>Disable</button><button class="btn ghost" id=gzOn>Enable</button></div></div>
+  </div>
+  <div class=actions style="padding-top:14px;border-top:1px solid var(--border)"><button class="btn ghost" id=cCancel>Cancel procedure</button>
+   <span class=spacer></span><button class="btn danger" id=cReset>Reset all calibration</button></div>
+ </article>
+
+ <article class="card span-4">
+  <div class=card-h><h2>Stored calibration</h2><span class=tag>calibration.json</span></div>
+  <dl class=kv id=cvals style="margin-top:0"></dl>
+ </article>
+
+ <article class="card span-4" id=simbox hidden>
+  <div class=card-h><h2>Simulator</h2></div>
+  <div class=field><label for=simpose>Vehicle pose</label><select id=simpose></select></div>
+  <div class=caption>Freeze the simulated vehicle in a still pose so the guided procedures can run without hardware.</div>
+ </article>
+</section>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+const C={};
+function theme(){const cs=getComputedStyle(document.documentElement);
+ for(const k of['surface','surface-2','border','border-strong','text','muted','grid','axis','s1','s2','s3','s4','face'])C[k]=cs.getPropertyValue('--'+k).trim()}
+theme();try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',theme)}catch(e){}
+const NUM='500 10.5px "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif';
+const WIN=10,MAXBUF=1500;let buf=[],after=0,I={},yawZero=0,CFG=null,lastTask=null,ST=null;
+const wrap=d=>((d+540)%360)-180;
+const f=(v,n=2)=>v==null?'–':v.toFixed(n);
+const cap=s=>s?s.charAt(0).toUpperCase()+s.slice(1):s;
+const kv=rows=>rows.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join('');
+
+// ---- tabs and display preferences
+function showTab(t){for(const b of document.querySelectorAll('.tab'))b.setAttribute('aria-selected',String(b.dataset.tab===t));
+ for(const s of document.querySelectorAll('[data-panel]'))s.hidden=s.dataset.panel!==t;store.set('tab',t);
+ if(location.hash!=='#'+t)history.replaceState(null,'','#'+t)}
+for(const b of document.querySelectorAll('.tab'))b.onclick=()=>showTab(b.dataset.tab);
+showTab(['monitor','setup'].includes(location.hash.slice(1))?location.hash.slice(1):store.get('tab')==='setup'?'setup':'monitor');
+for(const k of['iy','ip','ir']){$(k).checked=store.get(k)==='1';$(k).onchange=()=>store.set(k,$(k).checked?'1':'0')}
+$('zero').onclick=()=>{const l=buf[buf.length-1];if(l&&l[I.yaw]!=null)yawZero=l[I.yaw]};
+
+async function post(url,body){try{const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+ const j=await r.json().catch(()=>({}));if(!r.ok||j.ok===false)throw new Error(j.error||r.statusText);return j}
+ catch(e){setMsg(String(e.message||e),true);return null}}
+function setMsg(t,err){$('cmsg').textContent=t;$('cmsg').className='msg'+(err?' err':'')}
+$('reset').onclick=()=>post('/api/reset');
+
+// ---- data
+async function pollSamples(){try{const r=await (await fetch('/samples?after='+after)).json();
+ if(!Object.keys(I).length)r.fields.forEach((k,i)=>I[k]=i);
+ if(r.latest<after){buf=[];after=0}
+ if(r.samples.length){after=r.samples[r.samples.length-1][0];buf=buf.concat(r.samples);if(buf.length>MAXBUF)buf=buf.slice(-MAXBUF)}
+ else after=Math.min(after,r.latest)}catch(e){}}
+setInterval(pollSamples,60);
+
+function link(dot,sub,x){const live=x.age_s!=null&&x.age_s<1,d=$(dot);
+ d.className='dot'+(live?' ok':x.diagnosis?' bad':'');
+ $(sub).textContent=live?`${x.port||''} · ${x.hz.toFixed(0)} Hz`:(x.port?`${x.port} · offline`:'offline');
+ d.parentElement.title=`${x.name} ${x.port||''}${x.baud?' @ '+x.baud+' baud':''}\n${x.frames} frames · ${x.crc} checksum errors`}
+
+async function pollStatus(){try{const s=await (await fetch('/status')).json();ST=s;
+ link('d1','s1',s.tf_link);link('d2','s2',s.imu_link);
+ for(const [id,x] of[['w1',s.tf_link],['w2',s.imu_link]]){const w=$(id);w.hidden=!x.diagnosis;w.textContent=x.diagnosis?`${x.name}: ${x.diagnosis}`:''}
+ const hot=s.tf.temp!=null&&s.tf.temp>60;$('w3').hidden=!hot;
+ if(hot)$('w3').textContent=`TFmini chip temperature ${s.tf.temp.toFixed(0)} °C is above its 60 °C operating limit. Give it airflow or let it cool; range accuracy may drift.`;
+ const q=s.fusion,m=$('mode');m.textContent=cap(q.mode_name);m.className='chip state '+['idle','ok','warn','warn'][q.mode];
+ $('kindname').textContent=q.kind==='ekf3'?'EKF3-style estimator':'Simple vertical KF';
+ $('rs').textContent=cap(q.range_state);$('bb').textContent=f(q.baro_offset);$('ab').textContent=f(q.accel_bias,3);
+ $('sg').textContent=f(q.sigma,3);$('nis').textContent=f(q.nis,1);
+ $('tilt').textContent=q.cos_tilt==null?'–':(Math.acos(Math.min(1,q.cos_tilt))*180/Math.PI).toFixed(1)+'°';
+ const tt=s.tf.temp;$('tTF').innerHTML=tt==null?'–':(tt>60?`<span style="color:var(--warn)">${tt.toFixed(0)} °C · above 60 °C limit</span>`:`${tt.toFixed(0)} °C`);
+ $('tIMU').textContent=s.imu.temp==null?'–':s.imu.temp.toFixed(1)+' °C';
+ $('str').textContent=s.tf.strength==null?'–':s.tf.strength.toLocaleString();
+ const b=s.baro;$('bP').textContent=f(b.pressure_hpa,2);$('bA').textContent=f(b.altitude_m,2);$('bH').textContent=f(b.height_m,2);
+ $('bO').textContent=f(b.offset_m,2);$('bM').textContent=f(b.noise_model_m,2);$('bN').textContent=f(b.pressure_std_pa,1);
+ $('bR').textContent=b.res_mean_m==null?'–':`${b.res_mean_m>=0?'+':''}${b.res_mean_m.toFixed(3)} ± ${b.res_std_m.toFixed(3)}`;
+ const e=s.ekf,yn=v=>v?'<span class=pos>Yes</span>':'<span class=muted>No</span>',tri=(a,n)=>a.map(v=>f(v,n)).join(' / ');
+ $('ekfkv').innerHTML=q.kind==='ekf3'?kv([['Aligned',yn(e.aligned)],['Stationary',yn(e.still)],
+  ['Gravity updates',e.aid.gravity.toLocaleString()],['Stationary (gyro bias) updates',e.aid.stationary.toLocaleString()],
+  ['Zero-velocity updates',e.aid.zupt.toLocaleString()+(e.zupt_blocked?` <span class=muted>· held off: ${e.zupt_blocked}</span>`:'')],['Magnetic updates',e.aid.mag.toLocaleString()],
+  ['Gyro bias',tri(e.bg_dps,3)+' °/s'],['Accel bias',tri(e.ba,3)+' m/s²'],
+  ['Horizontal drift',`N ${f(e.pos_ne[0],1)} · E ${f(e.pos_ne[1],1)} m`]])
+  :kv([['Attitude source','Sensor onboard filter'],['Biases','Not estimated']]);
+ calibStatus(s.calib);$('simbox').hidden=!s.sim;
+}catch(e){const m=$('mode');m.textContent='Portal unreachable';m.className='chip state bad'}}
+setInterval(pollStatus,500);pollStatus();
+
+// ---- setup and calibration
+function setSeg(v){for(const b of $('kind').children)b.setAttribute('aria-pressed',String(b.dataset.v===v))}
+for(const b of $('kind').children)b.onclick=()=>{setSeg(b.dataset.v);post('/api/config',{kind:b.dataset.v}).then(loadCfg)};
+async function loadCfg(){try{CFG=await (await fetch('/api/config')).json()}catch(e){return}
+ if(!$('mount').options.length)for(const m of CFG.mounts){const o=document.createElement('option');o.value=m.key;o.textContent=m.label;$('mount').appendChild(o)}
+ if(!$('faces').children.length)for(const fc of CFG.faces){const b=document.createElement('button');b.id='face'+fc;b.className='btn face';
+  b.textContent=fc[1]+(fc[0]==='+'?' ↑':' ↓');b.title=`Sensor ${fc[1]} axis pointing ${fc[0]==='+'?'up':'down'}`;b.onclick=()=>startTask('accel',fc);$('faces').appendChild(b)}
+ if(!$('simpose').options.length)for(const p of CFG.sim_poses){const o=document.createElement('option');o.value=o.textContent=p;$('simpose').appendChild(o)}
+ const c=CFG.calibration,ed=document.activeElement&&['INPUT','SELECT'].includes(document.activeElement.tagName);
+ if(!ed){$('mount').value=c.mount;[$('tr'),$('tp'),$('ty')].forEach((el,i)=>el.value=c.trim_deg[i]);[$('ox'),$('oy'),$('oz')].forEach((el,i)=>el.value=c.tf_offset_m[i])}
+ setSeg(CFG.settings.kind);$('bench').checked=CFG.settings.bench_aiding;$('magyaw').checked=CFG.settings.mag_yaw;
+ const v=(a,n=3)=>a.map(x=>(+x).toFixed(n)).join(' / '),m=c.meta||{};
+ for(const k of['gyro','accel','mag']){const el=$('st-'+k);el.textContent=m[k]?`Calibrated ${m[k].time}`:'Not calibrated';el.className='stamp'+(m[k]?' done':'')}
+ $('cvals').innerHTML=kv([['Gyro bias',v(c.gyro_bias_dps)+' °/s'],['Accel offset',v(c.accel_offset)+' m/s²'],['Accel scale',v(c.accel_scale,4)],
+  ['Mag offset',v(c.mag_offset,1)],['Mag scale',v(c.mag_scale)],['Mount',`<code>${c.mount}</code>`],['Trim',v(c.trim_deg,2)+' °'],
+  ['TFmini offset',v(c.tf_offset_m,2)+' m'],['Mount detected',m.mount?m.mount.time:'—'],['Level trim',m.level?m.level.time:'—']])}
+loadCfg();setInterval(loadCfg,4000);
+async function startTask(task,face){const r=await post('/api/calib/start',{task,face});if(r)setMsg('Started '+task+(face?' '+face:''))}
+$('cGyro').onclick=()=>startTask('gyro');$('mL').onclick=()=>startTask('mount_level');$('mN').onclick=()=>startTask('mount_nose');
+$('lvl').onclick=()=>startTask('level');$('cMag').onclick=()=>startTask('mag');
+$('cMagEnd').onclick=()=>post('/api/calib/finish_mag');$('cCancel').onclick=()=>post('/api/calib/cancel');
+$('cReset').onclick=async()=>{if(confirm('Reset all calibration, mount and trim to defaults?')){await post('/api/calib/reset');loadCfg()}};
+$('gzOff').onclick=async()=>{if(confirm('Write to the sensor: disable its gyro auto-zero and save? You can re-enable it any time.')){const r=await post('/api/imu/gyro_autozero',{enabled:false});if(r)setMsg('Gyro auto-zero disabled')}};
+$('gzOn').onclick=async()=>{const r=await post('/api/imu/gyro_autozero',{enabled:true});if(r)setMsg('Gyro auto-zero enabled')};
+$('simpose').onchange=()=>post('/api/sim/pose',{pose:$('simpose').value});
+$('applyCfg').onclick=async()=>{const n=id=>parseFloat($(id).value)||0;
+ const r=await post('/api/config',{mount:$('mount').value,trim_deg:[n('tr'),n('tp'),n('ty')],tf_offset_m:[n('ox'),n('oy'),n('oz')]});
+ $('cfgmsg').textContent=r?'Saved · filter restarted':'';loadCfg()};
+for(const [id,key] of[['bench','bench_aiding'],['magyaw','mag_yaw']])$(id).onchange=()=>post('/api/config',{[key]:$(id).checked}).then(loadCfg);
+function calibStatus(c){const busy=!!c.task;
+ $('cprog').classList.toggle('on',busy);$('cprog').firstElementChild.style.width=(c.progress*100).toFixed(1)+'%';
+ if(c.error)setMsg(c.error,true);
+ else if(c.message!=='idle'||busy)setMsg(cap(c.message)+(c.task==='mag'&&c.mag_coverage!=null?` · coverage ${(c.mag_coverage*100).toFixed(0)} %`:''));
+ for(const b of['cGyro','mL','lvl','cMag'])$(b).disabled=busy;
+ $('mN').disabled=busy||!c.mount_level;$('cMagEnd').disabled=c.task!=='mag';$('cCancel').disabled=!busy;
+ $('stepL').classList.toggle('done',!!c.mount_level);
+ for(const fc of(CFG?CFG.faces:[])){const b=$('face'+fc);if(b){b.disabled=busy;b.className='btn face'+(c.accel_faces.includes(fc)?' done':'')}}
+ if(lastTask&&!c.task)loadCfg();lastTask=c.task}
+
+// ---- canvas helpers: draw in logical units, backed at device resolution
+const DPR=()=>Math.min(window.devicePixelRatio||1,2);
+function fit(cv,lw,lh){const r=DPR(),cw=cv.clientWidth||lw,s=cw/lw,pw=Math.round(cw*r),ph=Math.round(lh*s*r);
+ if(cv.width!==pw||cv.height!==ph){cv.width=pw;cv.height=ph}
+ const g=cv.getContext('2d');g.setTransform(s*r,0,0,s*r,0,0);return g}
+function niceStep(span,n){const raw=span/n,p=Math.pow(10,Math.floor(Math.log10(raw))),m=raw/p;return(m<1.5?1:m<3?2:m<7?5:10)*p}
+
+// ---- time-series chart
+function chart(cv,defs,o={}){const W=cv.clientWidth,H=+cv.dataset.h||160;if(!W)return;
+ const g=fit(cv,W,H);g.clearRect(0,0,W,H);const L=46,R=8,T=6,B=20,pw=W-L-R,ph=H-T-B;
+ g.font=NUM;
+ if(!buf.length||I.t==null){g.fillStyle=C.muted;g.textAlign='center';g.textBaseline='middle';g.fillText('Waiting for data…',W/2,H/2);return}
+ const Tk=I.t,t1=buf[buf.length-1][Tk],t0=t1-WIN;let lo=Infinity,hi=-Infinity;
+ for(const s of buf){if(s[Tk]<t0)continue;for(const d of defs){const v=s[I[d.k]];if(v!=null){if(v<lo)lo=v;if(v>hi)hi=v}}}
+ if(o.lo!=null){lo=o.lo;hi=o.hi}
+ else{if(!isFinite(lo)){lo=0;hi=1}const span=Math.max(hi-lo,o.minSpan||.2),mid=(hi+lo)/2;lo=mid-span*.6;hi=mid+span*.6}
+ const step=o.step||niceStep(hi-lo,Math.max(2,Math.round(ph/42))),dec=o.dec??Math.max(0,-Math.floor(Math.log10(step)+1e-9));
+ const y=v=>T+ph-(v-lo)/(hi-lo)*ph,x=t=>L+(t-t0)/WIN*pw;
+ g.lineWidth=1;g.textAlign='right';g.textBaseline='middle';
+ for(let v=Math.ceil(lo/step-1e-9)*step;v<=hi+1e-9;v+=step){const zero=Math.abs(v)<step*1e-6,yy=Math.round(y(v))+.5;
+  g.strokeStyle=zero&&o.zero?C.axis:C.grid;g.beginPath();g.moveTo(L,yy);g.lineTo(W-R,yy);g.stroke();
+  g.fillStyle=C.muted;g.fillText((zero?0:v).toFixed(dec),L-8,yy)}
+ g.textBaseline='top';
+ for(const s of[10,8,6,4,2,0]){const xx=Math.round(L+(WIN-s)/WIN*pw)+.5;g.strokeStyle=C.grid;g.beginPath();g.moveTo(xx,T);g.lineTo(xx,T+ph);g.stroke();
+  g.fillStyle=C.muted;g.textAlign=s===10?'left':s===0?'right':'center';g.fillText(s?`−${s} s`:'now',xx,T+ph+5)}
+ g.save();g.beginPath();g.rect(L,T,pw,ph);g.clip();g.lineJoin='round';g.lineCap='round';
+ for(const d of defs){const col=C[d.c];g.strokeStyle=g.fillStyle=col;g.lineWidth=d.w||1.6;let pen=false,prev=null;g.beginPath();
+  for(const s of buf){if(s[Tk]<t0)continue;const v=s[I[d.k]];if(v==null){pen=false;prev=null;continue}
+   if(d.dots){g.moveTo(x(s[Tk])+1.6,y(v));g.arc(x(s[Tk]),y(v),1.6,0,6.2832);continue}
+   if(d.wrap&&prev!=null&&Math.abs(v-prev)>180)pen=false;
+   pen?g.lineTo(x(s[Tk]),y(v)):g.moveTo(x(s[Tk]),y(v));pen=true;prev=v}
+  if(d.dots){g.globalAlpha=.75;g.fill();g.globalAlpha=1}else g.stroke()}
+ g.restore()}
+
+// ---- 3-D body: attitude is vehicle FRD -> NED; the box is drawn in an ENU display (x east, y north, z up)
+const CW=420,CH=230;
+const VB=[[-1,-.6,-.15],[1,-.6,-.15],[1,.6,-.15],[-1,.6,-.15],[-1,-.6,.15],[1,-.6,.15],[1,.6,.15],[-1,.6,.15]];
+const F=[[0,1,2,3],[4,5,6,7],[0,1,5,4],[2,3,7,6],[1,2,6,5],[0,3,7,4]];
+function rot(y,p,r){const cy=Math.cos(y),sy=Math.sin(y),cp=Math.cos(p),sp=Math.sin(p),cr=Math.cos(r),sr=Math.sin(r);
+ return[[cy*cp,cy*sp*sr-sy*cr,cy*sp*cr+sy*sr],[sy*cp,sy*sp*sr+cy*cr,sy*sp*cr-cy*sr],[-sp,cp*sr,cp*cr]]}
+const A=-35*Math.PI/180,E=28*Math.PI/180;
+function proj(v){const x1=v[0]*Math.cos(A)-v[1]*Math.sin(A),y1=v[0]*Math.sin(A)+v[1]*Math.cos(A);
+ return{x:x1,u:v[2]*Math.cos(E)+y1*Math.sin(E),d:y1*Math.cos(E)-v[2]*Math.sin(E)}}
+function drawCube(){const cv=$('cube'),cx=fit(cv,CW,CH),S=CH*.26,ox=CW/2,oy=CH/2+8;cx.clearRect(0,0,CW,CH);
+ const P=v=>{const q=proj(v);return{x:ox+q.x*S,y:oy-q.u*S,d:q.d}};
+ cx.strokeStyle=C['border-strong'];cx.lineWidth=1;cx.setLineDash([2,4]);cx.beginPath();
+ for(let i=0;i<=64;i++){const a=i/64*6.2832,q=P([1.9*Math.cos(a),1.9*Math.sin(a),-1.3]);i?cx.lineTo(q.x,q.y):cx.moveTo(q.x,q.y)}cx.stroke();cx.setLineDash([]);
+ const l=buf[buf.length-1];
+ if(!l||l[I.roll]==null){cx.fillStyle=C.muted;cx.font='13px '+getComputedStyle(document.body).fontFamily;cx.textAlign='center';
+  cx.fillText(ST&&ST.fusion.kind==='ekf3'?'Waiting for alignment':'No IMU data',ox,oy);cx.textAlign='start';return}
+ const sg=k=>$(k).checked?-1:1,d=Math.PI/180;
+ const Rn=rot(wrap(l[I.yaw]-yawZero)*sg('iy')*d,l[I.pitch]*sg('ip')*d,l[I.roll]*sg('ir')*d);
+ // display box axes (x right, y nose, z up) -> FRD [y, x, -z] -> NED by Rn -> ENU [n_y, n_x, -n_z]
+ const M=v=>{const b=[v[1],v[0],-v[2]],w=[0,1,2].map(i=>Rn[i][0]*b[0]+Rn[i][1]*b[1]+Rn[i][2]*b[2]);return[w[1],w[0],-w[2]]};
+ const pts=VB.map(v=>P(M(v)));
+ cx.lineJoin='round';
+ F.map(f=>({f,d:f.reduce((a,i)=>a+pts[i].d,0)/4})).sort((a,b)=>b.d-a.d).forEach(o=>{cx.beginPath();
+  o.f.forEach((k,j)=>j?cx.lineTo(pts[k].x,pts[k].y):cx.moveTo(pts[k].x,pts[k].y));cx.closePath();
+  cx.globalAlpha=.9;cx.fillStyle=C.face;cx.fill();cx.globalAlpha=1;cx.strokeStyle=C['border-strong'];cx.lineWidth=1;cx.stroke()});
+ const o0=P([0,0,0]);[[[1.6,0,0],'#e5484d','X'],[[0,1.3,0],'#30a46c','Y'],[[0,0,1.1],'#3e8bff','Z']].forEach(([v,col,name])=>{
+  const q=P(M(v));cx.strokeStyle=col;cx.fillStyle=col;cx.lineWidth=2.2;cx.lineCap='round';cx.beginPath();cx.moveTo(o0.x,o0.y);cx.lineTo(q.x,q.y);cx.stroke();
+  cx.beginPath();cx.arc(q.x,q.y,2.5,0,6.2832);cx.fill();cx.font='600 11px system-ui';cx.fillText(name,q.x+5,q.y-5)});
+ const b0=P(M([0,0,-.15])),b1=P(M([0,0,-1.3]));cx.strokeStyle=C.s3;cx.lineWidth=1.5;cx.setLineDash([4,3]);
+ cx.beginPath();cx.moveTo(b0.x,b0.y);cx.lineTo(b1.x,b1.y);cx.stroke();cx.setLineDash([])}
+
+// ---- primary flight display, A320 style (roll right = right wing down; pitch up = nose up)
+const PFD={sky:'#1a7fd0',sky2:'#0b5ea8',gnd:'#8a5a2e',gnd2:'#5e3b1c',tape:'#262c33',amber:'#ffb000',yel:'#ffd21f',cyan:'#3ee0ff',grn:'#38d64a',
+ font:'"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif'};
+// vertical scrolling tape: value at the centre, ticks every `step`, numbers every `major`; `edge` is the side facing the attitude area
+function vtape(g,x,y,w,h,val,o){g.save();g.beginPath();g.rect(x,y,w,h);g.clip();g.fillStyle=PFD.tape;g.fillRect(x,y,w,h);
+ const cy=y+h/2,lo=val-(h/2)/o.ppu,hi=val+(h/2)/o.ppu;g.strokeStyle=g.fillStyle='#e8ecef';g.lineWidth=1.5;g.font='600 11px '+PFD.font;
+ g.textBaseline='middle';g.textAlign=o.edge==='right'?'left':'right';
+ for(let i=Math.floor(lo/o.step);i<=Math.ceil(hi/o.step);i++){const v=i*o.step;if(o.min!=null&&v<o.min-1e-9)continue;
+  const yy=cy-(v-val)*o.ppu,major=Math.abs(v/o.major-Math.round(v/o.major))<1e-6,tl=major?11:6,x0=o.edge==='right'?x+w:x;
+  g.beginPath();g.moveTo(x0,yy);g.lineTo(x0+(o.edge==='right'?-tl:tl),yy);g.stroke();
+  if(major)g.fillText(v.toFixed(o.dec||0),o.edge==='right'?x+4:x+w-4,yy)}
+ g.restore();
+ const bw=w-6,bh=20;g.fillStyle='#000';g.strokeStyle=PFD.yel;g.lineWidth=1.5;g.beginPath();g.rect(x+3,cy-bh/2,bw,bh);g.fill();g.stroke();
+ g.fillStyle=o.txt||PFD.grn;g.font='700 13px '+PFD.font;g.textAlign='center';g.textBaseline='middle';
+ g.fillText(val==null?'–':val.toFixed(o.boxDec??2),x+3+bw/2,cy+1)}
+function htape(g,x,y,w,h,hd){g.save();g.beginPath();g.rect(x,y,w,h);g.clip();g.fillStyle=PFD.tape;g.fillRect(x,y,w,h);
+ const cx0=x+w/2,ppd=w/64;g.strokeStyle=g.fillStyle='#e8ecef';g.lineWidth=1.5;g.font='600 11px '+PFD.font;g.textAlign='center';g.textBaseline='top';
+ for(let d=Math.floor((hd-34)/5)*5;d<=hd+34;d+=5){const xx=cx0+(d-hd)*ppd,long=d%10===0;
+  g.beginPath();g.moveTo(xx,y);g.lineTo(xx,y+(long?11:6));g.stroke();
+  if(long){const n=((Math.round(d)%360)+360)%360/10;g.fillText(String(n).padStart(2,'0'),xx,y+13)}}
+ g.restore();
+ g.fillStyle=PFD.yel;g.beginPath();g.moveTo(cx0,y+h+1);g.lineTo(cx0-7,y+h+11);g.lineTo(cx0+7,y+h+11);g.closePath();g.fill()}
+
+function drawHorizon(){const W=420,H=392,g=fit($('hor'),W,H),d=Math.PI/180;
+ g.clearRect(0,0,W,H);g.fillStyle='#000';g.fillRect(0,0,W,H);
+ const l=buf[buf.length-1],ok=l&&I.roll!=null&&l[I.roll]!=null;
+ const sg=k=>$(k).checked?-1:1,roll=ok?l[I.roll]*sg('ir'):0,pitch=ok?l[I.pitch]*sg('ip'):0,yaw=ok?wrap(l[I.yaw]-yawZero)*sg('iy'):0;
+ const rng=ok?l[I.range_m]:null,hf=ok?l[I.h_fused]:null,vs=ok?l[I.v_fused]:null,mag=ok&&I.mag_hdg!=null?l[I.mag_hdg]:null;
+ // attitude area
+ const ax=62,ay=14,aw=272,ah=272,cx0=ax+aw/2,cy0=ay+ah/2,k=5.6;                  // k px per degree of pitch (about +-24 deg visible)
+ g.save();g.beginPath();g.rect(ax,ay,aw,ah);g.clip();
+ g.translate(cx0,cy0);g.rotate(-roll*d);g.translate(0,pitch*k);
+ let gr=g.createLinearGradient(0,-3*aw,0,0);gr.addColorStop(0,PFD.sky2);gr.addColorStop(1,PFD.sky);g.fillStyle=gr;g.fillRect(-3*aw,-3*aw,6*aw,3*aw);
+ gr=g.createLinearGradient(0,0,0,3*aw);gr.addColorStop(0,PFD.gnd);gr.addColorStop(1,PFD.gnd2);g.fillStyle=gr;g.fillRect(-3*aw,0,6*aw,3*aw);
+ g.strokeStyle=g.fillStyle='#fff';g.lineWidth=2;g.beginPath();g.moveTo(-3*aw,0);g.lineTo(3*aw,0);g.stroke();
+ g.font='600 12px '+PFD.font;g.textBaseline='middle';g.lineWidth=1.6;
+ for(let p=-40;p<=40;p+=2.5){if(!p)continue;const y=-p*k,ten=Math.abs(p)%10===0,five=Math.abs(p)%5===0,w=ten?46:five?26:13;
+  g.beginPath();g.moveTo(-w,y);g.lineTo(w,y);g.stroke();
+  if(ten){g.textAlign='right';g.fillText(Math.abs(p),-w-5,y);g.textAlign='left';g.fillText(Math.abs(p),w+5,y)}}
+ g.restore();
+ // roll arc, fixed ticks and the moving sky pointer
+ const ra=118;g.save();g.beginPath();g.rect(ax,ay,aw,ah);g.clip();g.translate(cx0,cy0);g.strokeStyle=g.fillStyle='#fff';g.lineWidth=2;
+ g.beginPath();g.arc(0,0,ra,-Math.PI/2-60*d,-Math.PI/2+60*d);g.stroke();
+ for(const a of[-60,-45,-30,-20,-10,10,20,30,45,60]){g.save();g.rotate(a*d);const long=Math.abs(a)===30||Math.abs(a)===60;
+  g.beginPath();g.moveTo(0,-ra);g.lineTo(0,-ra+(long?-15:-9));g.stroke();g.restore()}
+ g.beginPath();g.moveTo(0,-ra);g.lineTo(-6,-ra-11);g.lineTo(6,-ra-11);g.closePath();g.stroke();
+ g.save();g.rotate(-roll*d);g.fillStyle=PFD.yel;g.beginPath();g.moveTo(0,-ra+1);g.lineTo(-7,-ra+15);g.lineTo(7,-ra+15);g.closePath();g.fill();g.restore();
+ g.restore();
+ // aircraft symbol
+ g.save();g.translate(cx0,cy0);g.fillStyle=PFD.yel;g.strokeStyle='#000';g.lineWidth=1.5;
+ for(const s of[-1,1]){g.beginPath();g.rect(s>0?38:-92,-3,54,7);g.fill();g.stroke();g.beginPath();g.rect(s>0?38:-45,-3,7,17);g.fill();g.stroke()}
+ g.beginPath();g.rect(-4,-4,8,8);g.fill();g.stroke();g.restore();
+ // radio altitude readout (fused height), amber near the ground
+ if(hf!=null){g.font='700 15px '+PFD.font;g.textAlign='center';g.textBaseline='middle';g.fillStyle='rgba(0,0,0,.55)';g.fillRect(cx0-46,ay+ah-30,92,22);
+  g.fillStyle=hf<.3?PFD.amber:'#fff';g.fillText('RA '+hf.toFixed(2),cx0,ay+ah-19)}
+ g.strokeStyle='#000';g.lineWidth=2;g.strokeRect(ax,ay,aw,ah);
+ // side tapes
+ g.font='500 10px '+PFD.font;g.fillStyle='#8e98a4';g.textAlign='center';g.textBaseline='alphabetic';
+ g.fillText('RNG m',30,ay+ah+12);g.fillText('ALT m',364,ay+ah+12);g.fillText('V/S',404,ay+ah+12);
+ vtape(g,4,ay,52,ah,rng==null?0:rng,{ppu:46,step:.1,major:.5,dec:1,edge:'right',min:0,boxDec:2,txt:rng==null?'#777':'#fff'});
+ if(rng==null){g.fillStyle='#000';g.fillRect(6,ay+ah/2-8,48,16);g.fillStyle='#8e98a4';g.font='700 11px '+PFD.font;g.textAlign='center';g.textBaseline='middle';g.fillText('NO RNG',30,ay+ah/2)}
+ vtape(g,338,ay,52,ah,hf==null?0:hf,{ppu:46,step:.1,major:.5,dec:1,edge:'left',boxDec:2});
+ // vertical-speed scale, +-2 m/s
+ const vx=394,vh=ah/2-14,vsc=Math.max(-2,Math.min(2,vs==null?0:vs));g.fillStyle=PFD.tape;g.fillRect(vx-2,ay,24,ah);
+ g.strokeStyle=g.fillStyle='#e8ecef';g.lineWidth=1.2;g.font='500 9px '+PFD.font;g.textAlign='left';g.textBaseline='middle';
+ for(let v=-2;v<=2;v+=.5){const yy=ay+ah/2-v/2*vh,big=v===Math.round(v);g.beginPath();g.moveTo(vx,yy);g.lineTo(vx+(big?8:4),yy);g.stroke();if(big&&v)g.fillText(Math.abs(v),vx+10,yy)}
+ if(vs!=null){const yy=ay+ah/2-vsc/2*vh;g.strokeStyle=PFD.grn;g.lineWidth=2.5;g.lineCap='round';g.beginPath();g.moveTo(vx+22,ay+ah/2);g.lineTo(vx+2,yy);g.stroke();
+  g.fillStyle=PFD.grn;g.font='700 10px '+PFD.font;g.textAlign='center';g.fillText((vs>=0?'+':'')+vs.toFixed(2),vx+10,ay+ah-4)}
+ // heading scale: magnetic when calibrated, else relative to power-on
+ const hdg=mag!=null?mag:(yaw+360)%360;
+ htape(g,ax,ay+ah+18,aw,30,hdg);
+ g.font='700 13px '+PFD.font;g.fillStyle=mag!=null?PFD.cyan:'#fff';g.textAlign='center';g.textBaseline='top';
+ g.fillText((mag!=null?'MAG ':'HDG ')+String(Math.round(hdg)%360).padStart(3,'0')+'°',cx0,ay+ah+60);
+ g.font='500 10px '+PFD.font;g.fillStyle='#8e98a4';g.fillText(mag!=null?'magnetic heading (no declination)':'relative to power-on (no compass)',cx0,ay+ah+77);
+ if(!ok){g.fillStyle='#fff';g.font='600 13px '+PFD.font;g.textAlign='center';g.textBaseline='middle';g.fillText(ST&&ST.fusion.kind==='ekf3'?'ATT · waiting for alignment':'ATT · no data',cx0,cy0-60)}
+ $('hr').textContent=ok?roll.toFixed(1)+'°':'–';$('hp').textContent=ok?pitch.toFixed(1)+'°':'–';
+ $('hy').textContent=ok?String(Math.round((yaw+360)%360)%360).padStart(3,'0')+'°':'–';$('hg').textContent=mag!=null?String(Math.round(mag)%360).padStart(3,'0')+'°':'–'}
+
+function render(){
+ if(!$('tab-monitor').hidden){
+  const l=buf[buf.length-1];
+  if(l&&I.t!=null){$('hf').textContent=f(l[I.h_fused]);$('vf').textContent=f(l[I.v_fused]);$('rng').textContent=f(l[I.range_m]);$('hm').textContent=f(l[I.h_meas])}
+  drawHorizon();drawCube();
+  chart($('ch_h'),[{k:'baro_h',c:'s2',w:1.2},{k:'h_meas',c:'s3',dots:true},{k:'h_fused',c:'s1',w:2.2}],{minSpan:.3});
+  chart($('ch_v'),[{k:'v_fused',c:'s1'}],{zero:true,minSpan:.3});
+  chart($('ch_a'),[{k:'a_up',c:'s1',w:1},{k:'a_bias',c:'s2',w:2}],{zero:true,minSpan:.5});
+  chart($('ch_r'),[{k:'roll',c:'s1'},{k:'pitch',c:'s2'},{k:'yaw',c:'s3',wrap:true}],{lo:-180,hi:180,step:90,dec:0,zero:true});
+  chart($('ch_w'),[{k:'gx',c:'s1',w:1.1},{k:'gy',c:'s2',w:1.1},{k:'gz',c:'s3',w:1.1}],{zero:true,minSpan:1});
+  chart($('ch_g'),[{k:'bgx',c:'s1'},{k:'bgy',c:'s2'},{k:'bgz',c:'s3'}],{zero:true,minSpan:.2});
+  chart($('ch_n'),[{k:'nis',c:'s4'}],{lo:-6,hi:6,step:3,dec:0,zero:true});
+  chart($('ch_p'),[{k:'pressure',c:'s1',w:1.3}],{minSpan:.05});
+  chart($('ch_b'),[{k:'baro_res',c:'s4',w:1.3}],{zero:true,minSpan:.2})}
+ requestAnimationFrame(render)}
+requestAnimationFrame(render);
+</script>
+</body>
+</html>
